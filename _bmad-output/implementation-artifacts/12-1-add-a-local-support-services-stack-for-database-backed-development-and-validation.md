@@ -51,6 +51,7 @@ GPT-5 Codex
 - Red phase: `uv run pytest --no-cov tests/test_settings.py` failed during collection with `ModuleNotFoundError: No module named 'server.settings'`.
 - Environment sync: `uv sync --extra dev --frozen`
 - Focused settings verification: `uv run pytest --no-cov tests/test_settings.py`
+- Follow-up settings regression coverage: `uv run pytest --no-cov tests/test_settings.py`
 - Support-services command check: `make support-services-up` could not be completed in this environment because `docker` is not installed in the worktree runner.
 - Quality gate: `make quality`
 
@@ -60,6 +61,7 @@ GPT-5 Codex
 - Kept the support-services stack intentionally small with a single Postgres service in `compose.support-services.yaml`; the FastAPI app still runs directly on the host in normal dev mode.
 - Added stable `make support-services-*` targets for startup, teardown, logs, and status checks.
 - Documented the exact local workflow in `README.md` and checked in `env.local.example` so developers can run `uv run uvicorn` against the local Postgres service without manual wiring.
+- Follow-up review fixes kept the Story 12.1 scope tight: the documented/default Postgres URL remains aligned with Compose, Docker Compose is called out as a prerequisite, `support-services-up` now uses `docker compose up --wait` when supported, settings coverage includes the default fallback and `IRON_COUNCIL_ENV_FILE` override path, and the unused `app.state.settings` startup wiring was removed.
 
 ### File List
 
@@ -77,3 +79,4 @@ GPT-5 Codex
 
 - 2026-03-28 14:50 UTC: Drafted Story 12.1 for local backing services with the app running in dev mode.
 - 2026-03-28 16:35 UTC: Added a Postgres-only local support-services stack, documented host-run dev wiring, verified the new settings contract, and passed `make quality`.
+- 2026-03-28 16:38 UTC: Addressed merge-review follow-ups for Story 12.1 by tightening docs, settings coverage, compose readiness handling, and startup wiring.

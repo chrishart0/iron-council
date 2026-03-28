@@ -2,6 +2,9 @@
 
 ## Local support services
 
+Prerequisite: install Docker with the Compose plugin available via `docker compose`
+before using the support-services targets in this repository.
+
 The app continues to run directly on your machine in dev mode. The only default support
 service stack is a local Postgres instance defined in
 `compose.support-services.yaml`.
@@ -19,10 +22,12 @@ make support-services-up
 make support-services-ps
 ```
 
-That boots Postgres on `127.0.0.1:54321` with the conventional
+That boots Postgres on `127.0.0.1:54321` with the same runnable credentials used by
+`compose.support-services.yaml` and `env.local.example`:
 `DATABASE_URL=postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil`.
-The server loads `.env.local` automatically by default, or you can point to a different
-file with `IRON_COUNCIL_ENV_FILE=/path/to/file`.
+The server loads `.env.local` automatically by default, falls back to that same default
+URL when no env file is present, and can use a different file via
+`IRON_COUNCIL_ENV_FILE=/path/to/file`.
 
 Run the FastAPI app normally outside containers:
 
