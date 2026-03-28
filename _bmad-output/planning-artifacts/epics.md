@@ -465,7 +465,9 @@ So that automated clients can drive headless matches before database-backed pers
 
 ## Epic 11: QA Hardening and Gameplay Confidence
 
-Add a final quality-focused epic that turns the deterministic engine and first agent-facing API into something we can trust through structured review, realistic smoke scenarios, large-batch simulation checks, and a small set of critical end-to-end journeys.
+Add a quality-focused epic that turns the deterministic engine and first agent-facing API into something we can trust through structured review, realistic smoke scenarios, large-batch simulation checks, and a small set of critical end-to-end journeys.
+
+Note: this epic should follow establishment of a real local persistence-backed developer environment so its integration and end-to-end tests run against production-like infrastructure rather than only in-memory fixtures.
 
 ### Story 11.1: Run a multi-agent quality review and simplification sweep across the game server
 
@@ -546,3 +548,91 @@ So that the first agent workflows are validated through the actual FastAPI bound
 **And Given** multiple players interacting with the same seeded match
 **When** the end-to-end tests fetch visible state
 **Then** they verify that fog-of-war boundaries are preserved and one player cannot observe information forbidden by the visibility contract.
+
+## Epic 12: Production-Like Local Development and Persistence Foundation
+
+Correct the current gap between feature implementation and real environment validation by establishing a high-quality local developer stack with containerized services, real database lifecycle management, deterministic seed data, migration discipline, and test isolation that works across parallel worktrees.
+
+### Story 12.1: Add a local support-services stack for database-backed development and validation
+
+As a server developer,
+I want local support services that boot cleanly while the app itself runs in normal dev mode,
+So that development, debugging, and integration testing happen against real infrastructure rather than only in-memory fixtures.
+
+**Acceptance Criteria:**
+
+**Given** a fresh checkout of the repository
+**When** the documented local support-services startup command is run
+**Then** it starts the truly required backing services, including a real database, with clear environment-variable wiring for running the app locally in dev mode.
+
+**And Given** the local support-services definition
+**When** developers inspect it
+**Then** it keeps service responsibilities clear, avoids unnecessary complexity such as containerizing the app without need, and supports reproducible startup and teardown.
+
+**And Given** local development and CI-oriented usage
+**When** the support-services stack is configured
+**Then** it supports normal developer workflows such as `pnpm dev` and `uv run` alongside focused integration-test runs without manual service tinkering.
+
+### Story 12.2: Introduce a proper database migration service and migration-driven schema lifecycle
+
+As a server developer,
+I want all schema changes to flow through a real migration system,
+So that local environments, test databases, and future deployments share one deterministic schema history.
+
+**Acceptance Criteria:**
+
+**Given** a fresh database
+**When** the migration workflow runs
+**Then** it can create the full current schema from scratch without manual SQL hand-edits.
+
+**And Given** future schema evolution
+**When** developers add or modify persistence structures
+**Then** those changes are represented through versioned migrations rather than ad hoc runtime table creation.
+
+**And Given** the migration service in local and test workflows
+**When** integration or end-to-end tests prepare a database
+**Then** they apply migrations to head before tests execute.
+
+### Story 12.3: Add deterministic seed/reset tooling and per-worktree isolated test databases
+
+As a delivery lead,
+I want every worktree to be able to create a fresh database with fresh test data,
+So that integration and end-to-end tests can run in parallel without state collisions or manual cleanup.
+
+**Acceptance Criteria:**
+
+**Given** multiple git worktrees or parallel test lanes
+**When** each one provisions its integration-test environment
+**Then** it receives an isolated database identity, migrated schema, and deterministic seed data without conflicting with sibling worktrees.
+
+**And Given** a developer or Codex worker needs a clean starting point
+**When** the reset workflow runs
+**Then** it can recreate the database state from migrations plus seed data using a stable documented command.
+
+**And Given** repeated setup runs from the same inputs
+**When** the seed/reset workflow executes
+**Then** the resulting test data is deterministic and suitable for reproducible debugging.
+
+### Story 12.4: Wire real API integration tests and small end-to-end smoke flows into the quality workflow
+
+As a delivery lead,
+I want real API integration tests and a small set of high-value end-to-end smoke flows to become part of the normal quality bar,
+So that we stop shipping large amounts of unvalidated code that has never run against a real database-backed environment.
+
+**Acceptance Criteria:**
+
+**Given** the local support-services stack, migration workflow, and seed/reset tooling
+**When** integration and end-to-end suites run
+**Then** they execute against the real running app and database boundaries instead of only in-memory stand-ins.
+
+**And Given** user-facing stories
+**When** they are completed
+**Then** each story adds or updates appropriate real-API coverage and contributes to a small smoke-level set of high-value end-to-end user flows rather than an excessive e2e suite.
+
+**And Given** developers and autonomous workers running checks in parallel
+**When** the quality workflow executes per worktree
+**Then** each lane can run the relevant DB-backed tests without shared-state interference.
+
+**And Given** the repository quality workflow and CI configuration
+**When** the new test layers are introduced
+**Then** the project has clear command targets and an enforceable quality gate for real-API validation plus a maintainable smoke-level e2e suite.

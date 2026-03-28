@@ -55,6 +55,12 @@ development_status:
   10-2-expose-in-memory-agent-match-listing-state-polling-and-order-submission-endpoints: done
   epic-10-retrospective: optional
 
+  epic-12: planned-next
+  12-1-add-a-local-support-services-stack-for-database-backed-development-and-validation: drafted
+  12-2-introduce-a-proper-database-migration-service-and-migration-driven-schema-lifecycle: drafted
+  12-3-add-deterministic-seed-reset-tooling-and-per-worktree-isolated-test-databases: drafted
+  12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: drafted
+
   epic-11: in-progress
   11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: in-progress
   11-2-add-realistic-scenario-based-smoke-tests-for-deterministic-gameplay-flows: drafted
