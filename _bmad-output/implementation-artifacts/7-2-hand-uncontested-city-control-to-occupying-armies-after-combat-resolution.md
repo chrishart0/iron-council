@@ -1,6 +1,6 @@
 # Story 7.2: Hand uncontested city control to occupying armies after combat resolution
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -16,17 +16,17 @@ so that match state, economy, and victory tracking reflect territorial gains wit
 
 ## Tasks / Subtasks
 
-- [ ] Add behavior-first occupancy and ownership-handoff coverage before implementation. (AC: 1, 2, 3)
-  - [ ] Cover neutral-city occupation by a single survivor.
-  - [ ] Cover enemy-city occupation after defenders are gone.
-  - [ ] Cover contested survivors leaving ownership unchanged.
-- [ ] Implement narrow post-combat ownership updates. (AC: 1, 2, 3)
-  - [ ] Limit scope to cities with exactly one surviving occupying player.
-  - [ ] Avoid expanding capture timers, loyalty mechanics, or siege markers.
-  - [ ] Preserve resolver purity and existing phase event contracts.
-- [ ] Re-verify resolver and simulation behavior after merge. (AC: 1, 2, 3)
-  - [ ] Re-run focused resolver and simulation coverage.
-  - [ ] Re-run the repository quality gate.
+- [x] Add behavior-first occupancy and ownership-handoff coverage before implementation. (AC: 1, 2, 3)
+  - [x] Cover neutral-city occupation by a single survivor.
+  - [x] Cover enemy-city occupation after defenders are gone.
+  - [x] Cover contested survivors leaving ownership unchanged.
+- [x] Implement narrow post-combat ownership updates. (AC: 1, 2, 3)
+  - [x] Limit scope to cities with exactly one surviving occupying player.
+  - [x] Avoid expanding capture timers, loyalty mechanics, or siege markers.
+  - [x] Preserve resolver purity and existing phase event contracts.
+- [x] Re-verify resolver and simulation behavior after merge. (AC: 1, 2, 3)
+  - [x] Re-run focused resolver and simulation coverage.
+  - [x] Re-run the repository quality gate.
 
 ## Dev Notes
 
@@ -48,16 +48,24 @@ GPT-5 Codex
 
 ### Debug Log References
 
-- Pending implementation.
+- Red: `uv run --python .venv/bin/python pytest -o addopts= tests/test_resolver.py -q`
+- Green: `uv run --python .venv/bin/python pytest -o addopts= tests/test_simulation.py tests/test_resolver.py -q`
+- Quality gate: `make quality`
 
 ### Completion Notes List
 
-- Pending implementation.
+- Added resolver-boundary tests for neutral capture, enemy capture after combat, and contested survivors retaining the current owner.
+- Updated the combat phase to hand city ownership to exactly one surviving occupier after combat while leaving contested cities unchanged.
+- Kept the resolver pure by mutating only the copied next state and synchronized `players[*].cities_owned` with `cities[*].owner`.
 
 ### File List
 
+- `server/resolver.py`
+- `tests/test_resolver.py`
 - `_bmad-output/implementation-artifacts/7-2-hand-uncontested-city-control-to-occupying-armies-after-combat-resolution.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ### Change Log
 
 - 2026-03-28 11:22 UTC: Drafted Story 7.2 for deterministic post-combat city ownership handoff.
+- 2026-03-28 11:37 UTC: Implemented uncontested post-combat city ownership handoff with resolver-boundary regression coverage and green quality gate.

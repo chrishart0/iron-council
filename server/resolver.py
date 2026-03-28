@@ -125,6 +125,7 @@ def _resolve_combat_phase(
     match_state: MatchState, validated_orders: OrderBatch
 ) -> TickPhaseOutcome:
     _resolve_contested_city_combat(match_state)
+    _transfer_uncontested_city_control(match_state)
     return _complete_phase(match_state, validated_orders, "combat")
 
 
@@ -262,6 +263,26 @@ def _resolve_contested_city_combat(match_state: MatchState) -> None:
     match_state.armies = surviving_armies
 
 
+def _transfer_uncontested_city_control(match_state: MatchState) -> None:
+    for city_id, city_state in match_state.cities.items():
+        occupying_owners = {
+            army.owner
+            for army in match_state.armies
+            if army.location == city_id and army.destination is None
+        }
+        if len(occupying_owners) != 1:
+            continue
+
+        occupying_owner = next(iter(occupying_owners))
+        if city_state.owner == occupying_owner:
+            continue
+
+        previous_owner = city_state.owner
+        city_state.owner = occupying_owner
+        _remove_city_from_player(match_state, previous_owner, city_id)
+        _add_city_to_player(match_state, occupying_owner, city_id)
+
+
 def _combat_casualties_by_owner(
     armies_at_city: list[ArmyState],
     *,
@@ -303,6 +324,30 @@ def _armies_by_owner(armies: list[ArmyState]) -> dict[str, list[ArmyState]]:
     for army in armies:
         armies_by_owner.setdefault(army.owner, []).append(army)
     return armies_by_owner
+
+
+def _remove_city_from_player(match_state: MatchState, player_id: str | None, city_id: str) -> None:
+    if player_id is None:
+        return
+
+    player_state = match_state.players.get(player_id)
+    if player_state is None:
+        return
+
+    player_state.cities_owned = [
+        owned_city_id for owned_city_id in player_state.cities_owned if owned_city_id != city_id
+    ]
+
+
+def _add_city_to_player(match_state: MatchState, player_id: str, city_id: str) -> None:
+    player_state = match_state.players.get(player_id)
+    if player_state is None:
+        return
+    if city_id in player_state.cities_owned:
+        return
+
+    player_state.cities_owned.append(city_id)
+    player_state.cities_owned.sort()
 
 
 def _allocate_proportional_casualties(
