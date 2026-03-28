@@ -169,6 +169,7 @@ def _resolve_siege_phase(
     match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
 ) -> TickPhaseOutcome:
     del phase_state
+    _degrade_besieged_fortifications(match_state)
     return _complete_phase(match_state, validated_orders, "siege")
 
 
@@ -670,6 +671,60 @@ def _edge_distance_by_route() -> dict[frozenset[str], int]:
         frozenset((edge.city_a, edge.city_b)): edge.distance_ticks
         for edge in load_uk_1900_map().edges
     }
+
+
+@lru_cache(maxsize=1)
+def _adjacent_city_ids_by_city() -> dict[str, tuple[str, ...]]:
+    adjacent_city_ids: dict[str, set[str]] = {}
+    for edge in load_uk_1900_map().edges:
+        adjacent_city_ids.setdefault(edge.city_a, set()).add(edge.city_b)
+        adjacent_city_ids.setdefault(edge.city_b, set()).add(edge.city_a)
+
+    return {
+        city_id: tuple(sorted(neighbor_ids)) for city_id, neighbor_ids in adjacent_city_ids.items()
+    }
+
+
+def _degrade_besieged_fortifications(match_state: MatchState) -> None:
+    for city_id in sorted(match_state.cities):
+        city_state = match_state.cities[city_id]
+        if city_state.owner is None or city_state.upgrades.fortification == 0:
+            continue
+        if not _is_besieged_city(match_state, city_id=city_id, city_state=city_state):
+            continue
+
+        city_state.upgrades.fortification -= 1
+
+
+def _is_besieged_city(match_state: MatchState, *, city_id: str, city_state: CityState) -> bool:
+    owner = city_state.owner
+    if owner is None:
+        return False
+
+    adjacent_city_ids = _adjacent_city_ids_by_city().get(city_id, ())
+    if not adjacent_city_ids:
+        return False
+
+    owner_coalition = _player_coalition(match_state, owner)
+    for adjacent_city_id in adjacent_city_ids:
+        adjacent_city_state = match_state.cities.get(adjacent_city_id)
+        if adjacent_city_state is None:
+            continue
+
+        adjacent_owner = adjacent_city_state.owner
+        if adjacent_owner is None:
+            continue
+        if adjacent_owner == owner:
+            return False
+        if _player_coalition(match_state, adjacent_owner) == owner_coalition:
+            return False
+
+    return True
+
+
+def _player_coalition(match_state: MatchState, player_id: str) -> CoalitionKey:
+    player_state = match_state.players[player_id]
+    return _coalition_key(player_id=player_id, alliance_id=player_state.alliance_id)
 
 
 def _complete_phase(

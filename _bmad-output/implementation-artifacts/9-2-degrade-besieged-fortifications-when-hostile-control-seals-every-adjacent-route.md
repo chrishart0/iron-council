@@ -1,6 +1,6 @@
 # Story 9.2: Degrade besieged fortifications when hostile control seals every adjacent route
 
-Status: ready
+Status: done
 
 ## Story
 
@@ -16,17 +16,17 @@ so that entrenched defenders become vulnerable when attackers isolate every adja
 
 ## Tasks / Subtasks
 
-- [ ] Add behavior-first resolver coverage before implementation. (AC: 1, 2, 3)
-  - [ ] Cover deterministic siege degradation for a fully surrounded fortified city.
-  - [ ] Cover the non-besieged case when a friendly or allied adjacent city keeps a route open.
-  - [ ] Cover repeated runs and input-state immutability.
-- [ ] Implement narrow siege-phase encirclement handling. (AC: 1, 2, 3)
-  - [ ] Keep scope to fortification wear from encirclement only; do not add food-transfer blocking, fog changes, or diplomatic side effects in this story.
-  - [ ] Reuse canonical map adjacency and current alliance membership from match state.
-  - [ ] Keep siege checks deterministic and independent of dictionary insertion order.
-- [ ] Re-verify resolver and simulation behavior after merge. (AC: 1, 2, 3)
-  - [ ] Re-run focused resolver coverage.
-  - [ ] Re-run the repository quality gate.
+- [x] Add behavior-first resolver coverage before implementation. (AC: 1, 2, 3)
+  - [x] Cover deterministic siege degradation for a fully surrounded fortified city.
+  - [x] Cover the non-besieged case when a friendly or allied adjacent city keeps a route open.
+  - [x] Cover repeated runs and input-state immutability.
+- [x] Implement narrow siege-phase encirclement handling. (AC: 1, 2, 3)
+  - [x] Keep scope to fortification wear from encirclement only; do not add food-transfer blocking, fog changes, or diplomatic side effects in this story.
+  - [x] Reuse canonical map adjacency and current alliance membership from match state.
+  - [x] Keep siege checks deterministic and independent of dictionary insertion order.
+- [x] Re-verify resolver and simulation behavior after merge. (AC: 1, 2, 3)
+  - [x] Re-run focused resolver coverage.
+  - [x] Re-run the repository quality gate.
 
 ## Dev Notes
 
@@ -48,16 +48,27 @@ _GPT-5 Codex_
 
 ### Debug Log References
 
-- _To be filled during implementation._
+- `pytest -o addopts='-q --strict-config --strict-markers' tests/test_resolver.py -k 'surrounded_city or route_open_when_adjacent_city_is_allied or keeps_siege_degradation_deterministic'` (red phase via `PYTHONPATH=.` before `uv sync`, then green via `uv run`)
+- `uv sync --extra dev --frozen`
+- `uv run pytest -o addopts='-q --strict-config --strict-markers' tests/test_resolver.py`
+- `make format`
+- `make quality`
 
 ### Completion Notes List
 
-- _To be filled during implementation._
+- Added resolver-boundary siege regression coverage for full encirclement, allied-route exemption, and repeated-run/input-immutability behavior using canonical map city IDs.
+- Implemented siege-phase fortification degradation only, driven by canonical UK 1900 adjacency and current coalition membership from `MatchState`, with sorted iteration to preserve deterministic behavior independent of dict insertion order.
+- Verified the full quality gate after formatting; `make quality` passed with 92 tests passing and 97.17% total coverage.
 
 ### File List
 
+- `server/resolver.py`
+- `tests/test_resolver.py`
 - `_bmad-output/implementation-artifacts/9-2-degrade-besieged-fortifications-when-hostile-control-seals-every-adjacent-route.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ### Change Log
 
 - 2026-03-28 13:35 UTC: Drafted Story 9.2 for deterministic siege-phase fortification degradation.
+- 2026-03-28 14:05 UTC: Added failing resolver-boundary siege tests for surrounded, allied-route-open, and deterministic repeated-run behavior.
+- 2026-03-28 14:12 UTC: Implemented deterministic siege-phase fortification degradation from canonical adjacency and coalition ownership, then passed `make quality`.

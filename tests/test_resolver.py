@@ -385,6 +385,171 @@ def test_resolve_tick_keeps_fortification_upkeep_decay_deterministic() -> None:
     assert result.model_dump(mode="json") == repeated_result.model_dump(mode="json")
 
 
+def test_resolve_tick_degrades_fortification_for_fully_surrounded_city_during_siege_phase() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "edinburgh": CityState(
+                owner="player_1",
+                population=0,
+                resources=ResourceState(food=0, production=0, money=0),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=3),
+                garrison=0,
+                building_queue=[],
+            ),
+            "dundee": _city_state(owner="player_2"),
+            "glasgow": _city_state(owner="player_2"),
+            "newcastle": _city_state(owner="player_3"),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=0, production=0, money=10),
+                cities_owned=["edinburgh"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["dundee", "glasgow"],
+                alliance_id="alliance_blue",
+                is_eliminated=False,
+            ),
+            "player_3": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["newcastle"],
+                alliance_id="alliance_green",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert result.next_state.cities["edinburgh"].upgrades.fortification == 2
+    assert state.cities["edinburgh"].upgrades.fortification == 3
+    assert result.events[PHASE_ORDER.index("siege")] == TickPhaseEvent(
+        phase="siege",
+        event="phase.siege.completed",
+    )
+
+
+def test_resolve_tick_keeps_route_open_when_adjacent_city_is_allied() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "edinburgh": CityState(
+                owner="player_1",
+                population=0,
+                resources=ResourceState(food=0, production=0, money=0),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=2),
+                garrison=0,
+                building_queue=[],
+            ),
+            "dundee": _city_state(owner="player_2"),
+            "glasgow": _city_state(owner="player_3"),
+            "newcastle": _city_state(owner="player_4"),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=0, production=0, money=10),
+                cities_owned=["edinburgh"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["dundee"],
+                alliance_id="alliance_blue",
+                is_eliminated=False,
+            ),
+            "player_3": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["glasgow"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_4": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["newcastle"],
+                alliance_id="alliance_blue",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert result.next_state.cities["edinburgh"].upgrades.fortification == 2
+
+
+def test_resolve_tick_keeps_siege_degradation_deterministic_for_shuffled_city_order() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "newcastle": _city_state(owner="player_3"),
+            "edinburgh": CityState(
+                owner="player_1",
+                population=0,
+                resources=ResourceState(food=0, production=0, money=0),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=3),
+                garrison=0,
+                building_queue=[],
+            ),
+            "glasgow": _city_state(owner="player_2"),
+            "dundee": _city_state(owner="player_2"),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=0, production=0, money=10),
+                cities_owned=["edinburgh"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["glasgow", "dundee"],
+                alliance_id="alliance_blue",
+                is_eliminated=False,
+            ),
+            "player_3": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["newcastle"],
+                alliance_id="alliance_green",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    original_dump = deepcopy(state.model_dump(mode="json"))
+
+    result = resolve_tick(state, OrderBatch())
+    repeated_result = resolve_tick(state, OrderBatch())
+
+    assert state.model_dump(mode="json") == original_dump
+    assert result.model_dump(mode="json") == repeated_result.model_dump(mode="json")
+    assert result.next_state.cities["edinburgh"].upgrades.fortification == 2
+
+
 def test_resolve_tick_returns_copied_state_without_mutating_input() -> None:
     state = _match_state()
     original_dump = deepcopy(state.model_dump(mode="json"))

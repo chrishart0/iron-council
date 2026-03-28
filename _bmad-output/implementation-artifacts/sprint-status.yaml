@@ -47,5 +47,5 @@ development_status:
 
   epic-9: in-progress
   9-1-deduct-fortification-upkeep-and-degrade-unpaid-defenses-deterministically: done
-  9-2-degrade-besieged-fortifications-when-hostile-control-seals-every-adjacent-route: ready
+  9-2-degrade-besieged-fortifications-when-hostile-control-seals-every-adjacent-route: done
   epic-9-retrospective: optional
