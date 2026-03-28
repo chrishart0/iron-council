@@ -57,7 +57,7 @@ development_status:
 
   epic-12: in-progress
   12-1-add-a-local-support-services-stack-for-database-backed-development-and-validation: done
-  12-2-introduce-a-proper-database-migration-service-and-migration-driven-schema-lifecycle: drafted
+  12-2-introduce-a-proper-database-migration-service-and-migration-driven-schema-lifecycle: done
   12-3-add-deterministic-seed-reset-tooling-and-per-worktree-isolated-test-databases: drafted
   12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: drafted
 
