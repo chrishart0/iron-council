@@ -14,6 +14,7 @@ def project_agent_state(
     match_state: MatchState,
     *,
     player_id: str,
+    match_id: str | None = None,
     map_definition: MapDefinition | None = None,
 ) -> AgentStateProjection:
     if player_id not in match_state.players:
@@ -55,6 +56,7 @@ def project_agent_state(
 
     requesting_player = match_state.players[player_id]
     return AgentStateProjection(
+        match_id=match_id,
         tick=match_state.tick,
         player_id=player_id,
         resources=requesting_player.resources.model_copy(deep=True),
@@ -132,9 +134,11 @@ def _army_is_visible(
 ) -> bool:
     if army.owner in allied_player_ids:
         return True
-    if army.destination is None:
-        return False
-    return army.destination in visible_city_ids
+    if army.location in visible_city_ids:
+        return True
+    if army.destination in visible_city_ids:
+        return True
+    return False
 
 
 def _project_army(*, army: ArmyState, allied_player_ids: set[str]) -> VisibleArmyState:
