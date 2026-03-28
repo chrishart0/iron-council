@@ -1,0 +1,246 @@
+{
+  "map_id": "uk_1900",
+  "name": "United Kingdom 1900",
+  "cities": {
+    "london": {
+      "name": "London",
+      "region": "Southeast",
+      "primary_resource": "money",
+      "notes": "Highest money generation on the map. Economic capital.",
+      "position": { "x": 690, "y": 640 }
+    },
+    "birmingham": {
+      "name": "Birmingham",
+      "region": "Midlands",
+      "primary_resource": "production",
+      "notes": "Industrial heartland. High production output.",
+      "position": { "x": 520, "y": 500 }
+    },
+    "manchester": {
+      "name": "Manchester",
+      "region": "Northwest",
+      "primary_resource": "production",
+      "notes": "Textile and manufacturing center.",
+      "position": { "x": 470, "y": 390 }
+    },
+    "liverpool": {
+      "name": "Liverpool",
+      "region": "Northwest",
+      "primary_resource": "money",
+      "notes": "Major port. One of two Irish Sea crossing points.",
+      "position": { "x": 395, "y": 395 }
+    },
+    "leeds": {
+      "name": "Leeds",
+      "region": "Yorkshire",
+      "primary_resource": "production",
+      "notes": "Industrial hub connected to Midlands corridor.",
+      "position": { "x": 545, "y": 360 }
+    },
+    "sheffield": {
+      "name": "Sheffield",
+      "region": "Yorkshire",
+      "primary_resource": "production",
+      "notes": "Steel city. Strong production focus.",
+      "position": { "x": 560, "y": 415 }
+    },
+    "bristol": {
+      "name": "Bristol",
+      "region": "Southwest",
+      "primary_resource": "money",
+      "notes": "Western port. Trade gateway.",
+      "position": { "x": 380, "y": 610 }
+    },
+    "edinburgh": {
+      "name": "Edinburgh",
+      "region": "Scotland",
+      "primary_resource": "money",
+      "notes": "Scottish capital. Balanced economy.",
+      "position": { "x": 510, "y": 165 }
+    },
+    "glasgow": {
+      "name": "Glasgow",
+      "region": "Scotland",
+      "primary_resource": "production",
+      "notes": "Scottish industrial center.",
+      "position": { "x": 430, "y": 145 }
+    },
+    "newcastle": {
+      "name": "Newcastle",
+      "region": "Northeast",
+      "primary_resource": "production",
+      "notes": "Coal and shipbuilding. Northern frontier.",
+      "position": { "x": 615, "y": 250 }
+    },
+    "nottingham": {
+      "name": "Nottingham",
+      "region": "Midlands",
+      "primary_resource": "food",
+      "notes": "Agricultural surrounds with light industry.",
+      "position": { "x": 590, "y": 495 }
+    },
+    "leicester": {
+      "name": "Leicester",
+      "region": "Midlands",
+      "primary_resource": "food",
+      "notes": "Fertile midlands agriculture.",
+      "position": { "x": 610, "y": 535 }
+    },
+    "cardiff": {
+      "name": "Cardiff",
+      "region": "Wales",
+      "primary_resource": "production",
+      "notes": "Coal mining. Welsh stronghold.",
+      "position": { "x": 310, "y": 575 }
+    },
+    "swansea": {
+      "name": "Swansea",
+      "region": "Wales",
+      "primary_resource": "production",
+      "notes": "Copper and tin. Secondary Welsh city.",
+      "position": { "x": 255, "y": 585 }
+    },
+    "plymouth": {
+      "name": "Plymouth",
+      "region": "Southwest",
+      "primary_resource": "food",
+      "notes": "Naval port. Agricultural hinterland.",
+      "position": { "x": 190, "y": 715 }
+    },
+    "southampton": {
+      "name": "Southampton",
+      "region": "South",
+      "primary_resource": "money",
+      "notes": "Major shipping port.",
+      "position": { "x": 580, "y": 700 }
+    },
+    "portsmouth": {
+      "name": "Portsmouth",
+      "region": "South",
+      "primary_resource": "production",
+      "notes": "Naval dockyard. Military production.",
+      "position": { "x": 615, "y": 715 }
+    },
+    "bradford": {
+      "name": "Bradford",
+      "region": "Yorkshire",
+      "primary_resource": "production",
+      "notes": "Wool industry.",
+      "position": { "x": 520, "y": 345 }
+    },
+    "aberdeen": {
+      "name": "Aberdeen",
+      "region": "Scotland",
+      "primary_resource": "food",
+      "notes": "Fishing and agriculture. Remote northern city.",
+      "position": { "x": 625, "y": 60 }
+    },
+    "dundee": {
+      "name": "Dundee",
+      "region": "Scotland",
+      "primary_resource": "food",
+      "notes": "Jute and fishing. Eastern Scottish coast.",
+      "position": { "x": 575, "y": 120 }
+    },
+    "inverness": {
+      "name": "Inverness",
+      "region": "Highlands",
+      "primary_resource": "food",
+      "notes": "Remote. Agricultural. Highly defensible position.",
+      "position": { "x": 500, "y": 55 }
+    },
+    "belfast": {
+      "name": "Belfast",
+      "region": "Ireland",
+      "primary_resource": "production",
+      "notes": "Shipbuilding. Irish industrial center.",
+      "position": { "x": 270, "y": 245 },
+      "is_neutral": true,
+      "spawn_allowed": false
+    },
+    "dublin": {
+      "name": "Dublin",
+      "region": "Ireland",
+      "primary_resource": "money",
+      "notes": "Irish economic capital.",
+      "position": { "x": 220, "y": 335 },
+      "is_neutral": true,
+      "spawn_allowed": false
+    },
+    "cork": {
+      "name": "Cork",
+      "region": "Ireland",
+      "primary_resource": "food",
+      "notes": "Agricultural heartland of southern Ireland.",
+      "position": { "x": 150, "y": 455 },
+      "is_neutral": true,
+      "spawn_allowed": false
+    },
+    "galway": {
+      "name": "Galway",
+      "region": "Ireland",
+      "primary_resource": "food",
+      "notes": "Western Irish coast. Remote and defensible.",
+      "position": { "x": 95, "y": 360 },
+      "is_neutral": true,
+      "spawn_allowed": false
+    }
+  },
+  "edges": [
+    { "city_a": "london", "city_b": "birmingham", "distance_ticks": 2 },
+    { "city_a": "london", "city_b": "nottingham", "distance_ticks": 2 },
+    { "city_a": "london", "city_b": "leicester", "distance_ticks": 2 },
+    { "city_a": "london", "city_b": "southampton", "distance_ticks": 1 },
+    { "city_a": "london", "city_b": "portsmouth", "distance_ticks": 1 },
+    { "city_a": "london", "city_b": "bristol", "distance_ticks": 2 },
+    { "city_a": "birmingham", "city_b": "bristol", "distance_ticks": 2 },
+    { "city_a": "birmingham", "city_b": "cardiff", "distance_ticks": 2 },
+    { "city_a": "birmingham", "city_b": "liverpool", "distance_ticks": 2 },
+    { "city_a": "birmingham", "city_b": "manchester", "distance_ticks": 2 },
+    { "city_a": "birmingham", "city_b": "leeds", "distance_ticks": 2 },
+    { "city_a": "birmingham", "city_b": "sheffield", "distance_ticks": 1 },
+    { "city_a": "birmingham", "city_b": "nottingham", "distance_ticks": 1 },
+    { "city_a": "birmingham", "city_b": "leicester", "distance_ticks": 1 },
+    { "city_a": "manchester", "city_b": "liverpool", "distance_ticks": 1 },
+    { "city_a": "manchester", "city_b": "leeds", "distance_ticks": 1 },
+    { "city_a": "manchester", "city_b": "sheffield", "distance_ticks": 1 },
+    { "city_a": "manchester", "city_b": "bradford", "distance_ticks": 1 },
+    { "city_a": "manchester", "city_b": "glasgow", "distance_ticks": 3 },
+    { "city_a": "liverpool", "city_b": "bristol", "distance_ticks": 3 },
+    {
+      "city_a": "liverpool",
+      "city_b": "belfast",
+      "distance_ticks": 4,
+      "traversal_mode": "sea",
+      "has_landing_combat_penalty": true
+    },
+    { "city_a": "leeds", "city_b": "bradford", "distance_ticks": 1 },
+    { "city_a": "leeds", "city_b": "sheffield", "distance_ticks": 1 },
+    { "city_a": "leeds", "city_b": "nottingham", "distance_ticks": 2 },
+    { "city_a": "leeds", "city_b": "newcastle", "distance_ticks": 2 },
+    { "city_a": "sheffield", "city_b": "bradford", "distance_ticks": 1 },
+    { "city_a": "sheffield", "city_b": "nottingham", "distance_ticks": 1 },
+    { "city_a": "sheffield", "city_b": "leicester", "distance_ticks": 2 },
+    { "city_a": "bristol", "city_b": "cardiff", "distance_ticks": 1 },
+    { "city_a": "bristol", "city_b": "plymouth", "distance_ticks": 2 },
+    { "city_a": "bristol", "city_b": "southampton", "distance_ticks": 2 },
+    { "city_a": "edinburgh", "city_b": "glasgow", "distance_ticks": 1 },
+    { "city_a": "edinburgh", "city_b": "newcastle", "distance_ticks": 2 },
+    { "city_a": "edinburgh", "city_b": "dundee", "distance_ticks": 1 },
+    { "city_a": "glasgow", "city_b": "inverness", "distance_ticks": 3 },
+    { "city_a": "newcastle", "city_b": "dundee", "distance_ticks": 3 },
+    { "city_a": "newcastle", "city_b": "sheffield", "distance_ticks": 2 },
+    { "city_a": "nottingham", "city_b": "leicester", "distance_ticks": 1 },
+    { "city_a": "cardiff", "city_b": "swansea", "distance_ticks": 1 },
+    { "city_a": "cardiff", "city_b": "plymouth", "distance_ticks": 2 },
+    { "city_a": "southampton", "city_b": "portsmouth", "distance_ticks": 1 },
+    { "city_a": "bradford", "city_b": "newcastle", "distance_ticks": 2 },
+    { "city_a": "aberdeen", "city_b": "dundee", "distance_ticks": 1 },
+    { "city_a": "aberdeen", "city_b": "inverness", "distance_ticks": 2 },
+    { "city_a": "dundee", "city_b": "inverness", "distance_ticks": 2 },
+    { "city_a": "belfast", "city_b": "dublin", "distance_ticks": 2 },
+    { "city_a": "dublin", "city_b": "cork", "distance_ticks": 2 },
+    { "city_a": "dublin", "city_b": "galway", "distance_ticks": 2 },
+    { "city_a": "cork", "city_b": "galway", "distance_ticks": 3 }
+  ]
+}
