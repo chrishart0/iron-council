@@ -12,23 +12,151 @@ from server.models.domain import MatchStatus
 from server.models.state import MatchState
 
 
-@pytest.fixture
-def seeded_registry(representative_match_state_payload: dict[str, Any]) -> InMemoryMatchRegistry:
-    state_payload = deepcopy(representative_match_state_payload)
-    state_payload["armies"] = []
-    state_payload["players"] = {
-        "player-1": state_payload["players"].pop("player_uuid"),
-        "player-2": deepcopy(representative_match_state_payload["players"]["player_uuid"]),
+def _api_match_state_payload() -> dict[str, Any]:
+    return {
+        "tick": 142,
+        "cities": {
+            "london": {
+                "owner": "player-1",
+                "population": 12,
+                "resources": {"food": 3, "production": 2, "money": 8},
+                "upgrades": {"economy": 2, "military": 1, "fortification": 0},
+                "garrison": 15,
+                "building_queue": [{"type": "fortification", "tier": 1, "ticks_remaining": 3}],
+            },
+            "manchester": {
+                "owner": "player-2",
+                "population": 10,
+                "resources": {"food": 2, "production": 4, "money": 1},
+                "upgrades": {"economy": 0, "military": 1, "fortification": 0},
+                "garrison": 9,
+                "building_queue": [],
+            },
+            "birmingham": {
+                "owner": "player-3",
+                "population": 8,
+                "resources": {"food": 1, "production": 5, "money": 1},
+                "upgrades": {"economy": 0, "military": 0, "fortification": 1},
+                "garrison": 7,
+                "building_queue": [],
+            },
+            "leeds": {
+                "owner": "player-4",
+                "population": 7,
+                "resources": {"food": 1, "production": 3, "money": 1},
+                "upgrades": {"economy": 1, "military": 0, "fortification": 0},
+                "garrison": 11,
+                "building_queue": [],
+            },
+            "inverness": {
+                "owner": "player-5",
+                "population": 5,
+                "resources": {"food": 3, "production": 1, "money": 0},
+                "upgrades": {"economy": 0, "military": 2, "fortification": 0},
+                "garrison": 13,
+                "building_queue": [],
+            },
+        },
+        "armies": [
+            {
+                "id": "army-c",
+                "owner": "player-3",
+                "troops": 18,
+                "location": None,
+                "destination": "birmingham",
+                "path": ["birmingham"],
+                "ticks_remaining": 2,
+            },
+            {
+                "id": "army-a",
+                "owner": "player-2",
+                "troops": 14,
+                "location": None,
+                "destination": "leeds",
+                "path": ["leeds"],
+                "ticks_remaining": 1,
+            },
+            {
+                "id": "army-b",
+                "owner": "player-1",
+                "troops": 20,
+                "location": "london",
+                "destination": None,
+                "path": None,
+                "ticks_remaining": 0,
+            },
+            {
+                "id": "army-z",
+                "owner": "player-5",
+                "troops": 25,
+                "location": None,
+                "destination": "inverness",
+                "path": ["inverness"],
+                "ticks_remaining": 3,
+            },
+        ],
+        "players": {
+            "player-1": {
+                "resources": {"food": 120, "production": 85, "money": 200},
+                "cities_owned": ["london"],
+                "alliance_id": "alliance-red",
+                "is_eliminated": False,
+            },
+            "player-2": {
+                "resources": {"food": 90, "production": 70, "money": 110},
+                "cities_owned": ["manchester"],
+                "alliance_id": "alliance-red",
+                "is_eliminated": False,
+            },
+            "player-3": {
+                "resources": {"food": 75, "production": 65, "money": 80},
+                "cities_owned": ["birmingham"],
+                "alliance_id": None,
+                "is_eliminated": False,
+            },
+            "player-4": {
+                "resources": {"food": 60, "production": 55, "money": 70},
+                "cities_owned": ["leeds"],
+                "alliance_id": None,
+                "is_eliminated": False,
+            },
+            "player-5": {
+                "resources": {"food": 40, "production": 35, "money": 30},
+                "cities_owned": ["inverness"],
+                "alliance_id": None,
+                "is_eliminated": False,
+            },
+        },
+        "victory": {
+            "leading_alliance": "alliance-red",
+            "cities_held": 2,
+            "threshold": 13,
+            "countdown_ticks_remaining": None,
+        },
     }
-    state_payload["cities"]["london"]["owner"] = "player-1"
 
+
+def _army_by_id(payload: dict[str, Any], army_id: str) -> dict[str, Any]:
+    return next(army for army in payload["visible_armies"] if army["id"] == army_id)
+
+
+def _match_state_dump(
+    registry: InMemoryMatchRegistry, match_id: str = "match-alpha"
+) -> dict[str, Any]:
+    record = registry.get_match(match_id)
+    assert record is not None
+    return record.state.model_dump(mode="json")
+
+
+@pytest.fixture
+def seeded_registry() -> InMemoryMatchRegistry:
     registry = InMemoryMatchRegistry()
     registry.seed_match(
         MatchRecord(
             match_id="match-alpha",
             status=MatchStatus.ACTIVE,
             tick_interval_seconds=30,
-            state=MatchState.model_validate(state_payload),
+            state=MatchState.model_validate(_api_match_state_payload()),
         )
     )
     registry.seed_match(
@@ -38,7 +166,7 @@ def seeded_registry(representative_match_state_payload: dict[str, Any]) -> InMem
             tick_interval_seconds=45,
             state=MatchState.model_validate(
                 {
-                    **state_payload,
+                    **_api_match_state_payload(),
                     "tick": 7,
                 }
             ),
@@ -95,32 +223,67 @@ async def test_get_match_state_requires_player_id_and_returns_fog_filtered_paylo
 
     assert missing_player_response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
     assert response.status_code == HTTPStatus.OK
-    assert response.json() == {
+
+    payload = response.json()
+    assert payload["match_id"] == "match-alpha"
+    assert payload["tick"] == 142
+    assert payload["player_id"] == "player-1"
+    assert payload["resources"] == {"food": 120, "production": 85, "money": 200}
+    assert payload["alliance_id"] == "alliance-red"
+    assert payload["alliance_members"] == ["player-1", "player-2"]
+    assert payload["cities"]["london"]["visibility"] == "full"
+    assert payload["cities"]["manchester"]["visibility"] == "full"
+    assert payload["cities"]["birmingham"]["visibility"] == "partial"
+    assert payload["cities"]["birmingham"]["garrison"] == "unknown"
+    assert "inverness" not in payload["cities"]
+    assert _army_by_id(payload, "army-a")["visibility"] == "full"
+    assert _army_by_id(payload, "army-b")["visibility"] == "full"
+    assert _army_by_id(payload, "army-c")["visibility"] == "partial"
+    assert _army_by_id(payload, "army-c")["troops"] == "unknown"
+    assert not any(army["id"] == "army-z" for army in payload["visible_armies"])
+
+
+@pytest.mark.asyncio
+async def test_agent_happy_path_covers_list_state_submit_and_follow_up_read(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+    representative_order_payload: dict[str, Any],
+) -> None:
+    payload = deepcopy(representative_order_payload)
+    payload["match_id"] = "match-alpha"
+    payload["player_id"] = "player-1"
+    payload["tick"] = 142
+    payload["orders"]["movements"] = [{"army_id": "army-b", "destination": "birmingham"}]
+
+    async with app_client as client:
+        list_response = await client.get("/api/v1/matches")
+        initial_state_response = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            params={"player_id": "player-1"},
+        )
+        submit_response = await client.post("/api/v1/matches/match-alpha/orders", json=payload)
+        follow_up_state_response = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            params={"player_id": "player-1"},
+        )
+
+    assert list_response.status_code == HTTPStatus.OK
+    assert [match["match_id"] for match in list_response.json()["matches"]] == [
+        "match-alpha",
+        "match-beta",
+    ]
+    assert initial_state_response.status_code == HTTPStatus.OK
+    assert submit_response.status_code == HTTPStatus.ACCEPTED
+    assert submit_response.json() == {
+        "status": "accepted",
         "match_id": "match-alpha",
-        "tick": 142,
         "player_id": "player-1",
-        "resources": {"food": 120, "production": 85, "money": 200},
-        "cities": {
-            "london": {
-                "owner": "player-1",
-                "visibility": "full",
-                "population": 12,
-                "resources": {"food": 3, "production": 2, "money": 8},
-                "upgrades": {"economy": 2, "military": 1, "fortification": 0},
-                "garrison": 15,
-                "building_queue": [{"type": "fortification", "tier": 1, "ticks_remaining": 3}],
-            }
-        },
-        "visible_armies": [],
-        "alliance_id": None,
-        "alliance_members": ["player-1"],
-        "victory": {
-            "leading_alliance": None,
-            "cities_held": 13,
-            "threshold": 13,
-            "countdown_ticks_remaining": None,
-        },
+        "tick": 142,
+        "submission_index": 0,
     }
+    assert follow_up_state_response.status_code == HTTPStatus.OK
+    assert follow_up_state_response.json() == initial_state_response.json()
+    assert seeded_registry.list_order_submissions("match-alpha") == [payload]
 
 
 @pytest.mark.asyncio
@@ -161,9 +324,11 @@ async def test_get_match_state_exposes_agent_state_projection_in_openapi(
         response = await client.get("/openapi.json")
 
     assert response.status_code == HTTPStatus.OK
-    assert response.json()["paths"]["/api/v1/matches/{match_id}/state"]["get"]["responses"]["200"][
+    openapi = response.json()
+    assert openapi["paths"]["/api/v1/matches/{match_id}/state"]["get"]["responses"]["200"][
         "content"
     ]["application/json"]["schema"] == {"$ref": "#/components/schemas/AgentStateProjection"}
+    assert "match_id" in openapi["components"]["schemas"]["AgentStateProjection"]["required"]
 
 
 @pytest.mark.asyncio
@@ -195,6 +360,8 @@ async def test_submit_orders_accepts_valid_envelopes_and_records_them_determinis
     payload = deepcopy(representative_order_payload)
     payload["match_id"] = "match-alpha"
     payload["player_id"] = "player-1"
+    payload["tick"] = 142
+    payload["orders"]["movements"] = [{"army_id": "army-b", "destination": "birmingham"}]
 
     async with app_client as client:
         response = await client.post("/api/v1/matches/match-alpha/orders", json=payload)
@@ -219,11 +386,14 @@ async def test_submit_orders_preserves_submission_order_across_multiple_accepted
     first_payload = deepcopy(representative_order_payload)
     first_payload["match_id"] = "match-alpha"
     first_payload["player_id"] = "player-1"
+    first_payload["tick"] = 142
+    first_payload["orders"]["movements"] = [{"army_id": "army-b", "destination": "birmingham"}]
 
     second_payload = deepcopy(representative_order_payload)
     second_payload["match_id"] = "match-alpha"
     second_payload["player_id"] = "player-2"
-    second_payload["tick"] = 143
+    second_payload["tick"] = 142
+    second_payload["orders"]["movements"] = [{"army_id": "army-a", "destination": "leeds"}]
 
     async with app_client as client:
         first_response = await client.post("/api/v1/matches/match-alpha/orders", json=first_payload)
@@ -248,6 +418,7 @@ async def test_submit_orders_rejects_unknown_match_without_mutating_stored_submi
     payload = deepcopy(representative_order_payload)
     payload["match_id"] = "match-missing"
     payload["player_id"] = "player-1"
+    before_state = _match_state_dump(seeded_registry)
 
     async with app_client as client:
         response = await client.post("/api/v1/matches/match-missing/orders", json=payload)
@@ -260,6 +431,7 @@ async def test_submit_orders_rejects_unknown_match_without_mutating_stored_submi
         }
     }
     assert seeded_registry.list_order_submissions("match-alpha") == []
+    assert _match_state_dump(seeded_registry) == before_state
 
 
 @pytest.mark.asyncio
@@ -271,6 +443,7 @@ async def test_submit_orders_rejects_mismatched_match_id_without_mutating_stored
     payload = deepcopy(representative_order_payload)
     payload["match_id"] = "match-beta"
     payload["player_id"] = "player-1"
+    before_state = _match_state_dump(seeded_registry)
 
     async with app_client as client:
         response = await client.post("/api/v1/matches/match-alpha/orders", json=payload)
@@ -285,6 +458,34 @@ async def test_submit_orders_rejects_mismatched_match_id_without_mutating_stored
         }
     }
     assert seeded_registry.list_order_submissions("match-alpha") == []
+    assert _match_state_dump(seeded_registry) == before_state
+
+
+@pytest.mark.asyncio
+async def test_submit_orders_rejects_stale_tick_without_mutating_stored_submissions(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+    representative_order_payload: dict[str, Any],
+) -> None:
+    payload = deepcopy(representative_order_payload)
+    payload["match_id"] = "match-alpha"
+    payload["player_id"] = "player-1"
+    payload["tick"] = 141
+    payload["orders"]["movements"] = [{"army_id": "army-b", "destination": "birmingham"}]
+    before_state = _match_state_dump(seeded_registry)
+
+    async with app_client as client:
+        response = await client.post("/api/v1/matches/match-alpha/orders", json=payload)
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json() == {
+        "error": {
+            "code": "tick_mismatch",
+            "message": "Order payload tick '141' does not match current match tick '142'.",
+        }
+    }
+    assert seeded_registry.list_order_submissions("match-alpha") == []
+    assert _match_state_dump(seeded_registry) == before_state
 
 
 @pytest.mark.asyncio
@@ -296,6 +497,7 @@ async def test_submit_orders_rejects_unknown_player_without_mutating_stored_subm
     payload = deepcopy(representative_order_payload)
     payload["match_id"] = "match-alpha"
     payload["player_id"] = "player-missing"
+    before_state = _match_state_dump(seeded_registry)
 
     async with app_client as client:
         response = await client.post("/api/v1/matches/match-alpha/orders", json=payload)
@@ -308,3 +510,58 @@ async def test_submit_orders_rejects_unknown_player_without_mutating_stored_subm
         }
     }
     assert seeded_registry.list_order_submissions("match-alpha") == []
+    assert _match_state_dump(seeded_registry) == before_state
+
+
+@pytest.mark.asyncio
+async def test_submit_orders_rejects_malformed_payloads_with_validation_errors(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+    representative_order_payload: dict[str, Any],
+) -> None:
+    payload = deepcopy(representative_order_payload)
+    payload["match_id"] = "match-alpha"
+    payload["player_id"] = "player-1"
+    payload["tick"] = 142
+    payload["orders"]["recruitment"] = [{"city": "london", "troops": 0}]
+    before_state = _match_state_dump(seeded_registry)
+
+    async with app_client as client:
+        response = await client.post("/api/v1/matches/match-alpha/orders", json=payload)
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert response.json()["detail"][0]["loc"] == ["body", "orders", "recruitment", 0, "troops"]
+    assert seeded_registry.list_order_submissions("match-alpha") == []
+    assert _match_state_dump(seeded_registry) == before_state
+
+
+@pytest.mark.asyncio
+async def test_get_match_state_preserves_fog_boundaries_across_multiple_players(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        allied_response = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            params={"player_id": "player-1"},
+        )
+        enemy_response = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            params={"player_id": "player-3"},
+        )
+
+    assert allied_response.status_code == HTTPStatus.OK
+    assert enemy_response.status_code == HTTPStatus.OK
+
+    allied_payload = allied_response.json()
+    enemy_payload = enemy_response.json()
+
+    assert allied_payload["cities"]["manchester"]["visibility"] == "full"
+    assert allied_payload["cities"]["manchester"]["garrison"] == 9
+    assert enemy_payload["cities"]["manchester"]["visibility"] == "partial"
+    assert enemy_payload["cities"]["manchester"]["garrison"] == "unknown"
+    assert _army_by_id(allied_payload, "army-a")["visibility"] == "full"
+    assert _army_by_id(allied_payload, "army-a")["troops"] == 14
+    assert _army_by_id(enemy_payload, "army-a")["visibility"] == "partial"
+    assert _army_by_id(enemy_payload, "army-a")["troops"] == "unknown"
+    assert not any(army["id"] == "army-z" for army in allied_payload["visible_armies"])
+    assert not any(army["id"] == "army-z" for army in enemy_payload["visible_armies"])

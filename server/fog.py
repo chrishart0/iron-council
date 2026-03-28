@@ -14,7 +14,7 @@ def project_agent_state(
     match_state: MatchState,
     *,
     player_id: str,
-    match_id: str | None = None,
+    match_id: str,
     map_definition: MapDefinition | None = None,
 ) -> AgentStateProjection:
     if player_id not in match_state.players:

@@ -147,6 +147,7 @@ def test_project_agent_state_includes_owned_allied_and_adjacent_cities_with_mask
     projected = project_agent_state(
         _match_state(),
         player_id="player_1",
+        match_id="match-fog",
         map_definition=_map_definition(),
     )
 
@@ -170,6 +171,7 @@ def test_project_agent_state_keeps_exact_self_and_allied_armies_and_masks_visibl
     projected = project_agent_state(
         _match_state(),
         player_id="player_1",
+        match_id="match-fog",
         map_definition=_map_definition(),
     )
 
@@ -205,6 +207,7 @@ def test_project_agent_state_includes_stationary_enemy_army_in_visible_city() ->
     projected = project_agent_state(
         match_state,
         player_id="player_1",
+        match_id="match-fog",
         map_definition=_map_definition(),
     )
 

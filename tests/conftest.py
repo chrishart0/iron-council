@@ -1,6 +1,17 @@
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def reset_default_app_registry() -> Iterator[None]:
+    from server.agent_registry import InMemoryMatchRegistry
+    from server.main import app
+
+    app.state.match_registry = InMemoryMatchRegistry()
+    yield
+    app.state.match_registry = InMemoryMatchRegistry()
 
 
 @pytest.fixture

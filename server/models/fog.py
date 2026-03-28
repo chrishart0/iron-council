@@ -33,7 +33,7 @@ class VisibleArmyState(StrictModel):
 
 
 class AgentStateProjection(StrictModel):
-    match_id: str | None = None
+    match_id: str
     tick: int
     player_id: str
     resources: ResourceState

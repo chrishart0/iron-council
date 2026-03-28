@@ -1,6 +1,6 @@
 # Story 11.4: Add critical API end-to-end tests for agent gameplay journeys
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -16,18 +16,18 @@ So that the first agent workflows are validated through the actual FastAPI bound
 
 ## Tasks / Subtasks
 
-- [ ] Define the minimum critical API journeys. (AC: 1, 2, 3)
-  - [ ] Cover list -> state poll -> order submit -> follow-up read as the core happy path.
-  - [ ] Cover unknown match/player IDs and mismatched order-envelope cases.
-  - [ ] Cover at least one multi-player visibility boundary check.
-- [ ] Implement end-to-end tests against the real FastAPI app boundary. (AC: 1, 2, 3)
-  - [ ] Seed the in-memory registry/reset state in a test-safe way with no cross-test leakage.
-  - [ ] Prefer API-contract assertions on status codes and JSON payloads over handler internals.
-  - [ ] Keep test flows deterministic and easy to read.
-- [ ] Wire the suite into normal verification. (AC: 1, 2, 3)
-  - [ ] Ensure the e2e tests can be run as a focused target and as part of broader quality checks.
-  - [ ] Verify the suite remains lightweight enough for regular development use.
-  - [ ] Re-run the repository quality gate after the e2e suite lands.
+- [x] Define the minimum critical API journeys. (AC: 1, 2, 3)
+  - [x] Cover list -> state poll -> order submit -> follow-up read as the core happy path.
+  - [x] Cover unknown match/player IDs and mismatched order-envelope cases.
+  - [x] Cover at least one multi-player visibility boundary check.
+- [x] Implement end-to-end tests against the real FastAPI app boundary. (AC: 1, 2, 3)
+  - [x] Seed the in-memory registry/reset state in a test-safe way with no cross-test leakage.
+  - [x] Prefer API-contract assertions on status codes and JSON payloads over handler internals.
+  - [x] Keep test flows deterministic and easy to read.
+- [x] Wire the suite into normal verification. (AC: 1, 2, 3)
+  - [x] Ensure the e2e tests can be run as a focused target and as part of broader quality checks.
+  - [x] Verify the suite remains lightweight enough for regular development use.
+  - [x] Re-run the repository quality gate after the e2e suite lands.
 
 ## Dev Notes
 
@@ -46,20 +46,35 @@ So that the first agent workflows are validated through the actual FastAPI bound
 
 ### Agent Model Used
 
-_TBD_
+GPT-5 Codex
 
 ### Debug Log References
 
-- _TBD_
+- Red phase: `uv run --extra dev pytest --no-cov tests/api/test_agent_api.py tests/api/test_health.py tests/api/test_metadata.py` failed because `AgentStateProjection` still exposed optional `match_id` in OpenAPI and stale tick submissions were still accepted.
+- Focused verification: `uv run --extra dev pytest --no-cov tests/api/test_agent_api.py tests/api/test_health.py tests/api/test_metadata.py tests/test_fog.py`
+- Formatting: `make format`
+- Quality gate: `make quality`
 
 ### Completion Notes List
 
-- _TBD_
+- Reworked the API-boundary match fixture into a richer multi-player scenario so tests now cover list -> fog-filtered state poll -> order submit -> follow-up read through the real FastAPI surface.
+- Added API-level rejection coverage for unknown match/player IDs, route/body match mismatches, stale tick submissions, and malformed request validation without mutating stored submissions.
+- Tightened the API state projection contract by making `match_id` required in `AgentStateProjection` and kept fog projection callers explicit about the match context.
+- Added an autouse test fixture that resets the default in-memory registry around each test so FastAPI app state cannot leak across test cases.
+- Kept runtime light by reusing the in-memory registry and a focused seeded match fixture; the targeted `--no-cov` suite completes in well under a second.
 
 ### File List
 
-- _TBD_
+- `_bmad-output/implementation-artifacts/11-4-add-critical-api-end-to-end-tests-for-agent-gameplay-journeys.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `server/fog.py`
+- `server/main.py`
+- `server/models/fog.py`
+- `tests/api/test_agent_api.py`
+- `tests/conftest.py`
+- `tests/test_fog.py`
 
 ### Change Log
 
 - 2026-03-28 14:40 UTC: Drafted Story 11.4 for critical API end-to-end gameplay journeys.
+- 2026-03-28 16:10 UTC: Added narrow API journey coverage, rejected stale tick submissions, tightened the state projection contract, isolated default registry state between tests, and re-ran the focused suite plus `make quality`.

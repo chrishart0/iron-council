@@ -138,6 +138,15 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                 code="player_not_found",
                 message=f"Player '{envelope.player_id}' was not found in match '{match_id}'.",
             )
+        if envelope.tick != record.state.tick:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="tick_mismatch",
+                message=(
+                    f"Order payload tick '{envelope.tick}' does not match current match tick "
+                    f"'{record.state.tick}'."
+                ),
+            )
 
         submission_index = registry.record_submission(match_id=match_id, envelope=envelope)
         return OrderAcceptanceResponse(
