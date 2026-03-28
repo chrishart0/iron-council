@@ -474,6 +474,64 @@ def test_resolve_tick_build_phase_is_deterministic_and_keeps_input_unmutated() -
     assert result.next_state.players["player_1"].resources.production == 21
 
 
+def test_resolve_tick_build_phase_blocks_same_track_upgrade_from_phase_start_queue() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": CityState(
+                owner="player_1",
+                population=1,
+                resources=ResourceState(food=1, production=1, money=1),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
+                garrison=5,
+                building_queue=[
+                    BuildingQueueItem(
+                        type=UpgradeTrack.ECONOMY,
+                        tier=FortificationTier.TRENCHES,
+                        ticks_remaining=1,
+                    )
+                ],
+            )
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=30, money=10),
+                cities_owned=["alpha"],
+                alliance_id=None,
+                is_eliminated=False,
+            )
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=1,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(
+        state,
+        OrderBatch(
+            upgrades=[
+                UpgradeOrder(
+                    city="alpha",
+                    track=UpgradeTrack.ECONOMY,
+                    target_tier=FortificationTier.BUNKERS,
+                )
+            ]
+        ),
+    )
+
+    assert result.next_state.cities["alpha"].upgrades == CityUpgradeState(
+        economy=1,
+        military=0,
+        fortification=0,
+    )
+    assert result.next_state.cities["alpha"].building_queue == []
+    assert result.next_state.players["player_1"].resources.production == 31
+
+
 def test_resolve_tick_hands_neutral_city_to_single_surviving_occupier_after_combat() -> None:
     state = MatchState(
         tick=5,

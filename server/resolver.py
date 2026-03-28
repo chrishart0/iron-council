@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import Literal
 
 from server.data.maps import load_uk_1900_map
-from server.models.domain import StrictModel
+from server.models.domain import StrictModel, UpgradeTrack
 from server.models.orders import MovementOrder, OrderBatch, UpgradeOrder
 from server.models.state import ArmyState, BuildingQueueItem, CityState, MatchState
 from server.order_validation import UPGRADE_COSTS
@@ -112,8 +112,16 @@ def _resolve_resource_phase(
 
 
 def _resolve_build_phase(match_state: MatchState, validated_orders: OrderBatch) -> TickPhaseOutcome:
+    queued_tracks_at_phase_start: dict[str, set[UpgradeTrack]] = {
+        city_id: {queue_item.type for queue_item in city_state.building_queue}
+        for city_id, city_state in match_state.cities.items()
+    }
     _advance_build_queues(match_state)
-    _start_upgrade_orders(match_state, validated_orders.upgrades)
+    _start_upgrade_orders(
+        match_state,
+        validated_orders.upgrades,
+        queued_tracks_at_phase_start=queued_tracks_at_phase_start,
+    )
     return _complete_phase(match_state, validated_orders, "build")
 
 
@@ -460,13 +468,18 @@ def _advance_build_queues(match_state: MatchState) -> None:
         city_state.building_queue = remaining_queue
 
 
-def _start_upgrade_orders(match_state: MatchState, upgrade_orders: list[UpgradeOrder]) -> None:
+def _start_upgrade_orders(
+    match_state: MatchState,
+    upgrade_orders: list[UpgradeOrder],
+    *,
+    queued_tracks_at_phase_start: dict[str, set[UpgradeTrack]],
+) -> None:
     for order in upgrade_orders:
         city_state = match_state.cities.get(order.city)
         if city_state is None or city_state.owner is None:
             continue
 
-        if any(queue_item.type == order.track for queue_item in city_state.building_queue):
+        if order.track in queued_tracks_at_phase_start.get(order.city, set()):
             continue
 
         player_state = match_state.players.get(city_state.owner)

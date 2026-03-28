@@ -54,6 +54,9 @@ GPT-5 Codex
 - GREEN (focused TDD): `uv run pytest tests/test_resolver.py -k 'build_phase' --override-ini addopts='-q --strict-config --strict-markers'`
 - Targeted verification: `uv run pytest tests/test_resolver.py --override-ini addopts='-q --strict-config --strict-markers'`
 - Quality gate: `make quality`
+- RED (follow-up): `uv run pytest tests/test_resolver.py -k 'phase_starts_with_conflicting_queue' --override-ini addopts='-q --strict-config --strict-markers'` -> failed because the same-track upgrade order started after queue advancement removed the completing item; the regression test was later renamed for lint compliance after the red-phase failure was captured.
+- GREEN (follow-up focused): `uv run pytest tests/test_resolver.py -k 'build_phase' --override-ini addopts='-q --strict-config --strict-markers'`
+- Quality gate (follow-up): `make quality`
 
 ### Completion Notes List
 
@@ -62,6 +65,8 @@ GPT-5 Codex
 - Reused `server.order_validation.UPGRADE_COSTS` for production deductions instead of duplicating pricing logic.
 - Kept build durations explicit and simple as tier-based tick counts for this story, without adding speculative production-speed or parallel-system behavior.
 - Preserved resolver purity and the existing `phase.build.completed` event contract.
+- Follow-up fix: same-track upgrade conflicts are now evaluated against the queue snapshot captured at the start of the build phase, so a completing queue item still blocks a new same-track order from starting in that tick.
+- Added a resolver-boundary regression proving an accepted same-track upgrade order does not start in the same tick when the city began the build phase with an in-progress queue item on that track.
 
 ### File List
 
@@ -74,3 +79,4 @@ GPT-5 Codex
 
 - 2026-03-28 12:24 UTC: Drafted Story 8.1 for deterministic build-queue progression and city-upgrade completion.
 - 2026-03-28 12:24 UTC: Implemented deterministic build-phase upgrade queue progression/completion, added resolver-boundary coverage, and verified with `make quality`.
+- 2026-03-28 12:24 UTC: Patched same-track build-phase conflict resolution to use the phase-start queue snapshot, added a resolver-boundary regression for the completion boundary, and re-verified with `make quality`.
