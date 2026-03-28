@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import lru_cache
 from typing import Literal
 
+from server.data.maps import load_uk_1900_map
 from server.models.domain import StrictModel
-from server.models.orders import OrderBatch
+from server.models.orders import MovementOrder, OrderBatch
 from server.models.state import CityState, MatchState
 
 RESOURCE_FIELDS: tuple[str, str, str] = ("food", "production", "money")
@@ -108,6 +110,8 @@ def _resolve_build_phase(match_state: MatchState, validated_orders: OrderBatch) 
 def _resolve_movement_phase(
     match_state: MatchState, validated_orders: OrderBatch
 ) -> TickPhaseOutcome:
+    _advance_transit_armies(match_state)
+    _start_movement_orders(match_state, validated_orders.movements)
     return _complete_phase(match_state, validated_orders, "movement")
 
 
@@ -167,6 +171,49 @@ def _city_resource_yield(city_state: CityState) -> dict[str, int]:
             else resource_amount
         )
         for resource_name, resource_amount in base_resources.items()
+    }
+
+
+def _advance_transit_armies(match_state: MatchState) -> None:
+    for army in match_state.armies:
+        if army.destination is None:
+            continue
+
+        army.ticks_remaining -= 1
+        if army.ticks_remaining == 0:
+            army.location = army.destination
+            army.destination = None
+            army.path = None
+
+
+def _start_movement_orders(match_state: MatchState, movement_orders: list[MovementOrder]) -> None:
+    if not movement_orders:
+        return
+
+    armies_by_id = {army.id: army for army in match_state.armies}
+    edge_distances = _edge_distance_by_route()
+
+    for order in movement_orders:
+        army = armies_by_id.get(order.army_id)
+        if army is None or army.location is None or army.destination is not None:
+            continue
+
+        route = frozenset((army.location, order.destination))
+        distance = edge_distances.get(route)
+        if distance is None:
+            continue
+
+        army.location = None
+        army.destination = order.destination
+        army.path = [order.destination]
+        army.ticks_remaining = distance
+
+
+@lru_cache(maxsize=1)
+def _edge_distance_by_route() -> dict[frozenset[str], int]:
+    return {
+        frozenset((edge.city_a, edge.city_b)): edge.distance_ticks
+        for edge in load_uk_1900_map().edges
     }
 
 

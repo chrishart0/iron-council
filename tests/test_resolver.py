@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from server.models.orders import OrderBatch
+from server.models.orders import MovementOrder, OrderBatch
 from server.models.state import (
     ArmyState,
     CityState,
@@ -254,3 +254,94 @@ def test_resolve_tick_is_deterministic_for_same_state_and_orders() -> None:
     repeated_result = resolve_tick(state, orders)
 
     assert result.model_dump(mode="json") == repeated_result.model_dump(mode="json")
+
+
+def test_resolve_tick_advances_transit_arrivals_and_starts_new_one_edge_marches() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "london": _city_state(owner="player_1"),
+            "birmingham": _city_state(owner=None),
+            "southampton": _city_state(owner="player_1"),
+        },
+        armies=[
+            ArmyState(
+                id="marching_army",
+                owner="player_1",
+                troops=8,
+                location=None,
+                destination="birmingham",
+                path=["birmingham"],
+                ticks_remaining=2,
+            ),
+            ArmyState(
+                id="arriving_army",
+                owner="player_1",
+                troops=4,
+                location=None,
+                destination="southampton",
+                path=["southampton"],
+                ticks_remaining=1,
+            ),
+            ArmyState(
+                id="stationed_army",
+                owner="player_1",
+                troops=6,
+                location="london",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=30, production=20, money=30),
+                cities_owned=["london", "southampton"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            )
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    original_dump = deepcopy(state.model_dump(mode="json"))
+    orders = OrderBatch(
+        movements=[MovementOrder(army_id="stationed_army", destination="birmingham")]
+    )
+
+    result = resolve_tick(state, orders)
+
+    assert state.model_dump(mode="json") == original_dump
+    armies_by_id = {army.id: army for army in result.next_state.armies}
+
+    assert armies_by_id["marching_army"] == ArmyState(
+        id="marching_army",
+        owner="player_1",
+        troops=8,
+        location=None,
+        destination="birmingham",
+        path=["birmingham"],
+        ticks_remaining=1,
+    )
+    assert armies_by_id["arriving_army"] == ArmyState(
+        id="arriving_army",
+        owner="player_1",
+        troops=4,
+        location="southampton",
+        destination=None,
+        path=None,
+        ticks_remaining=0,
+    )
+    assert armies_by_id["stationed_army"] == ArmyState(
+        id="stationed_army",
+        owner="player_1",
+        troops=6,
+        location=None,
+        destination="birmingham",
+        path=["birmingham"],
+        ticks_remaining=2,
+    )

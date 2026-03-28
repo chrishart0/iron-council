@@ -7,7 +7,7 @@ from copy import deepcopy
 
 import pytest
 from server import PHASE_ORDER, TickPhaseEvent, TickPhaseMetadata, simulate_ticks
-from server.models.orders import OrderBatch
+from server.models.orders import MovementOrder, OrderBatch
 from server.models.state import (
     ArmyState,
     CityState,
@@ -183,3 +183,57 @@ def test_simulate_ticks_runs_without_importing_external_infrastructure(
 
     assert simulation.final_state.tick == 6
     assert attempted_imports == []
+
+
+def test_simulate_ticks_is_deterministic_for_movement_transit_progression() -> None:
+    starting_state = MatchState(
+        tick=5,
+        cities={
+            "london": _city_state(owner="player_1"),
+            "birmingham": _city_state(owner=None),
+        },
+        armies=[
+            ArmyState(
+                id="army_1",
+                owner="player_1",
+                troops=8,
+                location="london",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            )
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=30, production=20, money=30),
+                cities_owned=["london"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            )
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    original_dump = deepcopy(starting_state.model_dump(mode="json"))
+    orders = OrderBatch(movements=[MovementOrder(army_id="army_1", destination="birmingham")])
+
+    simulation = simulate_ticks(starting_state, ticks=3, orders=orders)
+    repeated_simulation = simulate_ticks(starting_state, ticks=3, orders=orders)
+
+    assert starting_state.model_dump(mode="json") == original_dump
+    assert simulation.model_dump(mode="json") == repeated_simulation.model_dump(mode="json")
+    assert [tick.snapshot.armies[0].ticks_remaining for tick in simulation.ticks] == [2, 1, 0]
+    assert [tick.snapshot.armies[0].location for tick in simulation.ticks] == [
+        None,
+        None,
+        "birmingham",
+    ]
+    assert [tick.snapshot.armies[0].destination for tick in simulation.ticks] == [
+        "birmingham",
+        "birmingham",
+        None,
+    ]

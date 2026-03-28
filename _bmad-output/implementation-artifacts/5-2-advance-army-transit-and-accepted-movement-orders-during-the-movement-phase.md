@@ -1,6 +1,6 @@
 # Story 5.2: Advance army transit and accepted movement orders during the movement phase
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -16,17 +16,17 @@ so that headless simulations can model travel time and arrivals across the map g
 
 ## Tasks / Subtasks
 
-- [ ] Add focused movement-phase behavior coverage before implementation. (AC: 1, 2, 3)
-  - [ ] Cover decremented transit counters and arrival state transitions.
-  - [ ] Cover starting new marches from accepted `OrderBatch.movements`.
-  - [ ] Cover deterministic repeated resolution from identical inputs.
-- [ ] Implement movement progression in the resolver pipeline. (AC: 1, 2, 3)
-  - [ ] Reuse the canonical UK 1900 map data to derive edge distances.
-  - [ ] Start only one-edge marches consistent with current order-validation rules.
-  - [ ] Preserve the stable movement-phase event contract after applying state changes.
-- [ ] Re-verify resolver and simulation behavior after merge. (AC: 1, 2, 3)
-  - [ ] Re-run focused resolver and simulation coverage.
-  - [ ] Re-run the repository quality gate.
+- [x] Add focused movement-phase behavior coverage before implementation. (AC: 1, 2, 3)
+  - [x] Cover decremented transit counters and arrival state transitions.
+  - [x] Cover starting new marches from accepted `OrderBatch.movements`.
+  - [x] Cover deterministic repeated resolution from identical inputs.
+- [x] Implement movement progression in the resolver pipeline. (AC: 1, 2, 3)
+  - [x] Reuse the canonical UK 1900 map data to derive edge distances.
+  - [x] Start only one-edge marches consistent with current order-validation rules.
+  - [x] Preserve the stable movement-phase event contract after applying state changes.
+- [x] Re-verify resolver and simulation behavior after merge. (AC: 1, 2, 3)
+  - [x] Re-run focused resolver and simulation coverage.
+  - [x] Re-run the repository quality gate.
 
 ## Dev Notes
 
@@ -44,20 +44,32 @@ so that headless simulations can model travel time and arrivals across the map g
 
 ### Agent Model Used
 
-_OpenAI Codex CLI (`codex --yolo exec` recommended in this environment)_
+OpenAI Codex CLI (`codex --yolo exec` in a dedicated git worktree)
 
 ### Debug Log References
 
-- _To be filled during implementation._
+- RED evidence: `source ../iron-counsil-story-5-1/.venv/bin/activate && python -m pytest --no-cov tests/test_resolver.py -q -k 'advances_transit'`
+- RED evidence: `source ../iron-counsil-story-5-1/.venv/bin/activate && python -m pytest --no-cov tests/test_simulation.py -q -k 'movement_transit_progression'`
+- Focused green verification: `source .venv/bin/activate && pytest --no-cov tests/test_resolver.py tests/test_simulation.py -q`
+- Full suite: `source .venv/bin/activate && pytest tests/ -q`
+- Quality gate: `source .venv/bin/activate && make quality`
 
 ### Completion Notes List
 
-- _To be filled during implementation._
+- Added behavior-first movement-phase regression coverage at the resolver boundary for in-transit decrementing, arrival normalization, and one-edge move startup from accepted movement orders.
+- Added simulation coverage proving repeated runs from identical starting state and movement orders remain deterministic while leaving the caller-owned `MatchState` unchanged.
+- Implemented narrow movement-phase logic in `server.resolver` that first advances existing transit armies, then starts new one-edge marches using canonical UK 1900 edge distances.
+- Preserved the existing `phase.movement.completed` event contract and intentionally left contested arrival, combat, ownership transfer, and multi-edge pathfinding out of scope.
+- Synced the local `.venv` with `uv sync --extra dev --frozen` after the first `make quality` run exposed missing dev tools in this worktree, then re-ran the required checks successfully.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/5-2-advance-army-transit-and-accepted-movement-orders-during-the-movement-phase.md`
+- `server/resolver.py`
+- `tests/test_resolver.py`
+- `tests/test_simulation.py`
 
 ### Change Log
 
 - Created Story 5.2 implementation artifact.
+- 2026-03-28 09:35 UTC: Implemented deterministic movement-phase transit progression and one-edge march startup, added resolver/simulation regression coverage, and marked Story 5.2 complete.
