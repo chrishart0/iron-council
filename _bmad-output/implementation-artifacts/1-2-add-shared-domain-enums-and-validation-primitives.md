@@ -1,6 +1,6 @@
 # Story 1.2: Add shared domain enums and validation primitives
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -17,18 +17,18 @@ so that future map, initialization, and resolver logic can share stable identifi
 
 ## Tasks / Subtasks
 
-- [ ] Add a shared domain module for enums and typed literals. (AC: 1)
-  - [ ] Create `server/models/domain.py` or equivalent.
-  - [ ] Define shared identifiers for resources, match status, upgrade tracks, and fortification tiers.
-- [ ] Add reusable validation primitives. (AC: 2)
-  - [ ] Create constrained aliases or helper types for non-negative integers and positive tick durations.
-  - [ ] Keep the helpers small and Pydantic-v2-friendly.
-- [ ] Refactor existing model contracts to use the shared definitions. (AC: 3)
-  - [ ] Update `server/models/state.py` and `server/models/orders.py`.
-  - [ ] Preserve current JSON field names and accepted payloads.
-- [ ] Extend tests. (AC: 4)
-  - [ ] Add tests for enum serialization in representative state/order payloads.
-  - [ ] Add a negative test proving a shared validation primitive rejects invalid input.
+- [x] Add a shared domain module for enums and typed literals. (AC: 1)
+  - [x] Create `server/models/domain.py` or equivalent.
+  - [x] Define shared identifiers for resources, match status, upgrade tracks, and fortification tiers.
+- [x] Add reusable validation primitives. (AC: 2)
+  - [x] Create constrained aliases or helper types for non-negative integers and positive tick durations.
+  - [x] Keep the helpers small and Pydantic-v2-friendly.
+- [x] Refactor existing model contracts to use the shared definitions. (AC: 3)
+  - [x] Update `server/models/state.py` and `server/models/orders.py`.
+  - [x] Preserve current JSON field names and accepted payloads.
+- [x] Extend tests. (AC: 4)
+  - [x] Add tests for enum serialization in representative state/order payloads.
+  - [x] Add a negative test proving a shared validation primitive rejects invalid input.
 
 ## Dev Notes
 
@@ -56,12 +56,28 @@ OpenAI Codex CLI (`codex --yolo exec` recommended if workspace sandboxing blocks
 
 ### Debug Log References
 
-- To be filled during implementation.
+- `uv run pytest -q -o addopts='' tests/test_orders.py tests/test_state.py` failed first because order serialization leaked internal `type` discriminator fields into the external payload contract.
+- Updated `server/models/orders.py` to keep the discriminators internal-only during serialization, aligned `server/models/domain.py` with the canonical match-status and fortification vocabulary, and tightened queue durations in `server/models/state.py` to use a positive tick-duration primitive.
+- `uv run pytest -q -o addopts='' tests/test_orders.py tests/test_state.py` passed after the model-layer refactor and test adjustments.
+- `uv run ruff format server tests` reformatted one test file after `make quality` first failed at `ruff format --check`.
+- `make quality` then passed end-to-end, including Ruff, mypy, pytest, and the repo coverage gate.
 
 ### Completion Notes List
 
-- To be filled during implementation.
+- Added `server/models/domain.py` with shared `ResourceType`, `MatchStatus`, `UpgradeTrack`, `FortificationTier`, and reusable constrained aliases for counts and tick durations.
+- Refined the bounded model layer under `server/models/` so state/order contracts consume the shared primitives while preserving JSON field names and serialized values.
+- Kept external payload compatibility intact for representative state and order payloads, including enum-backed serialization to existing string/int values.
+- Added fixture-backed tests covering state/order round-trip serialization plus a representative `NonNegativeCount` validation failure.
+- Expanded the local quality harness to lint, type-check, and collect the top-level `tests/` suite so `make quality` exercises the new model-layer coverage.
 
 ### File List
 
-- To be filled during implementation.
+- `Makefile`
+- `pyproject.toml`
+- `server/models/__init__.py`
+- `server/models/domain.py`
+- `server/models/orders.py`
+- `server/models/state.py`
+- `tests/conftest.py`
+- `tests/test_orders.py`
+- `tests/test_state.py`

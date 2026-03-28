@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 UV ?= uv
-SOURCE_DIRS := server tests/api
+SOURCE_DIRS := server tests
 
 .DEFAULT_GOAL := help
 
