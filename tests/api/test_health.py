@@ -2,7 +2,6 @@ from http import HTTPStatus
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-
 from server.main import app
 
 

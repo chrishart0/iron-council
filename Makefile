@@ -1,16 +1,40 @@
-.PHONY: install-dev format lint test quality
+SHELL := /bin/bash
+UV ?= uv
+SOURCE_DIRS := server tests/api
 
-install-dev:
-	uv sync --extra dev
+.DEFAULT_GOAL := help
 
-format:
-	uv run ruff format server tests
+.PHONY: help setup install install-dev hooks format format-check lint test pre-commit quality ci
 
-lint:
-	uv run ruff check server tests
-	uv run mypy server tests
+help: ## Show the available developer workflow commands.
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-14s %s\n", $$1, $$2}'
 
-test:
-	uv run pytest -q
+setup: install hooks ## Install dependencies and git hooks.
 
-quality: format lint test
+install: ## Sync the locked development environment.
+	$(UV) sync --extra dev --frozen
+
+install-dev: install ## Backwards-compatible alias for install.
+
+hooks: ## Install the pre-commit and pre-push hooks.
+	$(UV) run pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push
+
+format: ## Apply formatting fixes.
+	$(UV) run ruff format $(SOURCE_DIRS)
+
+format-check: ## Verify formatting without changing files.
+	$(UV) run ruff format --check $(SOURCE_DIRS)
+
+lint: ## Run linting and static type checks.
+	$(UV) run ruff check $(SOURCE_DIRS)
+	$(UV) run mypy $(SOURCE_DIRS)
+
+test: ## Run the behavior-first API test suite.
+	$(UV) run pytest
+
+pre-commit: ## Run the repository hooks across all files.
+	$(UV) run pre-commit run --all-files --show-diff-on-failure
+
+quality: format-check lint test ## Run the local quality gate.
+
+ci: pre-commit quality ## Run the CI quality gate locally.

@@ -1,14 +1,39 @@
+minimum_pre_commit_version: 4.0.0
+default_install_hook_types: [pre-commit, pre-push]
+exclude: "^(_bmad|_bmad-output|\\.agents)/"
+
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=512"]
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: trailing-whitespace
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.12
     hooks:
       - id: ruff-check
+        args: ["--fix"]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.17.1
+  - repo: local
     hooks:
       - id: mypy
-        additional_dependencies:
-          - fastapi>=0.116,<1.0
-
+        name: mypy
+        entry: uv run mypy server tests/api
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: pytest
+        name: pytest
+        entry: uv run pytest -q
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

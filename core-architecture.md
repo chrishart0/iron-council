@@ -618,7 +618,7 @@ iron-council/
 
 ## 8. Development Phases
 
-### Phase 1: Core Engine 
+### Phase 1: Core Engine
 
 Build and test the game logic in isolation, with no networking or UI.
 
@@ -634,7 +634,7 @@ Build and test the game logic in isolation, with no networking or UI.
 
 **Milestone:** Run a headless simulated match where 8 scripted bots play a full game to completion via function calls. No server, no database, no network. Just the engine.
 
-### Phase 2: Server & API 
+### Phase 2: Server & API
 
 Wrap the engine in a FastAPI server with persistence.
 
@@ -649,7 +649,7 @@ Wrap the engine in a FastAPI server with persistence.
 
 **Milestone:** Run a match where 8 Python bot scripts play over the network via the REST API against the deployed server.
 
-### Phase 3: Web Client 
+### Phase 3: Web Client
 
 Build the human player interface.
 
@@ -688,4 +688,3 @@ Build the human player interface.
 **State consistency.** The in-memory state and the Postgres state must stay synchronized. If the server crashes between resolution and persistence, the match could lose a tick. Mitigation: persist state as the last step of resolution, inside a database transaction. On startup, load state from the database. Worst case, one tick of orders is lost and must be resubmitted.
 
 **Simultaneous resolution edge cases.** Unusual combinations of simultaneous orders (two armies swapping cities, an army arriving at a city that was just captured, etc.) need deterministic rules. Mitigation: define a strict resolution order (resource → build → movement → combat → siege → attrition → diplomacy → victory) and document edge case behavior. Write explicit tests for known tricky scenarios.
-

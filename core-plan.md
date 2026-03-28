@@ -336,4 +336,3 @@ These principles guide every design decision in Iron Council. When a feature con
 - Betrayal must always be possible. If a system makes betrayal mechanically impossible, it kills the diplomatic game.
 - Betrayal must always be costly. If a system makes betrayal free, it kills trust, which kills the diplomatic game.
 - The spectator should always be able to understand what is happening and why it matters.
-
