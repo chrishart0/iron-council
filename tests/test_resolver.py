@@ -550,6 +550,60 @@ def test_resolve_tick_keeps_siege_degradation_deterministic_for_shuffled_city_or
     assert result.next_state.cities["edinburgh"].upgrades.fortification == 2
 
 
+def test_resolve_tick_caps_fortification_wear_at_one_tier_when_city_is_besieged_and_unpaid() -> (
+    None
+):
+    state = MatchState(
+        tick=5,
+        cities={
+            "edinburgh": CityState(
+                owner="player_1",
+                population=0,
+                resources=ResourceState(food=0, production=0, money=0),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=2),
+                garrison=0,
+                building_queue=[],
+            ),
+            "dundee": _city_state(owner="player_2"),
+            "glasgow": _city_state(owner="player_2"),
+            "newcastle": _city_state(owner="player_3"),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["edinburgh"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["dundee", "glasgow"],
+                alliance_id="alliance_blue",
+                is_eliminated=False,
+            ),
+            "player_3": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["newcastle"],
+                alliance_id="alliance_green",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert result.next_state.players["player_1"].resources.money == 0
+    assert result.next_state.cities["edinburgh"].upgrades.fortification == 1
+    assert state.cities["edinburgh"].upgrades.fortification == 2
+
+
 def test_resolve_tick_returns_copied_state_without_mutating_input() -> None:
     state = _match_state()
     original_dump = deepcopy(state.model_dump(mode="json"))

@@ -53,12 +53,18 @@ _GPT-5 Codex_
 - `uv run pytest -o addopts='-q --strict-config --strict-markers' tests/test_resolver.py`
 - `make format`
 - `make quality`
+- `uv run pytest -o addopts='' tests/test_resolver.py -k 'caps_fortification_wear_at_one_tier_when_city_is_besieged_and_unpaid'` (red: fortification dropped from tier 2 to tier 0 in one tick before the corrective fix)
+- `uv run pytest -o addopts='' tests/test_resolver.py -k 'fortification_upkeep or unpaid_fortifications or fortification_upkeep_and_decay or surrounded_city or route_open_when_adjacent_city_is_allied or keeps_siege_degradation_deterministic or caps_fortification_wear_at_one_tier_when_city_is_besieged_and_unpaid'`
+- `make quality`
 
 ### Completion Notes List
 
 - Added resolver-boundary siege regression coverage for full encirclement, allied-route exemption, and repeated-run/input-immutability behavior using canonical map city IDs.
 - Implemented siege-phase fortification degradation only, driven by canonical UK 1900 adjacency and current coalition membership from `MatchState`, with sorted iteration to preserve deterministic behavior independent of dict insertion order.
 - Verified the full quality gate after formatting; `make quality` passed with 92 tests passing and 97.17% total coverage.
+- Added a corrective resolver-boundary regression for the overlap case where the same city is both besieged and unpaid in one tick, pinning Story 9.2's requirement that the returned `next_state` drops by exactly one fortification tier.
+- Narrowed the fix to per-tick fortification wear tracking inside `ResolverPhaseState`, preserving Story 9.1's deterministic unpaid upkeep ordering while preventing attrition from applying a second downgrade after siege already wore the city once.
+- Re-verified the repository after the follow-up; `make quality` passed with 93 tests passing and 97.19% total coverage.
 
 ### File List
 
@@ -72,3 +78,4 @@ _GPT-5 Codex_
 - 2026-03-28 13:35 UTC: Drafted Story 9.2 for deterministic siege-phase fortification degradation.
 - 2026-03-28 14:05 UTC: Added failing resolver-boundary siege tests for surrounded, allied-route-open, and deterministic repeated-run behavior.
 - 2026-03-28 14:12 UTC: Implemented deterministic siege-phase fortification degradation from canonical adjacency and coalition ownership, then passed `make quality`.
+- 2026-03-28 13:45 UTC: Added corrective overlap regression coverage and capped per-city fortification wear at one tier per tick so besieged unpaid cities only degrade once in the returned `next_state`.

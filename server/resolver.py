@@ -70,6 +70,7 @@ class TickResolutionResult(StrictModel):
 @dataclass
 class ResolverPhaseState:
     unpaid_fortification_city_ids: set[str] = field(default_factory=set)
+    degraded_fortification_city_ids: set[str] = field(default_factory=set)
 
 
 PhaseHandler = Callable[[MatchState, OrderBatch, ResolverPhaseState], TickPhaseOutcome]
@@ -93,6 +94,7 @@ def _resolve_resource_phase(
     match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
 ) -> TickPhaseOutcome:
     phase_state.unpaid_fortification_city_ids.clear()
+    phase_state.degraded_fortification_city_ids.clear()
     city_ids_by_owner: dict[str, list[str]] = {player_id: [] for player_id in match_state.players}
     for city_id, city_state in match_state.cities.items():
         if city_state.owner in city_ids_by_owner:
@@ -168,8 +170,10 @@ def _resolve_combat_phase(
 def _resolve_siege_phase(
     match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
 ) -> TickPhaseOutcome:
-    del phase_state
-    _degrade_besieged_fortifications(match_state)
+    _degrade_besieged_fortifications(
+        match_state,
+        degraded_city_ids=phase_state.degraded_fortification_city_ids,
+    )
     return _complete_phase(match_state, validated_orders, "siege")
 
 
@@ -192,7 +196,11 @@ def _resolve_attrition_phase(
             surviving_armies.append(army.model_copy(update={"troops": updated_troops}))
 
     match_state.armies = surviving_armies
-    _degrade_unpaid_fortifications(match_state, phase_state.unpaid_fortification_city_ids)
+    _degrade_unpaid_fortifications(
+        match_state,
+        phase_state.unpaid_fortification_city_ids,
+        degraded_city_ids=phase_state.degraded_fortification_city_ids,
+    )
 
     owned_city_count_by_player = {player_id: 0 for player_id in match_state.players}
     for city_state in match_state.cities.values():
@@ -306,13 +314,21 @@ def _fortified_cities_in_upkeep_order(
     )
 
 
-def _degrade_unpaid_fortifications(match_state: MatchState, unpaid_city_ids: set[str]) -> None:
+def _degrade_unpaid_fortifications(
+    match_state: MatchState,
+    unpaid_city_ids: set[str],
+    *,
+    degraded_city_ids: set[str],
+) -> None:
     for city_id in sorted(unpaid_city_ids):
+        if city_id in degraded_city_ids:
+            continue
         city_state = match_state.cities.get(city_id)
         if city_state is None or city_state.upgrades.fortification == 0:
             continue
 
         city_state.upgrades.fortification -= 1
+        degraded_city_ids.add(city_id)
 
 
 def _resolve_contested_city_combat(match_state: MatchState) -> None:
@@ -685,7 +701,11 @@ def _adjacent_city_ids_by_city() -> dict[str, tuple[str, ...]]:
     }
 
 
-def _degrade_besieged_fortifications(match_state: MatchState) -> None:
+def _degrade_besieged_fortifications(
+    match_state: MatchState,
+    *,
+    degraded_city_ids: set[str],
+) -> None:
     for city_id in sorted(match_state.cities):
         city_state = match_state.cities[city_id]
         if city_state.owner is None or city_state.upgrades.fortification == 0:
@@ -694,6 +714,7 @@ def _degrade_besieged_fortifications(match_state: MatchState) -> None:
             continue
 
         city_state.upgrades.fortification -= 1
+        degraded_city_ids.add(city_id)
 
 
 def _is_besieged_city(match_state: MatchState, *, city_id: str, city_state: CityState) -> bool:
