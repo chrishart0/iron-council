@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Literal
 
@@ -19,6 +20,7 @@ DEFENDER_BONUS_NUMERATOR = 12
 DEFENDER_BONUS_DENOMINATOR = 10
 FORTIFICATION_MULTIPLIER_NUMERATORS: tuple[int, int, int, int] = (10, 13, 17, 25)
 FORTIFICATION_MULTIPLIER_DENOMINATOR = 10
+FORTIFICATION_UPKEEP_COSTS: tuple[int, int, int, int] = (0, 1, 2, 3)
 UPGRADE_BUILD_DURATIONS: tuple[int, int, int, int] = (0, 1, 2, 3)
 
 TickPhaseName = Literal[
@@ -65,12 +67,20 @@ class TickResolutionResult(StrictModel):
     events: list[TickPhaseEvent]
 
 
-PhaseHandler = Callable[[MatchState, OrderBatch], TickPhaseOutcome]
+@dataclass
+class ResolverPhaseState:
+    unpaid_fortification_city_ids: set[str] = field(default_factory=set)
+
+
+PhaseHandler = Callable[[MatchState, OrderBatch, ResolverPhaseState], TickPhaseOutcome]
 
 
 def resolve_tick(match_state: MatchState, validated_orders: OrderBatch) -> TickResolutionResult:
     next_state = match_state.model_copy(deep=True)
-    phase_outcomes = [handler(next_state, validated_orders) for handler in PHASE_HANDLERS]
+    phase_state = ResolverPhaseState()
+    phase_outcomes = [
+        handler(next_state, validated_orders, phase_state) for handler in PHASE_HANDLERS
+    ]
 
     return TickResolutionResult(
         next_state=next_state,
@@ -80,8 +90,9 @@ def resolve_tick(match_state: MatchState, validated_orders: OrderBatch) -> TickR
 
 
 def _resolve_resource_phase(
-    match_state: MatchState, validated_orders: OrderBatch
+    match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
 ) -> TickPhaseOutcome:
+    phase_state.unpaid_fortification_city_ids.clear()
     city_ids_by_owner: dict[str, list[str]] = {player_id: [] for player_id in match_state.players}
     for city_id, city_state in match_state.cities.items():
         if city_state.owner in city_ids_by_owner:
@@ -106,12 +117,22 @@ def _resolve_resource_phase(
             0,
             updated_resources["food"] - population_upkeep - army_upkeep_by_owner[player_id],
         )
+        (
+            updated_resources["money"],
+            unpaid_fortification_city_ids,
+        ) = _deduct_fortification_upkeep(
+            match_state, owner=player_id, available_money=updated_resources["money"]
+        )
+        phase_state.unpaid_fortification_city_ids.update(unpaid_fortification_city_ids)
         player_state.resources = player_state.resources.model_validate(updated_resources)
 
     return _complete_phase(match_state, validated_orders, "resource")
 
 
-def _resolve_build_phase(match_state: MatchState, validated_orders: OrderBatch) -> TickPhaseOutcome:
+def _resolve_build_phase(
+    match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
+) -> TickPhaseOutcome:
+    del phase_state
     queued_tracks_at_phase_start: dict[str, set[UpgradeTrack]] = {
         city_id: {queue_item.type for queue_item in city_state.building_queue}
         for city_id, city_state in match_state.cities.items()
@@ -127,27 +148,32 @@ def _resolve_build_phase(match_state: MatchState, validated_orders: OrderBatch) 
 
 
 def _resolve_movement_phase(
-    match_state: MatchState, validated_orders: OrderBatch
+    match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
 ) -> TickPhaseOutcome:
+    del phase_state
     _advance_transit_armies(match_state)
     _start_movement_orders(match_state, validated_orders.movements)
     return _complete_phase(match_state, validated_orders, "movement")
 
 
 def _resolve_combat_phase(
-    match_state: MatchState, validated_orders: OrderBatch
+    match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
 ) -> TickPhaseOutcome:
+    del phase_state
     _resolve_contested_city_combat(match_state)
     _transfer_uncontested_city_control(match_state)
     return _complete_phase(match_state, validated_orders, "combat")
 
 
-def _resolve_siege_phase(match_state: MatchState, validated_orders: OrderBatch) -> TickPhaseOutcome:
+def _resolve_siege_phase(
+    match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
+) -> TickPhaseOutcome:
+    del phase_state
     return _complete_phase(match_state, validated_orders, "siege")
 
 
 def _resolve_attrition_phase(
-    match_state: MatchState, validated_orders: OrderBatch
+    match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
 ) -> TickPhaseOutcome:
     starving_players = {
         player_id
@@ -165,6 +191,7 @@ def _resolve_attrition_phase(
             surviving_armies.append(army.model_copy(update={"troops": updated_troops}))
 
     match_state.armies = surviving_armies
+    _degrade_unpaid_fortifications(match_state, phase_state.unpaid_fortification_city_ids)
 
     owned_city_count_by_player = {player_id: 0 for player_id in match_state.players}
     for city_state in match_state.cities.values():
@@ -186,14 +213,16 @@ def _resolve_attrition_phase(
 
 
 def _resolve_diplomacy_phase(
-    match_state: MatchState, validated_orders: OrderBatch
+    match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
 ) -> TickPhaseOutcome:
+    del phase_state
     return _complete_phase(match_state, validated_orders, "diplomacy")
 
 
 def _resolve_victory_phase(
-    match_state: MatchState, validated_orders: OrderBatch
+    match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
 ) -> TickPhaseOutcome:
+    del phase_state
     coalition_city_counts = _coalition_city_counts(match_state)
     leading_alliance, cities_held = _leading_coalition(coalition_city_counts)
     countdown_ticks_remaining = _updated_victory_countdown(
@@ -240,6 +269,49 @@ def _city_resource_yield(city_state: CityState) -> dict[str, int]:
         )
         for resource_name, resource_amount in base_resources.items()
     }
+
+
+def _deduct_fortification_upkeep(
+    match_state: MatchState,
+    *,
+    owner: str,
+    available_money: int,
+) -> tuple[int, set[str]]:
+    unpaid_fortification_city_ids: set[str] = set()
+
+    for city_id, city_state in _fortified_cities_in_upkeep_order(match_state, owner=owner):
+        upkeep_cost = FORTIFICATION_UPKEEP_COSTS[city_state.upgrades.fortification]
+        if available_money >= upkeep_cost:
+            available_money -= upkeep_cost
+            continue
+
+        unpaid_fortification_city_ids.add(city_id)
+
+    return max(0, available_money), unpaid_fortification_city_ids
+
+
+def _fortified_cities_in_upkeep_order(
+    match_state: MatchState,
+    *,
+    owner: str,
+) -> list[tuple[str, CityState]]:
+    return sorted(
+        (
+            (city_id, city_state)
+            for city_id, city_state in match_state.cities.items()
+            if city_state.owner == owner and city_state.upgrades.fortification > 0
+        ),
+        key=lambda item: item[0],
+    )
+
+
+def _degrade_unpaid_fortifications(match_state: MatchState, unpaid_city_ids: set[str]) -> None:
+    for city_id in sorted(unpaid_city_ids):
+        city_state = match_state.cities.get(city_id)
+        if city_state is None or city_state.upgrades.fortification == 0:
+            continue
+
+        city_state.upgrades.fortification -= 1
 
 
 def _resolve_contested_city_combat(match_state: MatchState) -> None:
