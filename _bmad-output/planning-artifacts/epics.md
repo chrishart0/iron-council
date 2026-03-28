@@ -326,3 +326,47 @@ So that match state, economy, and victory tracking reflect territorial gains wit
 **And Given** repeated runs from the same starting state and occupying armies
 **When** the ownership handoff resolves
 **Then** the resulting city owners are deterministic and the caller-owned `MatchState` remains unchanged.
+
+## Epic 8: Order Execution and Build Pipeline
+
+Turn the validated order contracts into state-changing resolver behavior so accepted upgrade and recruitment intents actually materialize in the copied next state before later siege and diplomacy work lands.
+
+### Story 8.1: Advance build queues and complete deterministic city upgrades during the build phase
+
+As a game engine developer,
+I want the build phase to progress queued upgrades and finish them deterministically,
+So that economy, military, and fortification investments persist across ticks instead of remaining inert validated orders.
+
+**Acceptance Criteria:**
+
+**Given** a city with an in-progress building queue item
+**When** the build phase runs
+**Then** `ticks_remaining` decrements deterministically and completed items apply their target upgrade tier to the copied next state.
+
+**And Given** accepted upgrade orders for player-owned cities with no conflicting queue on the same track
+**When** the build phase runs
+**Then** each accepted order starts a deterministic queue item and deducts the documented production cost exactly once from the copied next state.
+
+**And Given** identical starting states and accepted upgrade orders
+**When** the build phase resolves repeatedly
+**Then** queue progression, completed upgrade tiers, player resources, and the caller-owned `MatchState` remain deterministic and unmutated.
+
+### Story 8.2: Process accepted recruitment orders during the build phase
+
+As a game engine developer,
+I want the build phase to convert accepted recruitment orders into stationed armies,
+So that validated troop purchases actually create military presence for later movement, combat, and attrition phases.
+
+**Acceptance Criteria:**
+
+**Given** accepted recruitment orders for player-owned cities
+**When** the build phase runs
+**Then** each order deducts the documented food and production cost and creates or reinforces a stationed army for that player in the ordered city.
+
+**And Given** multiple accepted recruitment orders for the same player across different cities in one tick
+**When** the build phase runs
+**Then** all accepted orders resolve deterministically without depending on list order side effects beyond the already-validated order set.
+
+**And Given** repeated runs from the same starting state and accepted recruitment orders
+**When** the build phase resolves
+**Then** the resulting armies, city occupants, player resources, and the caller-owned `MatchState` remain deterministic and unmutated.

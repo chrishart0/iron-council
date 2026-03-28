@@ -1,4 +1,4 @@
-generated: 2026-03-28 11:42 UTC
+generated: 2026-03-28 12:24 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
@@ -39,3 +39,8 @@ development_status:
   7-1-resolve-contested-city-combat-with-defender-and-fortification-advantages: done
   7-2-hand-uncontested-city-control-to-occupying-armies-after-combat-resolution: done
   epic-7-retrospective: optional
+
+  epic-8: in-progress
+  8-1-advance-build-queues-and-complete-deterministic-city-upgrades-during-the-build-phase: in-progress
+  8-2-process-accepted-recruitment-orders-during-the-build-phase: pending
+  epic-8-retrospective: optional
