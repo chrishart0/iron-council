@@ -9,6 +9,7 @@ from server.models.domain import (
     PositiveTickDuration,
     StrictModel,
     TickDuration,
+    UpgradeLevel,
     UpgradeTrack,
 )
 
@@ -20,9 +21,9 @@ class ResourceState(StrictModel):
 
 
 class CityUpgradeState(StrictModel):
-    economy: NonNegativeCount = Field(le=3)
-    military: NonNegativeCount = Field(le=3)
-    fortification: NonNegativeCount = Field(le=3)
+    economy: UpgradeLevel
+    military: UpgradeLevel
+    fortification: UpgradeLevel
 
 
 class BuildingQueueItem(StrictModel):

@@ -6,10 +6,10 @@ from pydantic import Field
 
 from server.models.domain import (
     FortificationTier,
-    NonNegativeCount,
     PositiveCount,
     ResourceType,
     StrictModel,
+    TickDuration,
     UpgradeTrack,
 )
 
@@ -50,5 +50,5 @@ class OrderBatch(StrictModel):
 class OrderEnvelope(StrictModel):
     match_id: str
     player_id: str
-    tick: NonNegativeCount
+    tick: TickDuration
     orders: OrderBatch

@@ -4,10 +4,12 @@ from server.models.domain import (
     FortificationTier,
     MatchStatus,
     NonNegativeCount,
+    PositiveCount,
     PositiveTickDuration,
     ResourceType,
     StrictModel,
     TickDuration,
+    UpgradeLevel,
     UpgradeTrack,
 )
 from server.models.orders import OrderBatch, OrderEnvelope
@@ -20,9 +22,11 @@ __all__ = [
     "NonNegativeCount",
     "OrderBatch",
     "OrderEnvelope",
+    "PositiveCount",
     "PositiveTickDuration",
     "ResourceType",
     "StrictModel",
     "TickDuration",
+    "UpgradeLevel",
     "UpgradeTrack",
 ]

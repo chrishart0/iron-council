@@ -5,10 +5,13 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+MAX_UPGRADE_TIER = 3
+
 NonNegativeCount = Annotated[int, Field(ge=0)]
 TickDuration = Annotated[int, Field(ge=0)]
 PositiveCount = Annotated[int, Field(gt=0)]
 PositiveTickDuration = Annotated[int, Field(gt=0)]
+UpgradeLevel = Annotated[int, Field(ge=0, le=MAX_UPGRADE_TIER)]
 
 
 class StrictModel(BaseModel):
@@ -35,7 +38,6 @@ class UpgradeTrack(StrEnum):
 
 
 class FortificationTier(IntEnum):
-    NONE = 0
     TRENCHES = 1
     BUNKERS = 2
     FORTRESS = 3
