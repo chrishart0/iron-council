@@ -18,6 +18,7 @@ from server.models.api import (
 )
 from server.models.fog import AgentStateProjection
 from server.models.orders import OrderEnvelope
+from server.settings import get_settings
 
 
 class ApiError(Exception):
@@ -40,6 +41,7 @@ API_ERROR_RESPONSE_SCHEMA = {"model": ApiErrorResponse}
 def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAPI:
     app = FastAPI(title="iron-counsil-server", version=__version__)
     app.state.match_registry = match_registry or InMemoryMatchRegistry()
+    app.state.settings = get_settings()
 
     @app.exception_handler(ApiError)
     async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:

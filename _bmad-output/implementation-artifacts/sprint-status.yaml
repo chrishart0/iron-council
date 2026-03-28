@@ -1,4 +1,4 @@
-generated: 2026-03-28 16:10 UTC
+generated: 2026-03-28 16:35 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
@@ -55,8 +55,8 @@ development_status:
   10-2-expose-in-memory-agent-match-listing-state-polling-and-order-submission-endpoints: done
   epic-10-retrospective: optional
 
-  epic-12: planned-next
-  12-1-add-a-local-support-services-stack-for-database-backed-development-and-validation: drafted
+  epic-12: in-progress
+  12-1-add-a-local-support-services-stack-for-database-backed-development-and-validation: done
   12-2-introduce-a-proper-database-migration-service-and-migration-driven-schema-lifecycle: drafted
   12-3-add-deterministic-seed-reset-tooling-and-per-worktree-isolated-test-databases: drafted
   12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: drafted

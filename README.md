@@ -1,5 +1,48 @@
 # iron-counsil
 
+## Local support services
+
+The app continues to run directly on your machine in dev mode. The only default support
+service stack is a local Postgres instance defined in
+`compose.support-services.yaml`.
+
+Set up the local database wiring once:
+
+```bash
+cp env.local.example .env.local
+```
+
+Start the backing service:
+
+```bash
+make support-services-up
+make support-services-ps
+```
+
+That boots Postgres on `127.0.0.1:54321` with the conventional
+`DATABASE_URL=postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil`.
+The server loads `.env.local` automatically by default, or you can point to a different
+file with `IRON_COUNCIL_ENV_FILE=/path/to/file`.
+
+Run the FastAPI app normally outside containers:
+
+```bash
+uv run uvicorn server.main:app --reload
+```
+
+Focused test runs keep using the same host-shell workflow:
+
+```bash
+uv run pytest tests/api/test_health.py
+```
+
+When finished:
+
+```bash
+make support-services-logs
+make support-services-down
+```
+
 ## Server quality harness
 
 The FastAPI scaffold keeps quality checks close to the API surface: formatting, linting,
@@ -35,7 +78,7 @@ uv run pre-commit run --all-files --show-diff-on-failure
 Run the API locally with:
 
 ```bash
-uvicorn server.main:app --reload
+uv run uvicorn server.main:app --reload
 ```
 
 GitHub Actions runs the same `make ci` quality gate on pushes and pull requests.
