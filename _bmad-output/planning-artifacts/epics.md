@@ -462,3 +462,87 @@ So that automated clients can drive headless matches before database-backed pers
 **And Given** valid and invalid order envelopes for a seeded match
 **When** the agent API posts `/api/v1/matches/{id}/orders`
 **Then** it stores accepted submissions in deterministic in-memory order, echoes a stable acceptance payload, and rejects mismatched match IDs or unknown players without mutating stored submissions.
+
+## Epic 11: QA Hardening and Gameplay Confidence
+
+Add a final quality-focused epic that turns the deterministic engine and first agent-facing API into something we can trust through structured review, realistic smoke scenarios, large-batch simulation checks, and a small set of critical end-to-end journeys.
+
+### Story 11.1: Run a multi-agent quality review and simplification sweep across the game server
+
+As a delivery lead,
+I want multiple focused review agents to inspect the codebase in parallel,
+So that correctness gaps, overcomplexity, weak tests, and convention drift are found and fixed before broader validation work proceeds.
+
+**Acceptance Criteria:**
+
+**Given** the current server, engine, API, and test suite
+**When** multiple review agents inspect bounded slices of the codebase in parallel
+**Then** each review lane reports concrete findings for correctness, test quality, and maintainability without overlapping ownership chaotically.
+
+**And Given** critical or important findings from those review lanes
+**When** remediation work is completed
+**Then** the affected code and tests are updated, the relevant verification commands pass, and the repo remains in a coherent shippable state.
+
+**And Given** the final review pass for the story
+**When** the quality sweep is closed out
+**Then** it explicitly confirms overcomplexity, KISS, and by-the-book convention checks were performed and no unresolved high-severity issues remain.
+
+### Story 11.2: Add realistic scenario-based smoke tests for deterministic gameplay flows
+
+As a game engine developer,
+I want realistic multi-tick scenario tests,
+So that the game rules are validated through meaningful gameplay situations rather than only isolated unit behaviors.
+
+**Acceptance Criteria:**
+
+**Given** deterministic headless simulation support and the implemented resolver phases
+**When** realistic scenarios are executed across multiple ticks
+**Then** the tests cover representative flows including legal movement, invalid order rejection, attrition pressure, combat resolution, occupation/control handoff, build progression, siege degradation, and victory countdown behavior.
+
+**And Given** repeated runs of the same scenario fixtures
+**When** the smoke suite executes
+**Then** the resulting snapshots, events, and asserted business outcomes are deterministic.
+
+**And Given** the scenario assertions
+**When** the suite validates outcomes
+**Then** it checks externally meaningful gameplay results and invariants instead of brittle implementation-detail internals.
+
+### Story 11.3: Add a large-batch simulation regression harness with invariant checks
+
+As a game engine developer,
+I want a batch-oriented simulation regression harness,
+So that many deterministic scenarios can be exercised quickly to catch invalid states and rule regressions that single examples may miss.
+
+**Acceptance Criteria:**
+
+**Given** a collection of seeded or fixture-driven simulation inputs
+**When** the regression harness executes a large batch of runs
+**Then** it completes within CI-friendly limits while checking for crashes, invalid references, impossible negative values, ownership/resource inconsistencies, and other documented state invariants.
+
+**And Given** a failing regression scenario
+**When** the harness reports the failure
+**Then** it identifies the exact scenario or seed and the violated invariant clearly enough for reproduction.
+
+**And Given** repeated executions with the same batch inputs
+**When** the harness runs again
+**Then** the pass/fail outcomes remain deterministic.
+
+### Story 11.4: Add critical API end-to-end tests for agent gameplay journeys
+
+As an AI agent developer,
+I want true API-level end-to-end tests,
+So that the first agent workflows are validated through the actual FastAPI boundary instead of only lower-level helpers.
+
+**Acceptance Criteria:**
+
+**Given** seeded in-memory matches and the agent-facing endpoints
+**When** end-to-end tests exercise match listing, fog-filtered state polling, order submission, and follow-up state reads
+**Then** the tests validate the critical happy-path agent journey through the real API surface.
+
+**And Given** invalid or mismatched requests
+**When** the end-to-end suite submits them through the API
+**Then** it verifies structured rejection behavior without corrupting stored match or order state.
+
+**And Given** multiple players interacting with the same seeded match
+**When** the end-to-end tests fetch visible state
+**Then** they verify that fog-of-war boundaries are preserved and one player cannot observe information forbidden by the visibility contract.
