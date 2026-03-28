@@ -1,6 +1,6 @@
 # Story 7.1: Resolve contested-city combat with defender and fortification advantages
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -16,17 +16,17 @@ so that headless simulations can model frontline battles before diplomacy and fu
 
 ## Tasks / Subtasks
 
-- [ ] Add behavior-first combat coverage before implementation. (AC: 1, 2, 3)
-  - [ ] Cover simultaneous casualties for contested cities with one army per side.
-  - [ ] Cover defender bonus plus fortification multiplier on a city-owned defender.
-  - [ ] Cover zero-troop removal and deterministic repeated resolution.
-- [ ] Implement narrow combat-phase casualty resolution. (AC: 1, 2, 3)
-  - [ ] Keep scope to city-level contested armies already co-located after movement.
-  - [ ] Apply deterministic integer casualty math with no randomness.
-  - [ ] Preserve resolver purity and the stable `phase.combat.completed` event contract.
-- [ ] Re-verify resolver and simulation behavior after merge. (AC: 1, 2, 3)
-  - [ ] Re-run focused resolver coverage.
-  - [ ] Re-run the repository quality gate.
+- [x] Add behavior-first combat coverage before implementation. (AC: 1, 2, 3)
+  - [x] Cover simultaneous casualties for contested cities with one army per side.
+  - [x] Cover defender bonus plus fortification multiplier on a city-owned defender.
+  - [x] Cover zero-troop removal and deterministic repeated resolution.
+- [x] Implement narrow combat-phase casualty resolution. (AC: 1, 2, 3)
+  - [x] Keep scope to city-level contested armies already co-located after movement.
+  - [x] Apply deterministic integer casualty math with no randomness.
+  - [x] Preserve resolver purity and the stable `phase.combat.completed` event contract.
+- [x] Re-verify resolver and simulation behavior after merge. (AC: 1, 2, 3)
+  - [x] Re-run focused resolver coverage.
+  - [x] Re-run the repository quality gate.
 
 ## Dev Notes
 
@@ -48,16 +48,25 @@ GPT-5 Codex
 
 ### Debug Log References
 
-- Pending implementation.
+- `uv run pytest --no-cov tests/test_resolver.py -k combat` failed because `pytest --no-cov` still inherited repo `--cov` addopts before the dev extras were synced into `.venv`.
+- `uv sync --extra dev`
+- `.venv/bin/pytest -o addopts='' tests/test_resolver.py`
+- `make format`
+- `make quality`
 
 ### Completion Notes List
 
-- Pending implementation.
+- Added behavior-first resolver tests for contested-city simultaneous casualties, defender plus fortification advantage, and deterministic zero-troop cleanup without mutating the caller-owned `MatchState`.
+- Implemented narrow combat-phase resolution for co-located city armies only, using deterministic integer effective-strength math with a 1.2x defender bonus and documented fortification multipliers.
+- Preserved existing phase order and the `phase.combat.completed` event contract; did not add capture, siege, diplomacy, garrison combat, timers, randomness, or schema changes.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/7-1-resolve-contested-city-combat-with-defender-and-fortification-advantages.md`
+- `server/resolver.py`
+- `tests/test_resolver.py`
 
 ### Change Log
 
 - 2026-03-28 11:22 UTC: Drafted Story 7.1 for deterministic contested-city combat resolution.
+- 2026-03-28 11:25 UTC: Added contested-city combat resolver coverage, implemented deterministic defender-aware combat resolution, and passed `make quality`.

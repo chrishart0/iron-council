@@ -13,6 +13,11 @@ RESOURCE_FIELDS: tuple[str, str, str] = ("food", "production", "money")
 ECONOMY_TIER_MULTIPLIER_NUMERATORS: tuple[int, int, int, int] = (3, 4, 5, 6)
 ECONOMY_TIER_MULTIPLIER_DENOMINATOR = 3
 STARVATION_ATTRITION_LOSS = 1
+COMBAT_CASUALTY_DIVISOR = 10
+DEFENDER_BONUS_NUMERATOR = 12
+DEFENDER_BONUS_DENOMINATOR = 10
+FORTIFICATION_MULTIPLIER_NUMERATORS: tuple[int, int, int, int] = (10, 13, 17, 25)
+FORTIFICATION_MULTIPLIER_DENOMINATOR = 10
 
 TickPhaseName = Literal[
     "resource",
@@ -119,6 +124,7 @@ def _resolve_movement_phase(
 def _resolve_combat_phase(
     match_state: MatchState, validated_orders: OrderBatch
 ) -> TickPhaseOutcome:
+    _resolve_contested_city_combat(match_state)
     return _complete_phase(match_state, validated_orders, "combat")
 
 
@@ -220,6 +226,103 @@ def _city_resource_yield(city_state: CityState) -> dict[str, int]:
         )
         for resource_name, resource_amount in base_resources.items()
     }
+
+
+def _resolve_contested_city_combat(match_state: MatchState) -> None:
+    casualties_by_army_id: dict[str, int] = {}
+
+    for city_id, city_state in match_state.cities.items():
+        armies_at_city = [
+            army
+            for army in match_state.armies
+            if army.location == city_id and army.destination is None
+        ]
+        owners = {army.owner for army in armies_at_city}
+        if len(owners) <= 1:
+            continue
+
+        casualties_by_owner = _combat_casualties_by_owner(
+            armies_at_city,
+            city_owner=city_state.owner,
+            fortification_tier=city_state.upgrades.fortification,
+        )
+        for owner, owner_armies in _armies_by_owner(armies_at_city).items():
+            remaining_casualties = casualties_by_owner.get(owner, 0)
+            for army in sorted(owner_armies, key=lambda army: army.id):
+                if remaining_casualties <= 0:
+                    break
+                losses = min(army.troops, remaining_casualties)
+                casualties_by_army_id[army.id] = casualties_by_army_id.get(army.id, 0) + losses
+                remaining_casualties -= losses
+
+    surviving_armies: list[ArmyState] = []
+    for army in match_state.armies:
+        remaining_troops = army.troops - casualties_by_army_id.get(army.id, 0)
+        if remaining_troops > 0:
+            surviving_armies.append(army.model_copy(update={"troops": remaining_troops}))
+
+    match_state.armies = surviving_armies
+
+
+def _combat_casualties_by_owner(
+    armies_at_city: list[ArmyState],
+    *,
+    city_owner: str | None,
+    fortification_tier: int,
+) -> dict[str, int]:
+    armies_by_owner = _armies_by_owner(armies_at_city)
+    troop_totals_by_owner = {
+        owner: sum(army.troops for army in owner_armies)
+        for owner, owner_armies in armies_by_owner.items()
+    }
+    effective_strength_by_owner = {
+        owner: _effective_combat_strength(
+            troops=troops,
+            is_defender=owner == city_owner,
+            fortification_tier=fortification_tier,
+        )
+        for owner, troops in troop_totals_by_owner.items()
+    }
+
+    casualties_by_owner: dict[str, int] = {}
+    for owner, troops in troop_totals_by_owner.items():
+        opposing_strength = sum(
+            effective_strength
+            for opposing_owner, effective_strength in effective_strength_by_owner.items()
+            if opposing_owner != owner
+        )
+        if opposing_strength <= 0:
+            continue
+
+        casualties = max(1, opposing_strength // COMBAT_CASUALTY_DIVISOR)
+        casualties_by_owner[owner] = min(troops, casualties)
+
+    return casualties_by_owner
+
+
+def _armies_by_owner(armies: list[ArmyState]) -> dict[str, list[ArmyState]]:
+    armies_by_owner: dict[str, list[ArmyState]] = {}
+    for army in armies:
+        armies_by_owner.setdefault(army.owner, []).append(army)
+    return armies_by_owner
+
+
+def _effective_combat_strength(
+    *,
+    troops: int,
+    is_defender: bool,
+    fortification_tier: int,
+) -> int:
+    if not is_defender:
+        return troops
+
+    fortification_numerator = FORTIFICATION_MULTIPLIER_NUMERATORS[fortification_tier]
+    return (
+        troops
+        * DEFENDER_BONUS_NUMERATOR
+        * fortification_numerator
+        // (DEFENDER_BONUS_DENOMINATOR * FORTIFICATION_MULTIPLIER_DENOMINATOR)
+    )
 
 
 def _advance_transit_armies(match_state: MatchState) -> None:

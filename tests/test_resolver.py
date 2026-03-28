@@ -352,6 +352,183 @@ def test_resolve_tick_advances_transit_arrivals_and_starts_new_one_edge_marches(
     )
 
 
+def test_resolve_tick_applies_simultaneous_casualties_to_contested_city_armies() -> None:
+    state = MatchState(
+        tick=5,
+        cities={"alpha": _city_state(owner=None)},
+        armies=[
+            ArmyState(
+                id="army_1",
+                owner="player_1",
+                troops=20,
+                location="alpha",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+            ArmyState(
+                id="army_2",
+                owner="player_2",
+                troops=10,
+                location="alpha",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=50, production=10, money=10),
+                cities_owned=[],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=50, production=10, money=10),
+                cities_owned=[],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    armies_by_id = {army.id: army for army in result.next_state.armies}
+
+    assert armies_by_id["army_1"].troops == 19
+    assert armies_by_id["army_2"].troops == 8
+    assert result.events[PHASE_ORDER.index("combat")] == TickPhaseEvent(
+        phase="combat",
+        event="phase.combat.completed",
+    )
+
+
+def test_resolve_tick_applies_defender_and_fortification_advantage_only_to_city_owner() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": CityState(
+                owner="player_1",
+                population=1,
+                resources=ResourceState(food=1, production=1, money=1),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=2),
+                garrison=5,
+                building_queue=[],
+            )
+        },
+        armies=[
+            ArmyState(
+                id="defender",
+                owner="player_1",
+                troops=10,
+                location="alpha",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+            ArmyState(
+                id="attacker",
+                owner="player_2",
+                troops=10,
+                location="alpha",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=50, production=10, money=10),
+                cities_owned=["alpha"],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=50, production=10, money=10),
+                cities_owned=[],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    armies_by_id = {army.id: army for army in result.next_state.armies}
+
+    assert armies_by_id["defender"].troops == 9
+    assert armies_by_id["attacker"].troops == 8
+
+
+def test_resolve_tick_combat_is_deterministic_and_keeps_input_unchanged() -> None:
+    state = MatchState(
+        tick=5,
+        cities={"alpha": _city_state(owner="player_1")},
+        armies=[
+            ArmyState(
+                id="defender",
+                owner="player_1",
+                troops=1,
+                location="alpha",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+            ArmyState(
+                id="attacker",
+                owner="player_2",
+                troops=10,
+                location="alpha",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=50, production=10, money=10),
+                cities_owned=["alpha"],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=50, production=10, money=10),
+                cities_owned=[],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    original_dump = deepcopy(state.model_dump(mode="json"))
+
+    result = resolve_tick(state, OrderBatch())
+    repeated_result = resolve_tick(state, OrderBatch())
+
+    assert state.model_dump(mode="json") == original_dump
+    assert result.model_dump(mode="json") == repeated_result.model_dump(mode="json")
+    assert [army.id for army in result.next_state.armies] == ["attacker"]
+    assert result.next_state.armies[0].troops == 9
+
+
 def test_resolve_tick_applies_starvation_attrition_only_to_players_left_with_zero_food() -> None:
     state = MatchState(
         tick=5,
