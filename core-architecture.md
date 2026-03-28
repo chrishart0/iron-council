@@ -396,6 +396,7 @@ What the agent submits each tick.
 ┌─────────────────────┐
 │  7. Attrition Phase  │  Apply food shortage attrition to starving armies
 │                      │  Apply fortification decay for unpaid maintenance
+│                      │  (Tier 1 = 1, Tier 2 = 2, Tier 3 = 3 money per tick)
 │                      │  Check player elimination (0 cities, 0 armies)
 └─────────┬───────────┘
           │
