@@ -20,7 +20,7 @@ development_status:
   3-2-validate-queued-orders-against-ownership-resources-and-adjacency: done
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-1-add-a-pure-function-tick-resolver-skeleton-with-phase-ordering: backlog
+  epic-4: in-progress
+  4-1-add-a-pure-function-tick-resolver-skeleton-with-phase-ordering: done
   4-2-provide-a-headless-simulation-harness-for-smoke-testing-ticks: backlog
   epic-4-retrospective: optional

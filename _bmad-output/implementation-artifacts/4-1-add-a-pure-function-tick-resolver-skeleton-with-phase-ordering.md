@@ -1,6 +1,6 @@
 # Story 4.1: Add a pure-function tick resolver skeleton with phase ordering
 
-Status: backlog
+Status: done
 
 ## Story
 
@@ -16,19 +16,19 @@ so that later resource, movement, combat, and victory logic plugs into a determi
 
 ## Tasks / Subtasks
 
-- [ ] Add a public pure resolver entrypoint under `server/`. (AC: 1, 2, 3)
-  - [ ] Introduce a `resolve_tick(...)` surface that accepts the current `MatchState` and validated orders.
-  - [ ] Return a result object with next-state and ordered phase/event metadata.
-- [ ] Define canonical phase ordering and metadata contracts. (AC: 1, 2, 3)
-  - [ ] Encode the phase order: resource -> build -> movement -> combat -> siege -> attrition -> diplomacy -> victory.
-  - [ ] Emit stable phase/event names that later engines can extend without changing the skeleton boundary.
-- [ ] Keep the resolver pure while gameplay logic is still stubbed. (AC: 1, 3)
-  - [ ] Copy the input state instead of mutating it in place.
-  - [ ] Use no-op placeholder handlers that preserve determinism.
-- [ ] Add behavior-first tests for resolver ordering and purity. (AC: 1, 2, 3)
-  - [ ] Cover non-mutation of the input state.
-  - [ ] Cover exact phase ordering in emitted metadata.
-  - [ ] Cover deterministic repeated runs with the same state + orders.
+- [x] Add a public pure resolver entrypoint under `server/`. (AC: 1, 2, 3)
+  - [x] Introduce a `resolve_tick(...)` surface that accepts the current `MatchState` and validated orders.
+  - [x] Return a result object with next-state and ordered phase/event metadata.
+- [x] Define canonical phase ordering and metadata contracts. (AC: 1, 2, 3)
+  - [x] Encode the phase order: resource -> build -> movement -> combat -> siege -> attrition -> diplomacy -> victory.
+  - [x] Emit stable phase/event names that later engines can extend without changing the skeleton boundary.
+- [x] Keep the resolver pure while gameplay logic is still stubbed. (AC: 1, 3)
+  - [x] Copy the input state instead of mutating it in place.
+  - [x] Use no-op placeholder handlers that preserve determinism.
+- [x] Add behavior-first tests for resolver ordering and purity. (AC: 1, 2, 3)
+  - [x] Cover non-mutation of the input state.
+  - [x] Cover exact phase ordering in emitted metadata.
+  - [x] Cover deterministic repeated runs with the same state + orders.
 
 ## Dev Notes
 
@@ -47,20 +47,30 @@ so that later resource, movement, combat, and victory logic plugs into a determi
 
 ### Agent Model Used
 
-Pending
+GPT-5 Codex
 
 ### Debug Log References
 
-- Pending
+- `uv run --extra dev pytest tests/test_resolver.py -q -o addopts=''`
+- `uv run --extra dev pytest tests/test_resolver.py tests/test_order_validation.py -q -o addopts=''`
+- `make quality`
 
 ### Completion Notes List
 
-- Pending
+- Added `server.resolver.resolve_tick(...)` as the public pure-function tick resolver boundary using validated `OrderBatch` input from Story 3.2.
+- Emitted stable ordered phase metadata and matching phase completion events for resource, build, movement, combat, siege, attrition, diplomacy, and victory.
+- Preserved input purity by deep-copying `MatchState` and returning a distinct next-state object without mutating the caller-owned state.
+- Captured red-phase evidence with a focused resolver test run after adding the contract test; the first failure was `ModuleNotFoundError: No module named 'server.resolver'`.
+- Used `-o addopts=''` for focused pytest commands because the repo-level pytest config expects `pytest-cov`, which is only available when running with dev extras.
 
 ### File List
 
+- `server/__init__.py`
+- `server/resolver.py`
+- `tests/test_resolver.py`
 - `_bmad-output/implementation-artifacts/4-1-add-a-pure-function-tick-resolver-skeleton-with-phase-ordering.md`
 
 ### Change Log
 
 - Created Story 4.1 implementation artifact.
+- Implemented the pure tick resolver skeleton, added behavior-first resolver tests, and marked Story 4.1 complete.
