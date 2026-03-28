@@ -1,4 +1,6 @@
-from server.data.maps import load_uk_1900_map
+import pytest
+from pydantic import ValidationError
+from server.data.maps import load_uk_1900_map, validate_map_definition
 from server.models.domain import ResourceType
 
 
@@ -54,3 +56,67 @@ def test_uk_1900_map_encodes_the_liverpool_belfast_special_crossing() -> None:
     assert crossing.traversal_mode == "sea"
     assert crossing.distance_ticks > 3
     assert crossing.has_landing_combat_penalty is True
+
+
+def test_uk_1900_map_has_only_one_sea_crossing_involving_ireland() -> None:
+    map_definition = load_uk_1900_map()
+
+    irish_sea_crossings = {
+        tuple(sorted((edge.city_a, edge.city_b)))
+        for edge in map_definition.edges
+        if edge.traversal_mode == "sea"
+        and (
+            map_definition.cities[edge.city_a].region == "Ireland"
+            or map_definition.cities[edge.city_b].region == "Ireland"
+        )
+    }
+
+    assert irish_sea_crossings == {("belfast", "liverpool")}
+
+
+def test_validate_map_definition_accepts_the_canonical_uk_1900_map() -> None:
+    canonical_payload = load_uk_1900_map().model_dump(mode="json")
+
+    validated_map = validate_map_definition(canonical_payload)
+
+    assert validated_map.model_dump(mode="json") == canonical_payload
+
+
+def test_validate_map_definition_rejects_edge_references_to_missing_cities() -> None:
+    malformed_payload = load_uk_1900_map().model_dump(mode="json")
+    malformed_payload["edges"][0]["city_b"] = "atlantis"
+
+    with pytest.raises(
+        ValidationError,
+        match=r"edges\[0\] references unknown city IDs: atlantis",
+    ):
+        validate_map_definition(malformed_payload)
+
+
+def test_validate_map_definition_rejects_non_positive_edge_distances() -> None:
+    malformed_payload = load_uk_1900_map().model_dump(mode="json")
+    malformed_payload["edges"][0]["distance_ticks"] = 0
+
+    with pytest.raises(ValidationError, match="greater than 0"):
+        validate_map_definition(malformed_payload)
+
+
+def test_validate_map_definition_rejects_extra_irish_sea_crossings() -> None:
+    malformed_payload = load_uk_1900_map().model_dump(mode="json")
+    malformed_payload["edges"].append(
+        {
+            "city_a": "glasgow",
+            "city_b": "dublin",
+            "distance_ticks": 4,
+            "traversal_mode": "sea",
+        }
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match=(
+            r"Liverpool-Belfast must be the only sea crossing involving Ireland; "
+            r"found extra crossing glasgow-dublin"
+        ),
+    ):
+        validate_map_definition(malformed_payload)

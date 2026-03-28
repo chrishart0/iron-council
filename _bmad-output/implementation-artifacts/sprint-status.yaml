@@ -10,9 +10,9 @@ development_status:
   1-2-add-shared-domain-enums-and-validation-primitives: done
   epic-1-retrospective: optional
 
-  epic-2: in-progress
+  epic-2: done
   2-1-encode-the-uk-1900-map-definition-in-shared-data: done
-  2-2-add-validation-tests-for-graph-integrity-and-special-crossings: backlog
+  2-2-add-validation-tests-for-graph-integrity-and-special-crossings: done
   epic-2-retrospective: optional
 
   epic-3: backlog
