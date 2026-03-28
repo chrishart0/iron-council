@@ -1,4 +1,4 @@
-generated: 2026-03-28 12:45 UTC
+generated: 2026-03-28 13:35 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
@@ -44,3 +44,8 @@ development_status:
   8-1-advance-build-queues-and-complete-deterministic-city-upgrades-during-the-build-phase: done
   8-2-process-accepted-recruitment-orders-during-the-build-phase: done
   epic-8-retrospective: optional
+
+  epic-9: in-progress
+  9-1-deduct-fortification-upkeep-and-degrade-unpaid-defenses-deterministically: ready
+  9-2-degrade-besieged-fortifications-when-hostile-control-seals-every-adjacent-route: ready
+  epic-9-retrospective: optional

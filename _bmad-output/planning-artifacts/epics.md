@@ -58,6 +58,9 @@ This document decomposes the current game design and technical architecture into
 4. **Epic 4 - Headless Tick Simulation Skeleton**: implement the first pure-function resolver shell and smoke-testable headless tick loop.
 5. **Epic 5 - Foundational Tick Economy and Movement**: add deterministic resource accounting and army transit progression so the resolver meaningfully changes state.
 6. **Epic 6 - Attrition and Victory Safety Rails**: convert resource pressure and territorial control into deterministic elimination and endgame countdown behavior.
+7. **Epic 7 - Combat Resolution and Territorial Pressure**: apply deterministic city combat and ownership handoff so territorial conflict materially changes the board.
+8. **Epic 8 - Order Execution and Build Pipeline**: turn accepted upgrade and recruitment intents into concrete build-phase state changes.
+9. **Epic 9 - Fortification Pressure and Siege Wear**: make fortifications cost upkeep each tick and start to crumble under deterministic siege pressure.
 
 ## Epic 1: Server Foundation and Shared Contracts
 
@@ -370,3 +373,47 @@ So that validated troop purchases actually create military presence for later mo
 **And Given** repeated runs from the same starting state and accepted recruitment orders
 **When** the build phase resolves
 **Then** the resulting armies, city occupants, player resources, and the caller-owned `MatchState` remain deterministic and unmutated.
+
+## Epic 9: Fortification Pressure and Siege Wear
+
+Turn completed fortification upgrades into an upkeep-and-pressure system so defensive structures meaningfully tax economies and erode when attackers isolate them.
+
+### Story 9.1: Deduct fortification upkeep and degrade unpaid defenses deterministically
+
+As a game engine developer,
+I want fortified cities to charge recurring money upkeep and lose tiers when upkeep cannot be paid,
+So that defensive investment carries the ongoing economic tradeoff described in the design docs.
+
+**Acceptance Criteria:**
+
+**Given** player-owned cities with fortification tiers and sufficient money
+**When** the resolver runs the resource and attrition phases
+**Then** the owning player's money is reduced by the documented per-tier maintenance total and the fortification tiers remain unchanged.
+
+**And Given** multiple fortified cities whose combined upkeep exceeds the owning player's money
+**When** upkeep resolves
+**Then** payment is applied in a deterministic city order, money clamps at zero, and each unpaid fortification decays by exactly one tier during attrition.
+
+**And Given** repeated runs from the same starting state with the same fortified-city layout
+**When** upkeep and decay resolve
+**Then** the resulting player money, fortification tiers, and caller-owned `MatchState` remain deterministic and unmutated.
+
+### Story 9.2: Degrade besieged fortifications when hostile control seals every adjacent route
+
+As a game engine developer,
+I want the siege phase to recognize fully surrounded fortified cities and wear down their defenses,
+So that entrenched defenders become vulnerable when attackers isolate every adjacent approach.
+
+**Acceptance Criteria:**
+
+**Given** a fortified city whose owner is different from the owner of every adjacent city on the map
+**When** the siege phase runs
+**Then** the city's fortification tier drops by exactly one level in the copied next state.
+
+**And Given** a fortified city that still has at least one adjacent city owned by its controller or by an allied coalition member
+**When** the siege phase runs
+**Then** the fortification tier does not degrade from siege pressure.
+
+**And Given** repeated runs from the same starting state and adjacency ownership layout
+**When** the siege phase resolves
+**Then** the resulting fortification tiers are deterministic and the caller-owned `MatchState` remains unchanged.
