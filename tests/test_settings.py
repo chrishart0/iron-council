@@ -27,6 +27,10 @@ def test_get_settings_prefers_explicit_environment_over_local_env_file(tmp_path:
 def test_get_settings_falls_back_to_default_database_url_when_no_env_source_exists() -> None:
     settings = get_settings(env={})
 
+    assert (
+        DEFAULT_DATABASE_URL
+        == "postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil"
+    )
     assert settings.database_url == DEFAULT_DATABASE_URL
 
 
