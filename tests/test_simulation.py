@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import builtins
+import importlib
+import sys
 from copy import deepcopy
 
 import pytest
@@ -164,9 +166,20 @@ def test_simulate_ticks_runs_without_importing_external_infrastructure(
             raise AssertionError(f"simulate_ticks should not import external module: {name}")
         return real_import(name, globals, locals, fromlist, level)
 
-    monkeypatch.setattr(builtins, "__import__", import_guard)
+    server_modules = [
+        name for name in sys.modules if name == "server" or name.startswith("server.")
+    ]
+    for module_name in server_modules:
+        monkeypatch.delitem(sys.modules, module_name, raising=False)
 
-    simulation = simulate_ticks(_match_state(), ticks=1, orders=OrderBatch())
+    monkeypatch.setattr(builtins, "__import__", import_guard)
+    importlib.invalidate_caches()
+
+    simulation_module = importlib.import_module("server.simulation")
+    orders_module = importlib.import_module("server.models.orders")
+    state_module = importlib.import_module("server.models.state")
+    state = state_module.MatchState.model_validate(_match_state().model_dump(mode="json"))
+    simulation = simulation_module.simulate_ticks(state, ticks=1, orders=orders_module.OrderBatch())
 
     assert simulation.final_state.tick == 6
     assert attempted_imports == []
