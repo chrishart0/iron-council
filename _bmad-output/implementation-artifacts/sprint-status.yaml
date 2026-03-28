@@ -1,0 +1,26 @@
+generated: 2026-03-28 04:34 UTC
+project: Iron Council
+project_key: IRON
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  epic-1: backlog
+  1-1-scaffold-fastapi-server-and-core-domain-contracts: ready-for-dev
+  1-2-add-shared-domain-enums-and-validation-primitives: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-encode-the-uk-1900-map-definition-in-shared-data: backlog
+  2-2-add-validation-tests-for-graph-integrity-and-special-crossings: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-build-deterministic-match-initialization-from-map-and-roster-inputs: backlog
+  3-2-validate-queued-orders-against-ownership-resources-and-adjacency: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-add-a-pure-function-tick-resolver-skeleton-with-phase-ordering: backlog
+  4-2-provide-a-headless-simulation-harness-for-smoke-testing-ticks: backlog
+  epic-4-retrospective: optional
