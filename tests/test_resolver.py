@@ -364,6 +364,101 @@ def test_resolve_tick_hands_enemy_city_to_remaining_attacker_after_combat() -> N
     assert result.next_state.players["player_2"].cities_owned == []
 
 
+def test_resolve_tick_handoff_is_deterministic_and_keeps_city_lists_synchronized() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": _city_state(owner="player_1"),
+            "bravo": _city_state(owner="player_2"),
+        },
+        armies=[
+            ArmyState(
+                id="army_1",
+                owner="player_1",
+                troops=40,
+                location="bravo",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+            ArmyState(
+                id="army_2",
+                owner="player_2",
+                troops=4,
+                location="bravo",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=30, production=20, money=30),
+                cities_owned=["alpha"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=20, production=7, money=6),
+                cities_owned=["bravo"],
+                alliance_id="alliance_blue",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    first_result = resolve_tick(state, OrderBatch())
+    repeated_result = resolve_tick(state, OrderBatch())
+
+    assert first_result.model_dump(mode="json") == repeated_result.model_dump(mode="json")
+    assert first_result.next_state.cities["bravo"].owner == "player_1"
+    assert first_result.next_state.players["player_1"].cities_owned == ["alpha", "bravo"]
+    assert first_result.next_state.players["player_2"].cities_owned == []
+
+
+def test_resolve_tick_skips_city_handoff_when_occupier_is_missing_from_players() -> None:
+    state = MatchState(
+        tick=5,
+        cities={"bravo": _city_state(owner="player_2")},
+        armies=[
+            ArmyState(
+                id="orphan_army",
+                owner="player_1",
+                troops=7,
+                location="bravo",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            )
+        ],
+        players={
+            "player_2": PlayerState(
+                resources=ResourceState(food=20, production=7, money=6),
+                cities_owned=["bravo"],
+                alliance_id="alliance_blue",
+                is_eliminated=False,
+            )
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert result.next_state.cities["bravo"].owner == "player_2"
+    assert result.next_state.players["player_2"].cities_owned == ["bravo"]
+
+
 def test_resolve_tick_leaves_city_owner_unchanged_while_multiple_survivors_remain() -> None:
     state = MatchState(
         tick=5,

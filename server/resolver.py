@@ -276,6 +276,8 @@ def _transfer_uncontested_city_control(match_state: MatchState) -> None:
         occupying_owner = next(iter(occupying_owners))
         if city_state.owner == occupying_owner:
             continue
+        if occupying_owner not in match_state.players:
+            continue
 
         previous_owner = city_state.owner
         city_state.owner = occupying_owner

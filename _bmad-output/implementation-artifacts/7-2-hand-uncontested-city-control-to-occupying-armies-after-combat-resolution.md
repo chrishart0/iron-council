@@ -50,6 +50,8 @@ GPT-5 Codex
 
 - Red: `uv run --python .venv/bin/python pytest -o addopts= tests/test_resolver.py -q`
 - Green: `uv run --python .venv/bin/python pytest -o addopts= tests/test_simulation.py tests/test_resolver.py -q`
+- Red (follow-up): `uv run --python .venv/bin/python pytest -o addopts= tests/test_resolver.py -k 'handoff or uncontested or missing_from_players or multiple_survivors' -q`
+- Green (follow-up): `uv run --python .venv/bin/python pytest -o addopts= tests/test_resolver.py -k 'handoff or uncontested or missing_from_players or multiple_survivors' -q`
 - Quality gate: `make quality`
 
 ### Completion Notes List
@@ -57,6 +59,8 @@ GPT-5 Codex
 - Added resolver-boundary tests for neutral capture, enemy capture after combat, and contested survivors retaining the current owner.
 - Updated the combat phase to hand city ownership to exactly one surviving occupier after combat while leaving contested cities unchanged.
 - Kept the resolver pure by mutating only the copied next state and synchronized `players[*].cities_owned` with `cities[*].owner`.
+- Added explicit AC3 follow-up coverage for deterministic ownership handoff outcomes and `cities_owned` synchronization.
+- Guarded uncontested city handoff when the occupying owner is absent from `match_state.players` so city ownership and player-owned city lists cannot diverge.
 
 ### File List
 
@@ -69,3 +73,4 @@ GPT-5 Codex
 
 - 2026-03-28 11:22 UTC: Drafted Story 7.2 for deterministic post-combat city ownership handoff.
 - 2026-03-28 11:37 UTC: Implemented uncontested post-combat city ownership handoff with resolver-boundary regression coverage and green quality gate.
+- 2026-03-28 11:42 UTC: Tightened Story 7.2 ownership handoff invariants with explicit AC3 determinism coverage and a missing-player guard.
