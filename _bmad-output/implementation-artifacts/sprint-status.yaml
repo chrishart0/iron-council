@@ -34,3 +34,8 @@ development_status:
   6-1-apply-starvation-attrition-and-elimination-checks-during-the-attrition-phase: done
   6-2-track-coalition-city-control-and-victory-countdown-during-the-victory-phase: done
   epic-6-retrospective: optional
+
+  epic-7: in-progress
+  7-1-resolve-contested-city-combat-with-defender-and-fortification-advantages: in-progress
+  7-2-hand-uncontested-city-control-to-occupying-armies-after-combat-resolution: drafted
+  epic-7-retrospective: optional

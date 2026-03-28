@@ -282,3 +282,47 @@ So that simulations can expose an explicit endgame race before combat, siege, an
 **And Given** repeated runs from the same starting state and coalition ownership layout
 **When** the victory phase resolves
 **Then** the resulting victory metadata is deterministic and the caller-owned `MatchState` remains unchanged.
+
+## Epic 7: Combat Resolution and Territorial Pressure
+
+Turn the now-stateful resolver into one that can inflict deterministic battle losses and recognize when marching armies seize uncontested cities, so later siege and diplomacy systems sit on top of meaningful territorial conflict.
+
+### Story 7.1: Resolve contested-city combat with defender and fortification advantages
+
+As a game engine developer,
+I want the combat phase to apply simultaneous deterministic casualties to opposing armies that share a city,
+So that headless simulations can model frontline battles before diplomacy and full siege systems land.
+
+**Acceptance Criteria:**
+
+**Given** armies from different players occupying the same city at the start of the combat phase
+**When** combat resolves
+**Then** each side takes deterministic simultaneous casualties derived from the opposing force and armies reduced to zero troops are removed from the next state.
+
+**And Given** one side qualifies as the city defender because it owns the contested city
+**When** combat resolves in a fortified city
+**Then** the defending side receives the documented base defender bonus plus the city's fortification multiplier while attackers do not.
+
+**And Given** identical starting states and contested armies
+**When** the combat phase resolves repeatedly
+**Then** the resulting troop counts and surviving armies are identical and the caller-owned `MatchState` remains unchanged.
+
+### Story 7.2: Hand uncontested city control to occupying armies after combat resolution
+
+As a game engine developer,
+I want the resolver to update city ownership when exactly one surviving force occupies a city after movement and combat,
+So that match state, economy, and victory tracking reflect territorial gains without waiting for later API work.
+
+**Acceptance Criteria:**
+
+**Given** a neutral or enemy-owned city containing armies from exactly one surviving player after combat resolution
+**When** the tick finishes the combat phase
+**Then** the city owner changes to that occupying player in the copied next state.
+
+**And Given** a contested city that still contains surviving armies from multiple players
+**When** the combat phase completes
+**Then** ownership does not change until only one force remains.
+
+**And Given** repeated runs from the same starting state and occupying armies
+**When** the ownership handoff resolves
+**Then** the resulting city owners are deterministic and the caller-owned `MatchState` remains unchanged.
