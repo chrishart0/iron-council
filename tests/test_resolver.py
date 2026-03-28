@@ -345,3 +345,173 @@ def test_resolve_tick_advances_transit_arrivals_and_starts_new_one_edge_marches(
         path=["birmingham"],
         ticks_remaining=2,
     )
+
+
+def test_resolve_tick_applies_starvation_attrition_only_to_players_left_with_zero_food() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": CityState(
+                owner="player_1",
+                population=1,
+                resources=ResourceState(food=1, production=1, money=1),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+            "bravo": CityState(
+                owner="player_2",
+                population=1,
+                resources=ResourceState(food=3, production=1, money=1),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+        },
+        armies=[
+            ArmyState(
+                id="starving_army",
+                owner="player_1",
+                troops=2,
+                location="alpha",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+            ArmyState(
+                id="fed_army",
+                owner="player_2",
+                troops=2,
+                location="bravo",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=0, production=10, money=10),
+                cities_owned=["alpha"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=2, production=10, money=10),
+                cities_owned=["bravo"],
+                alliance_id="alliance_blue",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    armies_by_id = {army.id: army for army in result.next_state.armies}
+
+    assert result.next_state.players["player_1"].resources.food == 0
+    assert result.next_state.players["player_2"].resources.food == 2
+    assert armies_by_id["starving_army"].troops == 1
+    assert armies_by_id["fed_army"].troops == 2
+    assert result.events[PHASE_ORDER.index("attrition")] == TickPhaseEvent(
+        phase="attrition",
+        event="phase.attrition.completed",
+    )
+
+
+def test_resolve_tick_removes_zero_troop_armies_and_updates_elimination() -> None:
+    state = MatchState(
+        tick=5,
+        cities={},
+        armies=[
+            ArmyState(
+                id="eliminated_army",
+                owner="player_1",
+                troops=1,
+                location="wasteland",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+            ArmyState(
+                id="surviving_army",
+                owner="player_2",
+                troops=2,
+                location="frontier",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=0, production=10, money=10),
+                cities_owned=[],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=0, production=10, money=10),
+                cities_owned=[],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert [army.id for army in result.next_state.armies] == ["surviving_army"]
+    assert result.next_state.armies[0].troops == 1
+    assert result.next_state.players["player_1"].is_eliminated is True
+    assert result.next_state.players["player_2"].is_eliminated is False
+
+
+def test_resolve_tick_keeps_player_active_when_attrition_removes_last_army_but_city_remains() -> (
+    None
+):
+    state = MatchState(
+        tick=5,
+        cities={"alpha": _city_state(owner="player_1")},
+        armies=[
+            ArmyState(
+                id="starving_army",
+                owner="player_1",
+                troops=1,
+                location="alpha",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            )
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=0, production=10, money=10),
+                cities_owned=["alpha"],
+                alliance_id=None,
+                is_eliminated=False,
+            )
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert result.next_state.armies == []
+    assert result.next_state.players["player_1"].is_eliminated is False

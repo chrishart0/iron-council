@@ -56,6 +56,8 @@ This document decomposes the current game design and technical architecture into
 2. **Epic 2 - Canonical UK 1900 Map Data**: encode the V1 map, adjacency graph, resource identities, and validation rules.
 3. **Epic 3 - Match Bootstrap and Order Validation**: create deterministic match initialization and pre-resolution validation for player orders.
 4. **Epic 4 - Headless Tick Simulation Skeleton**: implement the first pure-function resolver shell and smoke-testable headless tick loop.
+5. **Epic 5 - Foundational Tick Economy and Movement**: add deterministic resource accounting and army transit progression so the resolver meaningfully changes state.
+6. **Epic 6 - Attrition and Victory Safety Rails**: convert resource pressure and territorial control into deterministic elimination and endgame countdown behavior.
 
 ## Epic 1: Server Foundation and Shared Contracts
 
@@ -236,3 +238,47 @@ So that headless simulations can model travel time and arrivals across the map g
 **And Given** identical starting state and accepted orders
 **When** the movement phase runs repeatedly
 **Then** the resulting army positions and transit counters are identical and the original input state remains unchanged.
+
+## Epic 6: Attrition and Victory Safety Rails
+
+Convert the newly stateful resolver into one that also punishes starvation and recognizes endgame control, while keeping the logic pure, deterministic, and easy to smoke test.
+
+### Story 6.1: Apply starvation attrition and elimination checks during the attrition phase
+
+As a game engine developer,
+I want the attrition phase to shrink starving armies and flag defeated players,
+So that resource shortages and lost territory create deterministic consequences in headless simulations.
+
+**Acceptance Criteria:**
+
+**Given** players whose food stockpile is zero after the resource phase
+**When** the attrition phase runs
+**Then** each of their armies loses deterministic starvation casualties and any army reduced to zero is removed from the next state.
+
+**And Given** players with no owned cities and no surviving armies after attrition resolution
+**When** the attrition phase completes
+**Then** those players are marked eliminated while players that still have territory or armies remain active.
+
+**And Given** identical starting states with the same starvation conditions
+**When** attrition resolves repeatedly
+**Then** the casualty and elimination outcomes are identical and the caller-owned `MatchState` remains unchanged.
+
+### Story 6.2: Track coalition city control and victory countdown during the victory phase
+
+As a game engine developer,
+I want the victory phase to count coalition-controlled cities and manage a countdown,
+So that simulations can expose an explicit endgame race before combat, siege, and diplomacy are fully implemented.
+
+**Acceptance Criteria:**
+
+**Given** city ownership and player alliance membership in the canonical match state
+**When** the victory phase runs
+**Then** it groups owned cities by alliance-or-solo coalition, sets `VictoryState.leading_alliance`, and records the leading coalition's controlled city count.
+
+**And Given** a coalition meeting or exceeding the configured city threshold
+**When** the victory phase runs on consecutive ticks
+**Then** `countdown_ticks_remaining` starts, decreases deterministically while the coalition stays above threshold, and clears if control drops below threshold or the leader changes.
+
+**And Given** repeated runs from the same starting state and coalition ownership layout
+**When** the victory phase resolves
+**Then** the resulting victory metadata is deterministic and the caller-owned `MatchState` remains unchanged.

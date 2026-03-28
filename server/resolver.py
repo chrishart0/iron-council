@@ -7,11 +7,12 @@ from typing import Literal
 from server.data.maps import load_uk_1900_map
 from server.models.domain import StrictModel
 from server.models.orders import MovementOrder, OrderBatch
-from server.models.state import CityState, MatchState
+from server.models.state import ArmyState, CityState, MatchState
 
 RESOURCE_FIELDS: tuple[str, str, str] = ("food", "production", "money")
 ECONOMY_TIER_MULTIPLIER_NUMERATORS: tuple[int, int, int, int] = (3, 4, 5, 6)
 ECONOMY_TIER_MULTIPLIER_DENOMINATOR = 3
+STARVATION_ATTRITION_LOSS = 1
 
 TickPhaseName = Literal[
     "resource",
@@ -128,6 +129,39 @@ def _resolve_siege_phase(match_state: MatchState, validated_orders: OrderBatch) 
 def _resolve_attrition_phase(
     match_state: MatchState, validated_orders: OrderBatch
 ) -> TickPhaseOutcome:
+    starving_players = {
+        player_id
+        for player_id, player_state in match_state.players.items()
+        if player_state.resources.food == 0
+    }
+    surviving_armies: list[ArmyState] = []
+
+    for army in match_state.armies:
+        updated_troops = army.troops
+        if army.owner in starving_players:
+            updated_troops -= STARVATION_ATTRITION_LOSS
+
+        if updated_troops > 0:
+            surviving_armies.append(army.model_copy(update={"troops": updated_troops}))
+
+    match_state.armies = surviving_armies
+
+    owned_city_count_by_player = {player_id: 0 for player_id in match_state.players}
+    for city_state in match_state.cities.values():
+        if city_state.owner in owned_city_count_by_player:
+            owned_city_count_by_player[city_state.owner] += 1
+
+    surviving_army_count_by_player = {player_id: 0 for player_id in match_state.players}
+    for army in match_state.armies:
+        if army.owner in surviving_army_count_by_player:
+            surviving_army_count_by_player[army.owner] += 1
+
+    for player_id, player_state in match_state.players.items():
+        player_state.is_eliminated = (
+            owned_city_count_by_player[player_id] == 0
+            and surviving_army_count_by_player[player_id] == 0
+        )
+
     return _complete_phase(match_state, validated_orders, "attrition")
 
 
