@@ -1,6 +1,6 @@
 # Story 1.1: Scaffold the FastAPI server package and core domain contracts
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -18,19 +18,19 @@ so that later game-loop and API work can build on stable validated contracts.
 
 ## Tasks / Subtasks
 
-- [ ] Create the initial Python package scaffold and dependency metadata. (AC: 1, 2)
-  - [ ] Add `pyproject.toml` with FastAPI, Pydantic, Uvicorn, and pytest configuration.
-  - [ ] Create package init files under `server/` and `server/models/`.
-  - [ ] Add a minimal `server/main.py` FastAPI app with `/health`.
-- [ ] Implement canonical state contracts. (AC: 3)
-  - [ ] Add `server/models/state.py` with match, city, army, player, and victory models.
-  - [ ] Keep contracts JSON-serializable and aligned with the architecture document's sample state shape.
-- [ ] Implement core order payload contracts. (AC: 4)
-  - [ ] Add `server/models/orders.py` with movement, recruitment, upgrade, and transfer payloads plus an aggregate order envelope.
-  - [ ] Use explicit literals/enums so downstream validation can switch on order type safely.
-- [ ] Add fixture-based tests for validation and serialization. (AC: 5)
-  - [ ] Add test fixtures for a representative match state and order payload.
-  - [ ] Assert both `model_validate()` and `model_dump(mode="json")` round-trip cleanly.
+- [x] Create the initial Python package scaffold and dependency metadata. (AC: 1, 2)
+  - [x] Add `pyproject.toml` with FastAPI, Pydantic, Uvicorn, and pytest configuration.
+  - [x] Create package init files under `server/` and `server/models/`.
+  - [x] Add a minimal `server/main.py` FastAPI app with `/health`.
+- [x] Implement canonical state contracts. (AC: 3)
+  - [x] Add `server/models/state.py` with match, city, army, player, and victory models.
+  - [x] Keep contracts JSON-serializable and aligned with the architecture document's sample state shape.
+- [x] Implement core order payload contracts. (AC: 4)
+  - [x] Add `server/models/orders.py` with movement, recruitment, upgrade, and transfer payloads plus an aggregate order envelope.
+  - [x] Use explicit literals/enums so downstream validation can switch on order type safely.
+- [x] Add fixture-based tests for validation and serialization. (AC: 5)
+  - [x] Add test fixtures for a representative match state and order payload.
+  - [x] Assert both `model_validate()` and `model_dump(mode="json")` round-trip cleanly.
 
 ## Dev Notes
 
@@ -61,12 +61,27 @@ OpenAI Codex CLI (`codex exec --full-auto`)
 
 ### Debug Log References
 
-- To be filled during implementation.
+- `pytest -q` initially surfaced an existing root metadata contract in `tests/api/test_metadata.py` and a serialization expectation mismatch for defaulted order-type literals.
+- Added the root metadata route, adjusted the order serialization test to assert explicit defaulted type fields, and reran the suite.
+- Used `pytest -q -o addopts=''` for verification because this environment injects unsupported coverage addopts outside the repository.
 
 ### Completion Notes List
 
-- To be filled during implementation.
+- Added the initial FastAPI scaffold with dependency metadata and importable `server` packages.
+- Implemented canonical Pydantic v2 state contracts for match, city, army, player, and victory state with `extra="forbid"` and small structural validators.
+- Implemented core movement, recruitment, upgrade, and transfer order models plus an aggregate order envelope.
+- Added fixture-based pytest coverage for the health route, representative state and order payload round-trips, and basic validation failures.
+- Kept scope limited to scaffolding and contracts; no game logic, persistence, or map data was introduced.
 
 ### File List
 
-- To be filled during implementation.
+- `pyproject.toml`
+- `server/__init__.py`
+- `server/main.py`
+- `server/models/__init__.py`
+- `server/models/state.py`
+- `server/models/orders.py`
+- `tests/conftest.py`
+- `tests/test_main.py`
+- `tests/test_state.py`
+- `tests/test_orders.py`
