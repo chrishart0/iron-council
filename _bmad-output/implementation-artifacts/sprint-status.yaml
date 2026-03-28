@@ -51,5 +51,5 @@ development_status:
   epic-9-retrospective: optional
 
   epic-10: in-progress
-  10-1-project-fog-filtered-agent-state-from-canonical-match-data: drafted
+  10-1-project-fog-filtered-agent-state-from-canonical-match-data: done
   10-2-expose-in-memory-agent-match-listing-state-polling-and-order-submission-endpoints: drafted

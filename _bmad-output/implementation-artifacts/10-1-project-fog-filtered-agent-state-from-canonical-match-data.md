@@ -1,6 +1,6 @@
 # Story 10.1: Project fog-filtered agent state from canonical match data
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -16,17 +16,17 @@ so that agent polling and future broadcasts can share one deterministic visibili
 
 ## Tasks / Subtasks
 
-- [ ] Add behavior-first visibility tests before implementation. (AC: 1, 2, 3)
-  - [ ] Cover direct ownership visibility, alliance-shared visibility, and adjacent-city reveal rules.
-  - [ ] Cover masked enemy city and army details versus exact self/allied details.
-  - [ ] Cover repeated runs and input-state immutability.
-- [ ] Implement a narrow fog-projection module and API-facing view models. (AC: 1, 2, 3)
-  - [ ] Keep scope to deterministic state projection only; do not add message polling, diplomacy payloads, or websocket broadcasting.
-  - [ ] Reuse canonical map adjacency and current alliance membership from `MatchState`.
-  - [ ] Keep iteration and output ordering deterministic.
-- [ ] Re-verify visibility behavior after merge. (AC: 1, 2, 3)
-  - [ ] Re-run focused visibility/API tests.
-  - [ ] Re-run the repository quality gate.
+- [x] Add behavior-first visibility tests before implementation. (AC: 1, 2, 3)
+  - [x] Cover direct ownership visibility, alliance-shared visibility, and adjacent-city reveal rules.
+  - [x] Cover masked enemy city and army details versus exact self/allied details.
+  - [x] Cover repeated runs and input-state immutability.
+- [x] Implement a narrow fog-projection module and API-facing view models. (AC: 1, 2, 3)
+  - [x] Keep scope to deterministic state projection only; do not add message polling, diplomacy payloads, or websocket broadcasting.
+  - [x] Reuse canonical map adjacency and current alliance membership from `MatchState`.
+  - [x] Keep iteration and output ordering deterministic.
+- [x] Re-verify visibility behavior after merge. (AC: 1, 2, 3)
+  - [x] Re-run focused visibility/API tests.
+  - [x] Re-run the repository quality gate.
 
 ## Dev Notes
 
@@ -44,20 +44,36 @@ so that agent polling and future broadcasts can share one deterministic visibili
 
 ### Agent Model Used
 
-_TBD_
+GPT-5 Codex
 
 ### Debug Log References
 
-- _TBD_
+- Red phase: `uv run pytest tests/test_fog.py` failed during collection with `ModuleNotFoundError: No module named 'server.fog'`.
+- Focused verification: `uv run pytest --no-cov tests/test_fog.py`
+- Quality gate: `make quality`
+- Follow-up red phase: `uv run pytest --no-cov tests/test_fog.py` failed because stationary enemy armies in visible cities were omitted and `project_agent_state()` did not yet accept `match_id`.
+- Follow-up verification: `uv run pytest --no-cov tests/test_fog.py`
+- Follow-up quality gate: `make quality`
 
 ### Completion Notes List
 
-- _TBD_
+- Added `server.fog.project_agent_state` to derive deterministic fog-filtered agent state from canonical `MatchState` plus canonical map adjacency.
+- Added API-facing fog view models for projected cities and armies, keeping self/allied territory exact while masking enemy city and army details.
+- Projection includes owned and allied cities plus adjacent revealed cities through shared vision, sorts cities and armies deterministically, and does not mutate the caller-owned `MatchState`.
+- Follow-up fix: stationary enemy armies now remain visible when positioned inside a visible city, even when they are not in transit.
+- Follow-up fix: fog tests now inject a small synthetic `MapDefinition`, reducing brittleness against unrelated canonical map changes.
+- Follow-up contract alignment: `AgentStateProjection` and `project_agent_state()` now accept optional `match_id` without expanding into the Story 10.2 REST payload shape.
 
 ### File List
 
-- _TBD_
+- `_bmad-output/implementation-artifacts/10-1-project-fog-filtered-agent-state-from-canonical-match-data.md`
+- `server/fog.py`
+- `server/models/__init__.py`
+- `server/models/fog.py`
+- `tests/test_fog.py`
 
 ### Change Log
 
 - 2026-03-28 14:25 UTC: Drafted Story 10.1 for deterministic fog-filtered agent state projection.
+- 2026-03-28 14:30 UTC: Implemented deterministic fog projection, added projection-boundary tests, and passed `make quality`.
+- 2026-03-28 14:45 UTC: Fixed stationary visible enemy army projection, switched fog tests to an injected synthetic map, added optional `match_id` to the projection contract, and re-ran focused tests.
