@@ -30,7 +30,7 @@ development_status:
   5-2-advance-army-transit-and-accepted-movement-orders-during-the-movement-phase: done
   epic-5-retrospective: optional
 
-  epic-6: in-progress
+  epic-6: done
   6-1-apply-starvation-attrition-and-elimination-checks-during-the-attrition-phase: done
-  6-2-track-coalition-city-control-and-victory-countdown-during-the-victory-phase: drafted
+  6-2-track-coalition-city-control-and-victory-countdown-during-the-victory-phase: done
   epic-6-retrospective: optional

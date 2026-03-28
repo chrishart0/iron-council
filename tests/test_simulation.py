@@ -237,3 +237,52 @@ def test_simulate_ticks_is_deterministic_for_movement_transit_progression() -> N
         "birmingham",
         None,
     ]
+
+
+def test_simulate_ticks_starts_and_continues_victory_countdown_for_same_coalition() -> None:
+    starting_state = MatchState(
+        tick=5,
+        cities={
+            "alpha": _city_state(owner="player_1"),
+            "bravo": _city_state(owner="player_2"),
+            "charlie": _city_state(owner="player_2"),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["alpha"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["bravo", "charlie"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            # Temporary narrow story choice: threshold also seeds countdown duration.
+            threshold=3,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    original_dump = deepcopy(starting_state.model_dump(mode="json"))
+
+    simulation = simulate_ticks(starting_state, ticks=3, orders=OrderBatch())
+
+    assert starting_state.model_dump(mode="json") == original_dump
+    assert [tick.snapshot.victory.leading_alliance for tick in simulation.ticks] == [
+        "alliance_red",
+        "alliance_red",
+        "alliance_red",
+    ]
+    assert [tick.snapshot.victory.cities_held for tick in simulation.ticks] == [3, 3, 3]
+    assert [tick.snapshot.victory.countdown_ticks_remaining for tick in simulation.ticks] == [
+        3,
+        2,
+        1,
+    ]

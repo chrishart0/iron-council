@@ -234,7 +234,12 @@ def test_resolve_tick_returns_copied_state_without_mutating_input() -> None:
     assert result.next_state.tick == state.tick
     assert result.next_state.model_dump(mode="json")["cities"] == original_dump["cities"]
     assert result.next_state.model_dump(mode="json")["armies"] == original_dump["armies"]
-    assert result.next_state.model_dump(mode="json")["victory"] == original_dump["victory"]
+    assert result.next_state.victory == VictoryState(
+        leading_alliance=None,
+        cities_held=1,
+        threshold=2,
+        countdown_ticks_remaining=None,
+    )
 
 
 def test_resolve_tick_emits_phase_metadata_and_typed_events_in_phase_order() -> None:
@@ -515,3 +520,253 @@ def test_resolve_tick_keeps_player_active_when_attrition_removes_last_army_but_c
 
     assert result.next_state.armies == []
     assert result.next_state.players["player_1"].is_eliminated is False
+
+
+def test_resolve_tick_groups_allied_and_solo_city_control_for_victory_metadata() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": _city_state(owner="player_1"),
+            "bravo": _city_state(owner="player_2"),
+            "charlie": _city_state(owner="player_2"),
+            "delta": _city_state(owner="player_3"),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["alpha"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["bravo", "charlie"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_3": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["delta"],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=3,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert result.next_state.victory == VictoryState(
+        leading_alliance="alliance_red",
+        cities_held=3,
+        # Temporary narrow story choice: threshold doubles as the initial countdown length.
+        threshold=3,
+        countdown_ticks_remaining=3,
+    )
+    assert result.events[PHASE_ORDER.index("victory")] == TickPhaseEvent(
+        phase="victory",
+        event="phase.victory.completed",
+    )
+
+
+def test_resolve_tick_keeps_solo_and_alliance_coalitions_distinct_when_ids_collide() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": _city_state(owner="player_1"),
+            "bravo": _city_state(owner="player_1"),
+            "charlie": _city_state(owner="player_2"),
+            "delta": _city_state(owner="player_2"),
+            "echo": _city_state(owner="player_3"),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["alpha", "bravo"],
+                alliance_id="player_3",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["charlie", "delta"],
+                alliance_id="player_3",
+                is_eliminated=False,
+            ),
+            "player_3": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["echo"],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=3,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert result.next_state.victory == VictoryState(
+        leading_alliance="player_3",
+        cities_held=4,
+        threshold=3,
+        countdown_ticks_remaining=3,
+    )
+
+
+def test_resolve_tick_clears_victory_countdown_when_top_city_control_is_tied() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": _city_state(owner="player_1"),
+            "bravo": _city_state(owner="player_1"),
+            "charlie": _city_state(owner="player_2"),
+            "delta": _city_state(owner="player_3"),
+            "echo": _city_state(owner="player_3"),
+            "foxtrot": _city_state(owner="player_3"),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["alpha", "bravo"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["charlie"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_3": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["delta", "echo", "foxtrot"],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance="alliance_red",
+            cities_held=3,
+            threshold=2,
+            countdown_ticks_remaining=1,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert result.next_state.victory == VictoryState(
+        leading_alliance=None,
+        cities_held=3,
+        threshold=2,
+        countdown_ticks_remaining=None,
+    )
+
+
+def test_resolve_tick_clears_victory_countdown_when_leading_coalition_changes() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": _city_state(owner="player_1"),
+            "bravo": _city_state(owner="player_2"),
+            "charlie": _city_state(owner="player_2"),
+            "delta": _city_state(owner="player_3"),
+            "echo": _city_state(owner="player_3"),
+            "foxtrot": _city_state(owner="player_3"),
+            "golf": _city_state(owner="player_3"),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["alpha"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["bravo", "charlie"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_3": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["delta", "echo", "foxtrot", "golf"],
+                alliance_id="alliance_blue",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance="alliance_red",
+            cities_held=3,
+            threshold=2,
+            countdown_ticks_remaining=1,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert result.next_state.victory == VictoryState(
+        leading_alliance="alliance_blue",
+        cities_held=4,
+        threshold=2,
+        countdown_ticks_remaining=None,
+    )
+
+
+def test_resolve_tick_clears_victory_countdown_when_control_drops_below_threshold() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": _city_state(owner="player_1"),
+            "bravo": _city_state(owner="player_2"),
+            "charlie": _city_state(owner="player_3"),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["alpha"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["bravo"],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+            "player_3": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["charlie"],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance="alliance_red",
+            cities_held=3,
+            threshold=2,
+            countdown_ticks_remaining=1,
+        ),
+    )
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert result.next_state.victory == VictoryState(
+        leading_alliance=None,
+        cities_held=1,
+        threshold=2,
+        countdown_ticks_remaining=None,
+    )

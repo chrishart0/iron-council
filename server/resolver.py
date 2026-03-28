@@ -174,6 +174,17 @@ def _resolve_diplomacy_phase(
 def _resolve_victory_phase(
     match_state: MatchState, validated_orders: OrderBatch
 ) -> TickPhaseOutcome:
+    coalition_city_counts = _coalition_city_counts(match_state)
+    leading_alliance, cities_held = _leading_coalition(coalition_city_counts)
+    countdown_ticks_remaining = _updated_victory_countdown(
+        match_state,
+        leading_alliance=leading_alliance,
+        cities_held=cities_held,
+    )
+
+    match_state.victory.leading_alliance = leading_alliance
+    match_state.victory.cities_held = cities_held
+    match_state.victory.countdown_ticks_remaining = countdown_ticks_remaining
     return _complete_phase(match_state, validated_orders, "victory")
 
 
@@ -187,6 +198,9 @@ PHASE_HANDLERS: tuple[PhaseHandler, ...] = (
     _resolve_diplomacy_phase,
     _resolve_victory_phase,
 )
+
+CoalitionNamespace = Literal["alliance", "solo"]
+CoalitionKey = tuple[CoalitionNamespace, str]
 
 
 def _phase_event_name(phase: TickPhaseName) -> str:
@@ -264,3 +278,69 @@ def _complete_phase(
         metadata=TickPhaseMetadata(phase=phase, event=event_name),
         event=TickPhaseEvent(phase=phase, event=event_name),
     )
+
+
+def _coalition_city_counts(match_state: MatchState) -> dict[CoalitionKey, int]:
+    coalition_city_counts: dict[CoalitionKey, int] = {}
+
+    for city_state in match_state.cities.values():
+        if city_state.owner is None:
+            continue
+
+        player_state = match_state.players.get(city_state.owner)
+        if player_state is None:
+            continue
+
+        coalition_id = _coalition_key(
+            player_id=city_state.owner,
+            alliance_id=player_state.alliance_id,
+        )
+        coalition_city_counts[coalition_id] = coalition_city_counts.get(coalition_id, 0) + 1
+
+    return coalition_city_counts
+
+
+def _coalition_key(*, player_id: str, alliance_id: str | None) -> CoalitionKey:
+    if alliance_id is not None:
+        return ("alliance", alliance_id)
+    return ("solo", player_id)
+
+
+def _public_coalition_id(coalition_key: CoalitionKey) -> str:
+    return coalition_key[1]
+
+
+def _leading_coalition(
+    coalition_city_counts: dict[CoalitionKey, int],
+) -> tuple[str | None, int]:
+    if not coalition_city_counts:
+        return None, 0
+
+    cities_held = max(coalition_city_counts.values())
+    leaders = [
+        coalition_id
+        for coalition_id, city_count in coalition_city_counts.items()
+        if city_count == cities_held
+    ]
+    leading_alliance = _public_coalition_id(leaders[0]) if len(leaders) == 1 else None
+
+    return leading_alliance, cities_held
+
+
+def _updated_victory_countdown(
+    match_state: MatchState,
+    *,
+    leading_alliance: str | None,
+    cities_held: int,
+) -> int | None:
+    victory_state = match_state.victory
+
+    if leading_alliance is None or cities_held < victory_state.threshold:
+        return None
+    if victory_state.leading_alliance is None:
+        return victory_state.threshold
+    if victory_state.leading_alliance != leading_alliance:
+        return None
+    if victory_state.countdown_ticks_remaining is None:
+        return victory_state.threshold
+    return max(0, victory_state.countdown_ticks_remaining - 1)
