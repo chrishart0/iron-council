@@ -192,3 +192,47 @@ So that CI can execute basic match progression without web or database infrastru
 **Given** a minimal match fixture
 **When** the headless simulation runner advances N ticks
 **Then** it produces deterministic state snapshots and event logs suitable for unit and integration tests.
+
+## Epic 5: Foundational Tick Economy and Movement
+
+Turn the resolver shell into the first meaningfully state-changing engine by implementing resource accounting and army transit behavior while keeping the logic pure and deterministic.
+
+### Story 5.1: Apply deterministic resource accounting during the resolver resource phase
+
+As a game engine developer,
+I want the resource phase to update player stockpiles from owned-city yields and upkeep,
+So that simulations reflect the real per-tick economic pressure described in the design docs.
+
+**Acceptance Criteria:**
+
+**Given** owned cities, player stockpiles, and stationed/transit armies
+**When** the resource phase runs
+**Then** each owning player gains the summed resource yields from their cities and pays per-tick food upkeep for owned-city population plus all owned armies.
+
+**And Given** economy upgrade tiers on cities
+**When** the resource phase computes city output
+**Then** only the primary resource yield is boosted by deterministic tier multipliers and secondary-resource yields remain at their base values.
+
+**And Given** the resolver remains a pure function
+**When** the resource phase mutates the copied next-state
+**Then** repeated runs from the same inputs produce identical post-phase player resources without mutating the caller-owned `MatchState`.
+
+### Story 5.2: Advance army transit and accepted movement orders during the movement phase
+
+As a game engine developer,
+I want the movement phase to progress in-transit armies and start accepted new marches,
+So that headless simulations can model travel time and arrivals across the map graph.
+
+**Acceptance Criteria:**
+
+**Given** armies already in transit
+**When** the movement phase runs
+**Then** `ticks_remaining` decrements deterministically and armies arrive into their destination city when the counter reaches zero.
+
+**And Given** accepted movement orders for armies that are currently stationed in cities
+**When** the movement phase runs
+**Then** each army begins a one-edge march using the canonical edge distance for that route and leaves its current location until arrival.
+
+**And Given** identical starting state and accepted orders
+**When** the movement phase runs repeatedly
+**Then** the resulting army positions and transit counters are identical and the original input state remains unchanged.

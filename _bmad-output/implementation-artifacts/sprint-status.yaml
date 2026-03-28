@@ -1,4 +1,4 @@
-generated: 2026-03-28 05:13 UTC
+generated: 2026-03-28 09:16 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
@@ -24,3 +24,8 @@ development_status:
   4-1-add-a-pure-function-tick-resolver-skeleton-with-phase-ordering: done
   4-2-provide-a-headless-simulation-harness-for-smoke-testing-ticks: done
   epic-4-retrospective: optional
+
+  epic-5: in_progress
+  5-1-apply-deterministic-resource-accounting-during-the-resolver-resource-phase: done
+  5-2-advance-army-transit-and-accepted-movement-orders-during-the-movement-phase: ready_for_dev
+  epic-5-retrospective: optional

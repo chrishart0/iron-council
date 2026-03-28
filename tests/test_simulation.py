@@ -39,13 +39,13 @@ def _match_state() -> MatchState:
         ],
         players={
             "player_1": PlayerState(
-                resources=ResourceState(food=10, production=20, money=30),
+                resources=ResourceState(food=30, production=20, money=30),
                 cities_owned=["alpha"],
                 alliance_id="alliance_red",
                 is_eliminated=False,
             ),
             "player_2": PlayerState(
-                resources=ResourceState(food=8, production=7, money=6),
+                resources=ResourceState(food=20, production=7, money=6),
                 cities_owned=["bravo"],
                 alliance_id="alliance_blue",
                 is_eliminated=False,
@@ -63,7 +63,7 @@ def _match_state() -> MatchState:
 def _city_state(*, owner: str | None) -> CityState:
     return CityState(
         owner=owner,
-        population=10,
+        population=1,
         resources=ResourceState(food=1, production=1, money=1),
         upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
         garrison=5,

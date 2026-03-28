@@ -35,13 +35,13 @@ def _match_state() -> MatchState:
         ],
         players={
             "player_1": PlayerState(
-                resources=ResourceState(food=10, production=20, money=30),
+                resources=ResourceState(food=30, production=20, money=30),
                 cities_owned=["alpha"],
                 alliance_id="alliance_red",
                 is_eliminated=False,
             ),
             "player_2": PlayerState(
-                resources=ResourceState(food=8, production=7, money=6),
+                resources=ResourceState(food=20, production=7, money=6),
                 cities_owned=["bravo"],
                 alliance_id="alliance_blue",
                 is_eliminated=False,
@@ -59,11 +59,166 @@ def _match_state() -> MatchState:
 def _city_state(*, owner: str | None) -> CityState:
     return CityState(
         owner=owner,
-        population=10,
+        population=1,
         resources=ResourceState(food=1, production=1, money=1),
         upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
         garrison=5,
         building_queue=[],
+    )
+
+
+def test_resolve_tick_adds_owned_city_yields_and_food_upkeep_without_mutating_input() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": CityState(
+                owner="player_1",
+                population=4,
+                resources=ResourceState(food=3, production=1, money=1),
+                upgrades=CityUpgradeState(economy=3, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+            "bravo": CityState(
+                owner="player_1",
+                population=2,
+                resources=ResourceState(food=1, production=3, money=1),
+                upgrades=CityUpgradeState(economy=2, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+            "charlie": CityState(
+                owner="player_2",
+                population=3,
+                resources=ResourceState(food=1, production=1, money=3),
+                upgrades=CityUpgradeState(economy=1, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+            "delta": CityState(
+                owner=None,
+                population=9,
+                resources=ResourceState(food=3, production=1, money=1),
+                upgrades=CityUpgradeState(economy=3, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+        },
+        armies=[
+            ArmyState(
+                id="army_1",
+                owner="player_1",
+                troops=5,
+                location="alpha",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+            ArmyState(
+                id="army_2",
+                owner="player_1",
+                troops=2,
+                location="bravo",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+            ArmyState(
+                id="army_3",
+                owner="player_2",
+                troops=1,
+                location="charlie",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=20, money=30),
+                cities_owned=["alpha", "bravo"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=8, production=7, money=6),
+                cities_owned=["charlie"],
+                alliance_id="alliance_blue",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    original_dump = deepcopy(state.model_dump(mode="json"))
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert state.model_dump(mode="json") == original_dump
+    assert result.next_state.players["player_1"].resources == ResourceState(
+        food=4,
+        production=26,
+        money=32,
+    )
+    assert result.next_state.players["player_2"].resources == ResourceState(
+        food=5,
+        production=8,
+        money=10,
+    )
+
+
+def test_resolve_tick_clamps_food_to_zero_when_upkeep_exceeds_available_food() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": CityState(
+                owner="player_1",
+                population=4,
+                resources=ResourceState(food=1, production=1, money=1),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            )
+        },
+        armies=[
+            ArmyState(
+                id="army_1",
+                owner="player_1",
+                troops=3,
+                location="alpha",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            )
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=2, production=10, money=10),
+                cities_owned=["alpha"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            )
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    original_dump = deepcopy(state.model_dump(mode="json"))
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert state.model_dump(mode="json") == original_dump
+    assert result.next_state.players["player_1"].resources == ResourceState(
+        food=0,
+        production=11,
+        money=11,
     )
 
 
@@ -76,7 +231,10 @@ def test_resolve_tick_returns_copied_state_without_mutating_input() -> None:
 
     assert result.next_state is not state
     assert state.model_dump(mode="json") == original_dump
-    assert result.next_state.model_dump(mode="json") == original_dump
+    assert result.next_state.tick == state.tick
+    assert result.next_state.model_dump(mode="json")["cities"] == original_dump["cities"]
+    assert result.next_state.model_dump(mode="json")["armies"] == original_dump["armies"]
+    assert result.next_state.model_dump(mode="json")["victory"] == original_dump["victory"]
 
 
 def test_resolve_tick_emits_phase_metadata_and_typed_events_in_phase_order() -> None:
