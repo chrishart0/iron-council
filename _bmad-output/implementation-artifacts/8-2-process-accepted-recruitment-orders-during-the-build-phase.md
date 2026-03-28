@@ -1,6 +1,6 @@
 # Story 8.2: Process accepted recruitment orders during the build phase
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -16,17 +16,17 @@ so that validated troop purchases actually create military presence for later mo
 
 ## Tasks / Subtasks
 
-- [ ] Add behavior-first resolver coverage before implementation. (AC: 1, 2, 3)
-  - [ ] Cover new stationed armies appearing for cities without a current army.
-  - [ ] Cover deterministic reinforcement or co-location behavior for cities that already contain a friendly stationed army.
-  - [ ] Cover repeated runs and input-state immutability.
-- [ ] Implement narrow build-phase recruitment resolution. (AC: 1, 2, 3)
-  - [ ] Keep scope to accepted recruitment orders only; do not add recruitment-capacity tuning, combat, or transfer-order behavior in this story.
-  - [ ] Reuse the documented recruitment cost table rather than duplicating food/production pricing logic.
-  - [ ] Keep army creation deterministic and compatible with the existing pure-function resolver contract.
-- [ ] Re-verify resolver and simulation behavior after merge. (AC: 1, 2, 3)
-  - [ ] Re-run focused resolver coverage.
-  - [ ] Re-run the repository quality gate.
+- [x] Add behavior-first resolver coverage before implementation. (AC: 1, 2, 3)
+  - [x] Cover new stationed armies appearing for cities without a current army.
+  - [x] Cover deterministic reinforcement or co-location behavior for cities that already contain a friendly stationed army.
+  - [x] Cover repeated runs and input-state immutability.
+- [x] Implement narrow build-phase recruitment resolution. (AC: 1, 2, 3)
+  - [x] Keep scope to accepted recruitment orders only; do not add recruitment-capacity tuning, combat, or transfer-order behavior in this story.
+  - [x] Reuse the documented recruitment cost table rather than duplicating food/production pricing logic.
+  - [x] Keep army creation deterministic and compatible with the existing pure-function resolver contract.
+- [x] Re-verify resolver and simulation behavior after merge. (AC: 1, 2, 3)
+  - [x] Re-run focused resolver coverage.
+  - [x] Re-run the repository quality gate.
 
 ## Dev Notes
 
@@ -48,16 +48,27 @@ GPT-5 Codex
 
 ### Debug Log References
 
-- Pending.
+- RED (env): `uv run pytest tests/test_resolver.py -k 'build_phase and recruitment' --override-ini addopts='-q --strict-config --strict-markers'` failed during collection with `ModuleNotFoundError: No module named 'server'` before the local dev environment was synced.
+- RED: `.venv/bin/pytest tests/test_resolver.py -k 'build_phase and recruitment' -o addopts=''` failed on the new resolver-boundary assertions because build-phase recruitment did not yet reinforce armies or spend recruitment costs.
+- GREEN (focused): `.venv/bin/pytest tests/test_resolver.py -k 'build_phase' -o addopts=''`
+- GREEN (focused full resolver): `.venv/bin/pytest tests/test_resolver.py -o addopts=''`
+- GREEN (quality gate): `make quality`
 
 ### Completion Notes List
 
-- Pending.
+- Added resolver-boundary tests for accepted build-phase recruitment covering reinforcement into an existing friendly stationed army, deterministic stationed-army creation when none exists, repeated-run determinism, and caller-state immutability.
+- Implemented narrow build-phase recruitment resolution in `server.resolver` by reusing `RECRUITMENT_COST_PER_TROOP`, spending only documented food and production costs, and leaving transfer, siege, diplomacy, and recruitment-capacity behavior unchanged.
+- Deterministic army creation now uses collision-safe ids shaped as `recruitment:{owner}:{city}:{n}` and reinforces the lexicographically earliest friendly stationed army already in the ordered city.
+- Verified the change with focused resolver coverage and the full repository quality gate; no extra speculative resolver behavior was added.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/8-2-process-accepted-recruitment-orders-during-the-build-phase.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `server/resolver.py`
+- `tests/test_resolver.py`
 
 ### Change Log
 
 - 2026-03-28 12:24 UTC: Drafted Story 8.2 for deterministic build-phase recruitment execution.
+- 2026-03-28 12:40 UTC: Added resolver-boundary recruitment coverage, implemented deterministic build-phase recruitment resolution, and passed `make quality`.

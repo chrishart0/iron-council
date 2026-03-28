@@ -6,9 +6,9 @@ from typing import Literal
 
 from server.data.maps import load_uk_1900_map
 from server.models.domain import StrictModel, UpgradeTrack
-from server.models.orders import MovementOrder, OrderBatch, UpgradeOrder
+from server.models.orders import MovementOrder, OrderBatch, RecruitmentOrder, UpgradeOrder
 from server.models.state import ArmyState, BuildingQueueItem, CityState, MatchState
-from server.order_validation import UPGRADE_COSTS
+from server.order_validation import RECRUITMENT_COST_PER_TROOP, UPGRADE_COSTS
 
 RESOURCE_FIELDS: tuple[str, str, str] = ("food", "production", "money")
 ECONOMY_TIER_MULTIPLIER_NUMERATORS: tuple[int, int, int, int] = (3, 4, 5, 6)
@@ -117,6 +117,7 @@ def _resolve_build_phase(match_state: MatchState, validated_orders: OrderBatch) 
         for city_id, city_state in match_state.cities.items()
     }
     _advance_build_queues(match_state)
+    _process_recruitment_orders(match_state, validated_orders.recruitment)
     _start_upgrade_orders(
         match_state,
         validated_orders.upgrades,
@@ -496,6 +497,87 @@ def _start_upgrade_orders(
                 ticks_remaining=UPGRADE_BUILD_DURATIONS[int(order.target_tier)],
             )
         )
+
+
+def _process_recruitment_orders(
+    match_state: MatchState,
+    recruitment_orders: list[RecruitmentOrder],
+) -> None:
+    if not recruitment_orders:
+        return
+
+    armies_by_id = {army.id: army for army in match_state.armies}
+
+    for order in recruitment_orders:
+        city_state = match_state.cities.get(order.city)
+        if city_state is None or city_state.owner is None:
+            continue
+
+        player_state = match_state.players.get(city_state.owner)
+        if player_state is None:
+            continue
+
+        player_state.resources.food -= order.troops * RECRUITMENT_COST_PER_TROOP.food
+        player_state.resources.production -= order.troops * RECRUITMENT_COST_PER_TROOP.production
+
+        stationed_army = _deterministic_friendly_stationed_army(
+            match_state,
+            owner=city_state.owner,
+            city_id=order.city,
+        )
+        if stationed_army is not None:
+            stationed_army.troops += order.troops
+            continue
+
+        army_id = _next_recruitment_army_id(
+            owner=city_state.owner,
+            city_id=order.city,
+            existing_army_ids=set(armies_by_id),
+        )
+        new_army = ArmyState(
+            id=army_id,
+            owner=city_state.owner,
+            troops=order.troops,
+            location=order.city,
+            destination=None,
+            path=None,
+            ticks_remaining=0,
+        )
+        match_state.armies.append(new_army)
+        armies_by_id[army_id] = new_army
+
+
+def _deterministic_friendly_stationed_army(
+    match_state: MatchState,
+    *,
+    owner: str,
+    city_id: str,
+) -> ArmyState | None:
+    stationed_armies = sorted(
+        (
+            army
+            for army in match_state.armies
+            if army.owner == owner and army.location == city_id and army.destination is None
+        ),
+        key=lambda army: army.id,
+    )
+    if not stationed_armies:
+        return None
+
+    return stationed_armies[0]
+
+
+def _next_recruitment_army_id(
+    *,
+    owner: str,
+    city_id: str,
+    existing_army_ids: set[str],
+) -> str:
+    prefix = f"recruitment:{owner}:{city_id}:"
+    suffix = 1
+    while f"{prefix}{suffix}" in existing_army_ids:
+        suffix += 1
+    return f"{prefix}{suffix}"
 
 
 @lru_cache(maxsize=1)

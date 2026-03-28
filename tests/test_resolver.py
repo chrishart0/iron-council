@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from server.models.domain import FortificationTier, UpgradeTrack
-from server.models.orders import MovementOrder, OrderBatch, UpgradeOrder
+from server.models.orders import MovementOrder, OrderBatch, RecruitmentOrder, UpgradeOrder
 from server.models.state import (
     ArmyState,
     BuildingQueueItem,
@@ -530,6 +530,176 @@ def test_resolve_tick_build_phase_blocks_same_track_upgrade_from_phase_start_que
     )
     assert result.next_state.cities["alpha"].building_queue == []
     assert result.next_state.players["player_1"].resources.production == 31
+
+
+def test_resolve_tick_build_phase_reinforces_existing_stationed_army() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": _city_state(owner="player_1"),
+            "bravo": _city_state(owner="player_1"),
+        },
+        armies=[
+            ArmyState(
+                id="army_1",
+                owner="player_1",
+                troops=8,
+                location="alpha",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            )
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=20, production=30, money=10),
+                cities_owned=["alpha", "bravo"],
+                alliance_id=None,
+                is_eliminated=False,
+            )
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    original_dump = deepcopy(state.model_dump(mode="json"))
+
+    result = resolve_tick(
+        state,
+        OrderBatch(recruitment=[RecruitmentOrder(city="alpha", troops=3)]),
+    )
+
+    assert state.model_dump(mode="json") == original_dump
+    assert result.next_state.armies == [
+        ArmyState(
+            id="army_1",
+            owner="player_1",
+            troops=11,
+            location="alpha",
+            destination=None,
+            path=None,
+            ticks_remaining=0,
+        )
+    ]
+    assert result.next_state.players["player_1"].resources == ResourceState(
+        food=9,
+        production=17,
+        money=12,
+    )
+    assert result.events[PHASE_ORDER.index("build")] == TickPhaseEvent(
+        phase="build",
+        event="phase.build.completed",
+    )
+
+
+def test_resolve_tick_build_phase_creates_deterministic_stationed_armies() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": _city_state(owner="player_1"),
+            "bravo": _city_state(owner="player_1"),
+            "charlie": _city_state(owner="player_2"),
+        },
+        armies=[
+            ArmyState(
+                id="army_9",
+                owner="player_1",
+                troops=4,
+                location="charlie",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+            ArmyState(
+                id="recruitment:player_1:alpha:1",
+                owner="player_2",
+                troops=6,
+                location="charlie",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=20, production=30, money=10),
+                cities_owned=["alpha", "bravo"],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=20, production=20, money=10),
+                cities_owned=["charlie"],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=3,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    orders = OrderBatch(
+        recruitment=[
+            RecruitmentOrder(city="bravo", troops=2),
+            RecruitmentOrder(city="alpha", troops=1),
+        ]
+    )
+    original_dump = deepcopy(state.model_dump(mode="json"))
+
+    result = resolve_tick(state, orders)
+    repeated_result = resolve_tick(state, orders)
+
+    assert state.model_dump(mode="json") == original_dump
+    assert result.model_dump(mode="json") == repeated_result.model_dump(mode="json")
+    assert result.next_state.players["player_1"].resources == ResourceState(
+        food=13,
+        production=17,
+        money=12,
+    )
+    assert result.next_state.armies == [
+        ArmyState(
+            id="army_9",
+            owner="player_1",
+            troops=4,
+            location="charlie",
+            destination=None,
+            path=None,
+            ticks_remaining=0,
+        ),
+        ArmyState(
+            id="recruitment:player_1:alpha:1",
+            owner="player_2",
+            troops=6,
+            location="charlie",
+            destination=None,
+            path=None,
+            ticks_remaining=0,
+        ),
+        ArmyState(
+            id="recruitment:player_1:bravo:1",
+            owner="player_1",
+            troops=2,
+            location="bravo",
+            destination=None,
+            path=None,
+            ticks_remaining=0,
+        ),
+        ArmyState(
+            id="recruitment:player_1:alpha:2",
+            owner="player_1",
+            troops=1,
+            location="alpha",
+            destination=None,
+            path=None,
+            ticks_remaining=0,
+        ),
+    ]
 
 
 def test_resolve_tick_hands_neutral_city_to_single_surviving_occupier_after_combat() -> None:
