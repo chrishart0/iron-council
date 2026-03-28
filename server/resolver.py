@@ -247,13 +247,11 @@ def _resolve_contested_city_combat(match_state: MatchState) -> None:
             fortification_tier=city_state.upgrades.fortification,
         )
         for owner, owner_armies in _armies_by_owner(armies_at_city).items():
-            remaining_casualties = casualties_by_owner.get(owner, 0)
-            for army in sorted(owner_armies, key=lambda army: army.id):
-                if remaining_casualties <= 0:
-                    break
-                losses = min(army.troops, remaining_casualties)
-                casualties_by_army_id[army.id] = casualties_by_army_id.get(army.id, 0) + losses
-                remaining_casualties -= losses
+            for army_id, losses in _allocate_proportional_casualties(
+                owner_armies,
+                total_casualties=casualties_by_owner.get(owner, 0),
+            ).items():
+                casualties_by_army_id[army_id] = casualties_by_army_id.get(army_id, 0) + losses
 
     surviving_armies: list[ArmyState] = []
     for army in match_state.armies:
@@ -294,7 +292,7 @@ def _combat_casualties_by_owner(
         if opposing_strength <= 0:
             continue
 
-        casualties = max(1, opposing_strength // COMBAT_CASUALTY_DIVISOR)
+        casualties = opposing_strength // COMBAT_CASUALTY_DIVISOR
         casualties_by_owner[owner] = min(troops, casualties)
 
     return casualties_by_owner
@@ -305,6 +303,40 @@ def _armies_by_owner(armies: list[ArmyState]) -> dict[str, list[ArmyState]]:
     for army in armies:
         armies_by_owner.setdefault(army.owner, []).append(army)
     return armies_by_owner
+
+
+def _allocate_proportional_casualties(
+    armies: list[ArmyState],
+    *,
+    total_casualties: int,
+) -> dict[str, int]:
+    if total_casualties <= 0 or not armies:
+        return {}
+
+    total_troops = sum(army.troops for army in armies)
+    if total_troops <= 0:
+        return {}
+
+    ordered_armies = sorted(armies, key=lambda army: army.id)
+    casualties_by_army_id = {army.id: 0 for army in ordered_armies}
+    remainders: list[tuple[int, str]] = []
+    allocated_casualties = 0
+
+    for army in ordered_armies:
+        weighted_losses = total_casualties * army.troops
+        losses = weighted_losses // total_troops
+        casualties_by_army_id[army.id] = losses
+        allocated_casualties += losses
+        remainders.append((weighted_losses % total_troops, army.id))
+
+    remaining_casualties = total_casualties - allocated_casualties
+    for _, army_id in sorted(remainders, key=lambda entry: (-entry[0], entry[1])):
+        if remaining_casualties <= 0:
+            break
+        casualties_by_army_id[army_id] += 1
+        remaining_casualties -= 1
+
+    return {army_id: losses for army_id, losses in casualties_by_army_id.items() if losses > 0}
 
 
 def _effective_combat_strength(

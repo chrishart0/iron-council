@@ -51,6 +51,8 @@ GPT-5 Codex
 - `uv run pytest --no-cov tests/test_resolver.py -k combat` failed because `pytest --no-cov` still inherited repo `--cov` addopts before the dev extras were synced into `.venv`.
 - `uv sync --extra dev`
 - `.venv/bin/pytest -o addopts='' tests/test_resolver.py`
+- `.venv/bin/pytest -o addopts='' tests/test_resolver.py -k 'minimum_one_casualty or same_owner_stack or applies_simultaneous_casualties_to_contested_city_armies or applies_defender_and_fortification_advantage_only_to_city_owner or combat_is_deterministic'`
+- `.venv/bin/pytest -o addopts='' tests/test_resolver.py -k 'combat or contested'`
 - `make format`
 - `make quality`
 
@@ -58,6 +60,8 @@ GPT-5 Codex
 
 - Added behavior-first resolver tests for contested-city simultaneous casualties, defender plus fortification advantage, and deterministic zero-troop cleanup without mutating the caller-owned `MatchState`.
 - Implemented narrow combat-phase resolution for co-located city armies only, using deterministic integer effective-strength math with a 1.2x defender bonus and documented fortification multipliers.
+- Removed the undocumented minimum-one casualty floor so owner losses now use the simplest proportional integer rule: `opposing_effective_strength // 10`, clamped only by troops remaining.
+- Replaced same-owner loss assignment by army-id order with deterministic troop-proportional allocation, using largest-remainder tie-breaking on army id so stacked losses stay stable across runs.
 - Preserved existing phase order and the `phase.combat.completed` event contract; did not add capture, siege, diplomacy, garrison combat, timers, randomness, or schema changes.
 
 ### File List
@@ -70,3 +74,4 @@ GPT-5 Codex
 
 - 2026-03-28 11:22 UTC: Drafted Story 7.1 for deterministic contested-city combat resolution.
 - 2026-03-28 11:25 UTC: Added contested-city combat resolver coverage, implemented deterministic defender-aware combat resolution, and passed `make quality`.
+- 2026-03-28 11:32 UTC: Removed the undocumented minimum casualty floor, added troop-proportional same-owner casualty allocation, refreshed combat expectations, and re-passed `make quality`.
