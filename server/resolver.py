@@ -6,8 +6,9 @@ from typing import Literal
 
 from server.data.maps import load_uk_1900_map
 from server.models.domain import StrictModel
-from server.models.orders import MovementOrder, OrderBatch
-from server.models.state import ArmyState, CityState, MatchState
+from server.models.orders import MovementOrder, OrderBatch, UpgradeOrder
+from server.models.state import ArmyState, BuildingQueueItem, CityState, MatchState
+from server.order_validation import UPGRADE_COSTS
 
 RESOURCE_FIELDS: tuple[str, str, str] = ("food", "production", "money")
 ECONOMY_TIER_MULTIPLIER_NUMERATORS: tuple[int, int, int, int] = (3, 4, 5, 6)
@@ -18,6 +19,7 @@ DEFENDER_BONUS_NUMERATOR = 12
 DEFENDER_BONUS_DENOMINATOR = 10
 FORTIFICATION_MULTIPLIER_NUMERATORS: tuple[int, int, int, int] = (10, 13, 17, 25)
 FORTIFICATION_MULTIPLIER_DENOMINATOR = 10
+UPGRADE_BUILD_DURATIONS: tuple[int, int, int, int] = (0, 1, 2, 3)
 
 TickPhaseName = Literal[
     "resource",
@@ -110,6 +112,8 @@ def _resolve_resource_phase(
 
 
 def _resolve_build_phase(match_state: MatchState, validated_orders: OrderBatch) -> TickPhaseOutcome:
+    _advance_build_queues(match_state)
+    _start_upgrade_orders(match_state, validated_orders.upgrades)
     return _complete_phase(match_state, validated_orders, "build")
 
 
@@ -437,6 +441,48 @@ def _start_movement_orders(match_state: MatchState, movement_orders: list[Moveme
         army.destination = order.destination
         army.path = [order.destination]
         army.ticks_remaining = distance
+
+
+def _advance_build_queues(match_state: MatchState) -> None:
+    for city_state in match_state.cities.values():
+        remaining_queue: list[BuildingQueueItem] = []
+
+        for queue_item in city_state.building_queue:
+            updated_ticks_remaining = queue_item.ticks_remaining - 1
+            if updated_ticks_remaining == 0:
+                setattr(city_state.upgrades, queue_item.type.value, int(queue_item.tier))
+                continue
+
+            remaining_queue.append(
+                queue_item.model_copy(update={"ticks_remaining": updated_ticks_remaining})
+            )
+
+        city_state.building_queue = remaining_queue
+
+
+def _start_upgrade_orders(match_state: MatchState, upgrade_orders: list[UpgradeOrder]) -> None:
+    for order in upgrade_orders:
+        city_state = match_state.cities.get(order.city)
+        if city_state is None or city_state.owner is None:
+            continue
+
+        if any(queue_item.type == order.track for queue_item in city_state.building_queue):
+            continue
+
+        player_state = match_state.players.get(city_state.owner)
+        if player_state is None:
+            continue
+
+        player_state.resources.production -= UPGRADE_COSTS[order.track][
+            int(order.target_tier)
+        ].production
+        city_state.building_queue.append(
+            BuildingQueueItem(
+                type=order.track,
+                tier=order.target_tier,
+                ticks_remaining=UPGRADE_BUILD_DURATIONS[int(order.target_tier)],
+            )
+        )
 
 
 @lru_cache(maxsize=1)

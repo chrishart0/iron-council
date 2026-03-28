@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from server.models.orders import MovementOrder, OrderBatch
+from server.models.domain import FortificationTier, UpgradeTrack
+from server.models.orders import MovementOrder, OrderBatch, UpgradeOrder
 from server.models.state import (
     ArmyState,
+    BuildingQueueItem,
     CityState,
     CityUpgradeState,
     MatchState,
@@ -259,6 +261,217 @@ def test_resolve_tick_is_deterministic_for_same_state_and_orders() -> None:
     repeated_result = resolve_tick(state, orders)
 
     assert result.model_dump(mode="json") == repeated_result.model_dump(mode="json")
+
+
+def test_resolve_tick_build_phase_decrements_existing_upgrade_queue_and_completes_city_tier() -> (
+    None
+):
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": CityState(
+                owner="player_1",
+                population=1,
+                resources=ResourceState(food=1, production=1, money=1),
+                upgrades=CityUpgradeState(economy=0, military=1, fortification=0),
+                garrison=5,
+                building_queue=[
+                    BuildingQueueItem(
+                        type=UpgradeTrack.MILITARY,
+                        tier=FortificationTier.BUNKERS,
+                        ticks_remaining=1,
+                    )
+                ],
+            )
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["alpha"],
+                alliance_id=None,
+                is_eliminated=False,
+            )
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=1,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    original_dump = deepcopy(state.model_dump(mode="json"))
+
+    result = resolve_tick(state, OrderBatch())
+
+    assert state.model_dump(mode="json") == original_dump
+    assert result.next_state.cities["alpha"].upgrades == CityUpgradeState(
+        economy=0,
+        military=2,
+        fortification=0,
+    )
+    assert result.next_state.cities["alpha"].building_queue == []
+    assert result.events[PHASE_ORDER.index("build")] == TickPhaseEvent(
+        phase="build",
+        event="phase.build.completed",
+    )
+
+
+def test_resolve_tick_build_phase_starts_accepted_upgrade_queues_and_deducts_production_once() -> (
+    None
+):
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": CityState(
+                owner="player_1",
+                population=1,
+                resources=ResourceState(food=1, production=1, money=1),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+            "bravo": CityState(
+                owner="player_1",
+                population=1,
+                resources=ResourceState(food=1, production=1, money=1),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=1),
+                garrison=5,
+                building_queue=[
+                    BuildingQueueItem(
+                        type=UpgradeTrack.ECONOMY,
+                        tier=FortificationTier.TRENCHES,
+                        ticks_remaining=2,
+                    )
+                ],
+            ),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=30, money=10),
+                cities_owned=["alpha", "bravo"],
+                alliance_id=None,
+                is_eliminated=False,
+            )
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(
+        state,
+        OrderBatch(
+            upgrades=[
+                UpgradeOrder(
+                    city="alpha",
+                    track=UpgradeTrack.ECONOMY,
+                    target_tier=FortificationTier.TRENCHES,
+                ),
+                UpgradeOrder(
+                    city="bravo",
+                    track=UpgradeTrack.FORTIFICATION,
+                    target_tier=FortificationTier.BUNKERS,
+                ),
+            ]
+        ),
+    )
+
+    assert result.next_state.players["player_1"].resources.production == 15
+    assert result.next_state.cities["alpha"].building_queue == [
+        BuildingQueueItem(
+            type=UpgradeTrack.ECONOMY,
+            tier=FortificationTier.TRENCHES,
+            ticks_remaining=1,
+        )
+    ]
+    assert result.next_state.cities["bravo"].building_queue == [
+        BuildingQueueItem(
+            type=UpgradeTrack.ECONOMY,
+            tier=FortificationTier.TRENCHES,
+            ticks_remaining=1,
+        ),
+        BuildingQueueItem(
+            type=UpgradeTrack.FORTIFICATION,
+            tier=FortificationTier.BUNKERS,
+            ticks_remaining=2,
+        ),
+    ]
+
+
+def test_resolve_tick_build_phase_is_deterministic_and_keeps_input_unmutated() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": CityState(
+                owner="player_1",
+                population=1,
+                resources=ResourceState(food=1, production=1, money=1),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
+                garrison=5,
+                building_queue=[
+                    BuildingQueueItem(
+                        type=UpgradeTrack.MILITARY,
+                        tier=FortificationTier.TRENCHES,
+                        ticks_remaining=1,
+                    )
+                ],
+            ),
+            "bravo": CityState(
+                owner="player_1",
+                population=1,
+                resources=ResourceState(food=1, production=1, money=1),
+                upgrades=CityUpgradeState(economy=1, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=30, money=10),
+                cities_owned=["alpha", "bravo"],
+                alliance_id=None,
+                is_eliminated=False,
+            )
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    orders = OrderBatch(
+        upgrades=[
+            UpgradeOrder(
+                city="bravo",
+                track=UpgradeTrack.ECONOMY,
+                target_tier=FortificationTier.BUNKERS,
+            )
+        ]
+    )
+    original_dump = deepcopy(state.model_dump(mode="json"))
+
+    result = resolve_tick(state, orders)
+    repeated_result = resolve_tick(state, orders)
+
+    assert state.model_dump(mode="json") == original_dump
+    assert result.model_dump(mode="json") == repeated_result.model_dump(mode="json")
+    assert result.next_state.cities["alpha"].upgrades.military == 1
+    assert result.next_state.cities["alpha"].building_queue == []
+    assert result.next_state.cities["bravo"].building_queue == [
+        BuildingQueueItem(
+            type=UpgradeTrack.ECONOMY,
+            tier=FortificationTier.BUNKERS,
+            ticks_remaining=2,
+        )
+    ]
+    assert result.next_state.players["player_1"].resources.production == 21
 
 
 def test_resolve_tick_hands_neutral_city_to_single_surviving_occupier_after_combat() -> None:
