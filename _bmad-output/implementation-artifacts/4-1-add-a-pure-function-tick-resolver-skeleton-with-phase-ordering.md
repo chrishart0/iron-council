@@ -52,16 +52,20 @@ GPT-5 Codex
 ### Debug Log References
 
 - `uv run --extra dev pytest tests/test_resolver.py -q -o addopts=''`
+- `make format`
 - `uv run --extra dev pytest tests/test_resolver.py tests/test_order_validation.py -q -o addopts=''`
 - `make quality`
 
 ### Completion Notes List
 
 - Added `server.resolver.resolve_tick(...)` as the public pure-function tick resolver boundary using validated `OrderBatch` input from Story 3.2.
-- Emitted stable ordered phase metadata and matching phase completion events for resource, build, movement, combat, siege, attrition, diplomacy, and victory.
+- Refactored the resolver to execute a deterministic ordered list of no-op placeholder phase handlers for resource, build, movement, combat, siege, attrition, diplomacy, and victory.
+- Replaced the weakly typed `list[dict[str, str]]` event payloads with a typed `TickPhaseEvent` model while preserving the small resolver contract.
 - Preserved input purity by deep-copying `MatchState` and returning a distinct next-state object without mutating the caller-owned state.
 - Captured red-phase evidence with a focused resolver test run after adding the contract test; the first failure was `ModuleNotFoundError: No module named 'server.resolver'`.
+- Captured follow-up red-phase evidence for the review refactor with a focused resolver test run; the first failure was `ImportError: cannot import name 'TickPhaseEvent' from 'server.resolver'`.
 - Used `-o addopts=''` for focused pytest commands because the repo-level pytest config expects `pytest-cov`, which is only available when running with dev extras.
+- Split the resolver contract coverage into focused behavior tests for purity, ordered typed phase events, and deterministic repeated runs while removing unnecessary order payload noise.
 
 ### File List
 
@@ -74,3 +78,4 @@ GPT-5 Codex
 
 - Created Story 4.1 implementation artifact.
 - Implemented the pure tick resolver skeleton, added behavior-first resolver tests, and marked Story 4.1 complete.
+- Refactored the resolver pipeline to use ordered placeholder handlers and typed phase events in response to Story 4.1 review feedback.

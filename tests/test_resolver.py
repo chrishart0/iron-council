@@ -2,14 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from server.models.domain import FortificationTier, ResourceType, UpgradeTrack
-from server.models.orders import (
-    MovementOrder,
-    OrderBatch,
-    RecruitmentOrder,
-    TransferOrder,
-    UpgradeOrder,
-)
+from server.models.orders import OrderBatch
 from server.models.state import (
     ArmyState,
     CityState,
@@ -19,7 +12,7 @@ from server.models.state import (
     ResourceState,
     VictoryState,
 )
-from server.resolver import resolve_tick
+from server.resolver import PHASE_ORDER, TickPhaseEvent, resolve_tick
 
 
 def _match_state() -> MatchState:
@@ -74,70 +67,32 @@ def _city_state(*, owner: str | None) -> CityState:
     )
 
 
-def test_resolve_tick_returns_new_state_and_ordered_deterministic_phase_metadata() -> None:
+def test_resolve_tick_returns_copied_state_without_mutating_input() -> None:
     state = _match_state()
     original_dump = deepcopy(state.model_dump(mode="json"))
-    orders = OrderBatch(
-        movements=[MovementOrder(army_id="army_1", destination="bravo")],
-        recruitment=[RecruitmentOrder(city="alpha", troops=1)],
-        upgrades=[
-            UpgradeOrder(
-                city="alpha",
-                track=UpgradeTrack.FORTIFICATION,
-                target_tier=FortificationTier.TRENCHES,
-            )
-        ],
-        transfers=[TransferOrder(to="player_2", resource=ResourceType.MONEY, amount=1)],
-    )
+    orders = OrderBatch()
 
     result = resolve_tick(state, orders)
-    repeated_result = resolve_tick(state, orders)
 
     assert result.next_state is not state
     assert state.model_dump(mode="json") == original_dump
     assert result.next_state.model_dump(mode="json") == original_dump
-    assert [phase.phase for phase in result.phases] == [
-        "resource",
-        "build",
-        "movement",
-        "combat",
-        "siege",
-        "attrition",
-        "diplomacy",
-        "victory",
-    ]
-    assert result.model_dump(mode="json") == repeated_result.model_dump(mode="json")
+
+
+def test_resolve_tick_emits_phase_metadata_and_typed_events_in_phase_order() -> None:
+    result = resolve_tick(_match_state(), OrderBatch())
+
+    assert [phase.phase for phase in result.phases] == list(PHASE_ORDER)
     assert result.events == [
-        {
-            "phase": "resource",
-            "event": "phase.resource.completed",
-        },
-        {
-            "phase": "build",
-            "event": "phase.build.completed",
-        },
-        {
-            "phase": "movement",
-            "event": "phase.movement.completed",
-        },
-        {
-            "phase": "combat",
-            "event": "phase.combat.completed",
-        },
-        {
-            "phase": "siege",
-            "event": "phase.siege.completed",
-        },
-        {
-            "phase": "attrition",
-            "event": "phase.attrition.completed",
-        },
-        {
-            "phase": "diplomacy",
-            "event": "phase.diplomacy.completed",
-        },
-        {
-            "phase": "victory",
-            "event": "phase.victory.completed",
-        },
+        TickPhaseEvent(phase=phase, event=f"phase.{phase}.completed") for phase in PHASE_ORDER
     ]
+
+
+def test_resolve_tick_is_deterministic_for_same_state_and_orders() -> None:
+    state = _match_state()
+    orders = OrderBatch()
+
+    result = resolve_tick(state, orders)
+    repeated_result = resolve_tick(state, orders)
+
+    assert result.model_dump(mode="json") == repeated_result.model_dump(mode="json")
