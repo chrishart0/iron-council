@@ -22,6 +22,18 @@ make support-services-up
 make support-services-ps
 ```
 
+Apply the schema to a fresh database with the stable migration command:
+
+```bash
+make db-upgrade
+```
+
+Rebuild the configured schema from Alembic base to head with:
+
+```bash
+make db-reset
+```
+
 That boots Postgres on `127.0.0.1:54321` with the same runnable credentials used by
 `compose.support-services.yaml` and `env.local.example`:
 `DATABASE_URL=postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil`.
@@ -40,6 +52,11 @@ Focused test runs keep using the same host-shell workflow:
 ```bash
 uv run pytest tests/api/test_health.py
 ```
+
+DB-backed tests and future integration flows should prepare their database through the
+shared migration helper in `server.db.testing`, which upgrades the target database to
+Alembic `head` before the test uses it. The reusable pytest fixture is
+`migrated_test_database_url`.
 
 When finished:
 

@@ -1,7 +1,9 @@
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
+from server.db.testing import prepare_test_database
 
 
 @pytest.fixture(autouse=True)
@@ -71,3 +73,10 @@ def representative_order_payload() -> dict[str, Any]:
             "transfers": [{"to": "player_ally_uuid", "resource": "money", "amount": 50}],
         },
     }
+
+
+@pytest.fixture
+def migrated_test_database_url(tmp_path: Path) -> str:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'test.db'}"
+    prepare_test_database(database_url=database_url, reset=False)
+    return database_url
