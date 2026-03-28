@@ -10,7 +10,7 @@ so that defensive investment carries the ongoing economic tradeoff described in 
 
 ## Acceptance Criteria
 
-1. Given player-owned cities with fortification tiers and sufficient money, when the resolver runs the resource and attrition phases, then the owning player's money is reduced by the documented per-tier maintenance total and the fortification tiers remain unchanged.
+1. Given player-owned cities with fortification tiers and sufficient money, when the resolver runs the resource and attrition phases, then the owning player's money is reduced by the documented per-tier maintenance total (tier 1 = 1 money, tier 2 = 2 money, tier 3 = 3 money per tick) and the fortification tiers remain unchanged.
 2. Given multiple fortified cities whose combined upkeep exceeds the owning player's money, when upkeep resolves, then payment is applied in a deterministic city order, money clamps at zero, and each unpaid fortification decays by exactly one tier during attrition.
 3. Given repeated runs from the same starting state with the same fortified-city layout, when upkeep and decay resolve, then the resulting player money, fortification tiers, and caller-owned `MatchState` remain deterministic and unmutated.
 
@@ -54,11 +54,12 @@ _GPT-5 Codex_
 - `uv run pytest tests/test_resolver.py`
 - `make format`
 - `make quality`
+- `uv run pytest -o addopts='' tests/test_resolver.py -k 'fortification_upkeep or unpaid_fortifications or fortification_upkeep_and_decay'`
 
 ### Completion Notes List
 
 - Added resolver-boundary tests for funded fortification upkeep, deterministic unpaid decay by city-id order, and repeated-run/input immutability.
-- Implemented fortification upkeep as explicit tier costs `(0, 1, 2, 3)` for tiers `0-3`; the planning docs require tier-based upkeep but do not define numeric values, so this story keeps the first model minimal and explicit.
+- Recorded the initial fortification upkeep schedule in the planning source-of-truth and Story 9.1 artifact to match the shipped resolver behavior: tier 1 = 1 money, tier 2 = 2 money, tier 3 = 3 money per tick.
 - Kept resolver purity by carrying unpaid fortification city IDs through an internal per-tick phase context instead of mutating the caller-owned `MatchState` or introducing persistent debt state.
 - Applied decay only once per unpaid fortified city during attrition and kept payment order deterministic by sorting city IDs rather than relying on dictionary insertion order.
 - `uv run pytest tests/test_resolver.py` executed successfully on behavior but failed the repository-wide coverage threshold by design for a focused run; the required full gate passed under `make quality`.
@@ -69,8 +70,11 @@ _GPT-5 Codex_
 - `tests/test_resolver.py`
 - `_bmad-output/implementation-artifacts/9-1-deduct-fortification-upkeep-and-degrade-unpaid-defenses-deterministically.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/planning-artifacts/epics.md`
+- `_bmad-output/planning-artifacts/gdd.md`
 
 ### Change Log
 
 - 2026-03-28 13:35 UTC: Drafted Story 9.1 for deterministic fortification upkeep and unpaid defense decay.
 - 2026-03-28 13:27 UTC: Implemented resolver-boundary fortification upkeep accounting, deterministic unpaid one-tier decay, and updated BMAD tracking after passing `make quality`.
+- 2026-03-28 13:50 UTC: Aligned the planning/story docs with the shipped fortification upkeep schedule (tier 1 = 1 money, tier 2 = 2 money, tier 3 = 3 money per tick) and re-ran focused resolver coverage.

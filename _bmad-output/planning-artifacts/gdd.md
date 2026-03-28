@@ -164,7 +164,7 @@ Provides passive defense bonuses to any army defending the city. Each tier is a 
 - **Tier 2 - Bunkers:** Moderate cost, several ticks to build. Significant defensive multiplier (1.7x). The standard fortification for a city you intend to hold.
 - **Tier 3 - Fortress:** Expensive, many ticks to build. Major defensive multiplier (2.5x). Extremely difficult to take by direct assault. Requires siege tactics or overwhelming numbers.
 
-Fortifications require money for per-tick maintenance. Unmaintained fortifications degrade one tier after a set number of ticks. This prevents players from fortifying every city permanently without a strong economy to back it.
+Fortifications require money for per-tick maintenance. The initial upkeep schedule is Tier 1 = 1 money per tick, Tier 2 = 2 money per tick, and Tier 3 = 3 money per tick. Unmaintained fortifications degrade one tier after a set number of ticks. This prevents players from fortifying every city permanently without a strong economy to back it.
 
 ### 5.2 The Investment Dilemma
 
@@ -336,4 +336,3 @@ These principles guide every design decision in Iron Council. When a feature con
 - Betrayal must always be possible. If a system makes betrayal mechanically impossible, it kills the diplomatic game.
 - Betrayal must always be costly. If a system makes betrayal free, it kills trust, which kills the diplomatic game.
 - The spectator should always be able to understand what is happening and why it matters.
-

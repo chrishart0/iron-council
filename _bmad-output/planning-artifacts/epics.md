@@ -388,7 +388,7 @@ So that defensive investment carries the ongoing economic tradeoff described in 
 
 **Given** player-owned cities with fortification tiers and sufficient money
 **When** the resolver runs the resource and attrition phases
-**Then** the owning player's money is reduced by the documented per-tier maintenance total and the fortification tiers remain unchanged.
+**Then** the owning player's money is reduced by the documented per-tier maintenance total (Tier 1 = 1 money, Tier 2 = 2 money, Tier 3 = 3 money per tick) and the fortification tiers remain unchanged.
 
 **And Given** multiple fortified cities whose combined upkeep exceeds the owning player's money
 **When** upkeep resolves
