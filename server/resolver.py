@@ -508,7 +508,10 @@ def _process_recruitment_orders(
 
     armies_by_id = {army.id: army for army in match_state.armies}
 
-    for order in recruitment_orders:
+    for order in sorted(
+        recruitment_orders,
+        key=lambda order: _recruitment_processing_key(match_state, order),
+    ):
         city_state = match_state.cities.get(order.city)
         if city_state is None or city_state.owner is None:
             continue
@@ -545,6 +548,15 @@ def _process_recruitment_orders(
         )
         match_state.armies.append(new_army)
         armies_by_id[army_id] = new_army
+
+
+def _recruitment_processing_key(
+    match_state: MatchState,
+    order: RecruitmentOrder,
+) -> tuple[str | None, str, int]:
+    city_state = match_state.cities.get(order.city)
+    owner = city_state.owner if city_state is not None else None
+    return (owner, order.city, order.troops)
 
 
 def _deterministic_friendly_stationed_army(

@@ -50,6 +50,8 @@ GPT-5 Codex
 
 - RED (env): `uv run pytest tests/test_resolver.py -k 'build_phase and recruitment' --override-ini addopts='-q --strict-config --strict-markers'` failed during collection with `ModuleNotFoundError: No module named 'server'` before the local dev environment was synced.
 - RED: `.venv/bin/pytest tests/test_resolver.py -k 'build_phase and recruitment' -o addopts=''` failed on the new resolver-boundary assertions because build-phase recruitment did not yet reinforce armies or spend recruitment costs.
+- RED (follow-up): `.venv/bin/pytest tests/test_resolver.py -k 'permutation_invariant or creates_deterministic_stationed_armies' -o addopts=''` failed because equivalent multi-city recruitment batches produced different `next_state.armies` ordering based on incoming order permutation.
+- GREEN (follow-up focused recruitment): `.venv/bin/pytest tests/test_resolver.py -k 'recruitment or build_phase' -o addopts=''`
 - GREEN (focused): `.venv/bin/pytest tests/test_resolver.py -k 'build_phase' -o addopts=''`
 - GREEN (focused full resolver): `.venv/bin/pytest tests/test_resolver.py -o addopts=''`
 - GREEN (quality gate): `make quality`
@@ -57,8 +59,10 @@ GPT-5 Codex
 ### Completion Notes List
 
 - Added resolver-boundary tests for accepted build-phase recruitment covering reinforcement into an existing friendly stationed army, deterministic stationed-army creation when none exists, repeated-run determinism, and caller-state immutability.
+- Added a follow-up resolver-boundary regression asserting that two equivalent accepted recruitment batches with different order permutations resolve to the same `next_state`.
 - Implemented narrow build-phase recruitment resolution in `server.resolver` by reusing `RECRUITMENT_COST_PER_TROOP`, spending only documented food and production costs, and leaving transfer, siege, diplomacy, and recruitment-capacity behavior unchanged.
 - Deterministic army creation now uses collision-safe ids shaped as `recruitment:{owner}:{city}:{n}` and reinforces the lexicographically earliest friendly stationed army already in the ordered city.
+- Follow-up fix canonicalizes recruitment processing by `(owner, city, troops)` before applying accepted orders so multi-city stationed-army creation no longer depends on incoming batch permutation.
 - Verified the change with focused resolver coverage and the full repository quality gate; no extra speculative resolver behavior was added.
 
 ### File List
@@ -72,3 +76,4 @@ GPT-5 Codex
 
 - 2026-03-28 12:24 UTC: Drafted Story 8.2 for deterministic build-phase recruitment execution.
 - 2026-03-28 12:40 UTC: Added resolver-boundary recruitment coverage, implemented deterministic build-phase recruitment resolution, and passed `make quality`.
+- 2026-03-28 12:43 UTC: Added a permutation-invariance regression, canonicalized recruitment processing order for multi-city stationed-army creation, and re-passed `make quality`.

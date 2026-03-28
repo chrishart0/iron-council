@@ -682,15 +682,6 @@ def test_resolve_tick_build_phase_creates_deterministic_stationed_armies() -> No
             ticks_remaining=0,
         ),
         ArmyState(
-            id="recruitment:player_1:bravo:1",
-            owner="player_1",
-            troops=2,
-            location="bravo",
-            destination=None,
-            path=None,
-            ticks_remaining=0,
-        ),
-        ArmyState(
             id="recruitment:player_1:alpha:2",
             owner="player_1",
             troops=1,
@@ -699,7 +690,90 @@ def test_resolve_tick_build_phase_creates_deterministic_stationed_armies() -> No
             path=None,
             ticks_remaining=0,
         ),
+        ArmyState(
+            id="recruitment:player_1:bravo:1",
+            owner="player_1",
+            troops=2,
+            location="bravo",
+            destination=None,
+            path=None,
+            ticks_remaining=0,
+        ),
     ]
+
+
+def test_resolve_tick_build_phase_is_permutation_invariant_for_equivalent_recruitment_sets() -> (
+    None
+):
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": _city_state(owner="player_1"),
+            "bravo": _city_state(owner="player_1"),
+            "charlie": _city_state(owner="player_2"),
+        },
+        armies=[
+            ArmyState(
+                id="army_9",
+                owner="player_1",
+                troops=4,
+                location="charlie",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+            ArmyState(
+                id="recruitment:player_1:alpha:1",
+                owner="player_2",
+                troops=6,
+                location="charlie",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            ),
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=20, production=30, money=10),
+                cities_owned=["alpha", "bravo"],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=20, production=20, money=10),
+                cities_owned=["charlie"],
+                alliance_id=None,
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=3,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    alpha_then_bravo = resolve_tick(
+        state,
+        OrderBatch(
+            recruitment=[
+                RecruitmentOrder(city="alpha", troops=1),
+                RecruitmentOrder(city="bravo", troops=2),
+            ]
+        ),
+    )
+    bravo_then_alpha = resolve_tick(
+        state,
+        OrderBatch(
+            recruitment=[
+                RecruitmentOrder(city="bravo", troops=2),
+                RecruitmentOrder(city="alpha", troops=1),
+            ]
+        ),
+    )
+
+    assert alpha_then_bravo.next_state == bravo_then_alpha.next_state
 
 
 def test_resolve_tick_hands_neutral_city_to_single_surviving_occupier_after_combat() -> None:
