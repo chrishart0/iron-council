@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import Protocol
 
 from server.models.domain import StrictModel
 from server.models.orders import OrderBatch
 from server.models.state import MatchState
 from server.resolver import TickPhaseEvent, TickPhaseMetadata, resolve_tick
 
-OrderProvider = Callable[..., OrderBatch]
+
+class OrderProvider(Protocol):
+    def __call__(self, *, tick: int, state: MatchState) -> OrderBatch: ...
 
 
 class SimulatedTick(StrictModel):

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import builtins
 from copy import deepcopy
 
+import pytest
 from server import PHASE_ORDER, TickPhaseEvent, TickPhaseMetadata, simulate_ticks
 from server.models.orders import OrderBatch
 from server.models.state import (
@@ -119,3 +121,52 @@ def test_simulate_ticks_accepts_per_tick_order_provider() -> None:
 
     assert provided_states == [5, 6]
     assert [tick_snapshot.tick for tick_snapshot in simulation.ticks] == [6, 7]
+
+
+def test_simulate_ticks_rejects_negative_tick_counts() -> None:
+    with pytest.raises(ValueError, match="ticks must be non-negative"):
+        simulate_ticks(_match_state(), ticks=-1, orders=OrderBatch())
+
+
+def test_simulate_ticks_rejects_orders_and_order_provider_together() -> None:
+    def order_provider(*, tick: int, state: MatchState) -> OrderBatch:
+        return OrderBatch()
+
+    with pytest.raises(
+        ValueError,
+        match="pass either static orders or an order provider, not both",
+    ):
+        simulate_ticks(
+            _match_state(),
+            ticks=1,
+            orders=OrderBatch(),
+            order_provider=order_provider,
+        )
+
+
+def test_simulate_ticks_runs_without_importing_external_infrastructure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_import = builtins.__import__
+    blocked_modules = {"fastapi", "sqlalchemy", "asyncpg", "psycopg", "websockets"}
+    attempted_imports: list[str] = []
+
+    def import_guard(
+        name: str,
+        globals: dict[str, object] | None = None,
+        locals: dict[str, object] | None = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> object:
+        root_module = name.split(".", 1)[0]
+        if root_module in blocked_modules:
+            attempted_imports.append(name)
+            raise AssertionError(f"simulate_ticks should not import external module: {name}")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", import_guard)
+
+    simulation = simulate_ticks(_match_state(), ticks=1, orders=OrderBatch())
+
+    assert simulation.final_state.tick == 6
+    assert attempted_imports == []

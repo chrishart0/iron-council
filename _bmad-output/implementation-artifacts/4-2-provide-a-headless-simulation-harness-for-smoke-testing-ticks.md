@@ -51,16 +51,20 @@ GPT-5 Codex
 ### Debug Log References
 
 - `uv run --extra dev pytest tests/test_simulation.py -q -o addopts=''`
+- `uv run --extra dev pytest tests/test_simulation.py tests/test_resolver.py -q -o addopts=''`
 - `make format`
-- `uv run --extra dev pytest tests/test_resolver.py tests/test_simulation.py -q -o addopts=''`
+- `uv run ruff check tests/test_simulation.py --select I --fix`
 - `make quality`
 
 ### Completion Notes List
 
 - Added `server.simulation.simulate_ticks(...)` as a small public headless harness that loops the Story 4.1 resolver and advances `MatchState.tick` one step per simulated tick.
 - Returned deterministic `SimulatedTick` snapshots plus ordered phase and event logs for each tick without introducing replay or persistence abstractions.
+- Strengthened the contract surface with behavior-first coverage for rejected negative tick counts, mutually exclusive `orders` and `order_provider` inputs, and an explicit in-process-only execution check that guards against web or database imports during simulation.
+- Tightened `order_provider` typing to a small named protocol so the callable contract is explicit without broadening the harness surface.
 - Supported both static validated `OrderBatch` input and a simple per-tick order provider while keeping the harness side-effect free by copying caller-owned state and orders.
 - Captured red-phase evidence with a focused simulation test run; the initial failure was `ImportError: cannot import name 'simulate_ticks' from 'server'`.
+- Reverified the strengthened harness contract with a focused resolver/simulation suite and a full `make quality` pass.
 
 ### File List
 
