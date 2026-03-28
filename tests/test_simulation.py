@@ -7,7 +7,9 @@ from copy import deepcopy
 
 import pytest
 from server import PHASE_ORDER, TickPhaseEvent, TickPhaseMetadata, simulate_ticks
-from server.models.orders import MovementOrder, OrderBatch
+from server.data.maps import CityCoordinates, CityDefinition, MapDefinition, MapEdge
+from server.models.domain import ResourceType
+from server.models.orders import MovementOrder, OrderBatch, OrderEnvelope
 from server.models.state import (
     ArmyState,
     CityState,
@@ -17,6 +19,7 @@ from server.models.state import (
     ResourceState,
     VictoryState,
 )
+from server.order_validation import validate_order_envelope
 
 
 def _match_state() -> MatchState:
@@ -68,6 +71,44 @@ def _city_state(*, owner: str | None) -> CityState:
         upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
         garrison=5,
         building_queue=[],
+    )
+
+
+def _custom_city_definition(primary_resource: ResourceType) -> CityDefinition:
+    return CityDefinition(
+        name=f"{primary_resource.value}-city",
+        region="Custom",
+        primary_resource=primary_resource,
+        notes="",
+        position=CityCoordinates(x=1, y=1),
+    )
+
+
+def _custom_simulation_map() -> MapDefinition:
+    return MapDefinition(
+        map_id="simulation_custom_map",
+        name="Simulation Custom Map",
+        cities={
+            "mesa": _custom_city_definition(ResourceType.FOOD),
+            "oasis": _custom_city_definition(ResourceType.PRODUCTION),
+        },
+        edges=[MapEdge(city_a="mesa", city_b="oasis", distance_ticks=1)],
+    )
+
+
+def _movement_order_envelope() -> OrderEnvelope:
+    return OrderEnvelope.model_validate(
+        {
+            "match_id": "simulation_match",
+            "player_id": "player_1",
+            "tick": 5,
+            "orders": {
+                "movements": [{"army_id": "army_custom", "destination": "oasis"}],
+                "recruitment": [],
+                "upgrades": [],
+                "transfers": [],
+            },
+        }
     )
 
 
@@ -237,6 +278,55 @@ def test_simulate_ticks_is_deterministic_for_movement_transit_progression() -> N
         "birmingham",
         None,
     ]
+
+
+def test_simulate_ticks_uses_explicit_custom_map_for_validated_movement_orders() -> None:
+    custom_map = _custom_simulation_map()
+    starting_state = MatchState(
+        tick=5,
+        cities={
+            "mesa": _city_state(owner="player_1"),
+            "oasis": _city_state(owner=None),
+        },
+        armies=[
+            ArmyState(
+                id="army_custom",
+                owner="player_1",
+                troops=8,
+                location="mesa",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            )
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["mesa"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            )
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    validation = validate_order_envelope(_movement_order_envelope(), starting_state, custom_map)
+    simulation = simulate_ticks(
+        starting_state,
+        ticks=2,
+        orders=validation.accepted,
+        map_definition=custom_map,
+    )
+
+    assert validation.rejected == []
+    assert [tick.snapshot.armies[0].location for tick in simulation.ticks] == [None, "oasis"]
+    assert [tick.snapshot.armies[0].ticks_remaining for tick in simulation.ticks] == [1, 0]
+    assert [tick.snapshot.armies[0].destination for tick in simulation.ticks] == ["oasis", None]
 
 
 def test_simulate_ticks_starts_and_continues_victory_countdown_for_same_coalition() -> None:

@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from server.models.domain import FortificationTier, UpgradeTrack
-from server.models.orders import MovementOrder, OrderBatch, RecruitmentOrder, UpgradeOrder
+from server.data.maps import CityCoordinates, CityDefinition, MapDefinition, MapEdge
+from server.models.domain import FortificationTier, ResourceType, UpgradeTrack
+from server.models.orders import (
+    MovementOrder,
+    OrderBatch,
+    OrderEnvelope,
+    RecruitmentOrder,
+    UpgradeOrder,
+)
 from server.models.state import (
     ArmyState,
     BuildingQueueItem,
@@ -14,6 +21,7 @@ from server.models.state import (
     ResourceState,
     VictoryState,
 )
+from server.order_validation import validate_order_envelope
 from server.resolver import PHASE_ORDER, TickPhaseEvent, resolve_tick
 
 
@@ -66,6 +74,50 @@ def _city_state(*, owner: str | None) -> CityState:
         upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
         garrison=5,
         building_queue=[],
+    )
+
+
+def _custom_city_definition(primary_resource: ResourceType) -> CityDefinition:
+    return CityDefinition(
+        name=f"{primary_resource.value}-city",
+        region="Custom",
+        primary_resource=primary_resource,
+        notes="",
+        position=CityCoordinates(x=1, y=1),
+    )
+
+
+def _custom_resolver_map() -> MapDefinition:
+    return MapDefinition(
+        map_id="resolver_custom_map",
+        name="Resolver Custom Map",
+        cities={
+            "citadel": _custom_city_definition(ResourceType.FOOD),
+            "harbor": _custom_city_definition(ResourceType.PRODUCTION),
+            "northgate": _custom_city_definition(ResourceType.MONEY),
+            "southgate": _custom_city_definition(ResourceType.FOOD),
+        },
+        edges=[
+            MapEdge(city_a="citadel", city_b="harbor", distance_ticks=2),
+            MapEdge(city_a="citadel", city_b="northgate", distance_ticks=1),
+            MapEdge(city_a="citadel", city_b="southgate", distance_ticks=1),
+        ],
+    )
+
+
+def _movement_order_envelope(*, destination: str) -> OrderEnvelope:
+    return OrderEnvelope.model_validate(
+        {
+            "match_id": "custom_match",
+            "player_id": "player_1",
+            "tick": 5,
+            "orders": {
+                "movements": [{"army_id": "army_custom", "destination": destination}],
+                "recruitment": [],
+                "upgrades": [],
+                "transfers": [],
+            },
+        }
     )
 
 
@@ -438,6 +490,84 @@ def test_resolve_tick_degrades_fortification_for_fully_surrounded_city_during_si
         phase="siege",
         event="phase.siege.completed",
     )
+
+
+def test_resolve_tick_uses_explicit_custom_map_for_validated_movement_and_siege() -> None:
+    custom_map = _custom_resolver_map()
+    state = MatchState(
+        tick=5,
+        cities={
+            "citadel": CityState(
+                owner="player_1",
+                population=0,
+                resources=ResourceState(food=0, production=0, money=0),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=3),
+                garrison=0,
+                building_queue=[],
+            ),
+            "harbor": _city_state(owner=None),
+            "northgate": _city_state(owner="player_2"),
+            "southgate": _city_state(owner="player_3"),
+        },
+        armies=[
+            ArmyState(
+                id="army_custom",
+                owner="player_1",
+                troops=8,
+                location="harbor",
+                destination=None,
+                path=None,
+                ticks_remaining=0,
+            )
+        ],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=10, production=10, money=10),
+                cities_owned=["citadel"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["northgate"],
+                alliance_id="alliance_blue",
+                is_eliminated=False,
+            ),
+            "player_3": PlayerState(
+                resources=ResourceState(food=0, production=0, money=0),
+                cities_owned=["southgate"],
+                alliance_id="alliance_green",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    validation = validate_order_envelope(
+        _movement_order_envelope(destination="citadel"),
+        state,
+        custom_map,
+    )
+    result = resolve_tick(state, validation.accepted, map_definition=custom_map)
+
+    assert validation.rejected == []
+    assert result.next_state.armies == [
+        ArmyState(
+            id="army_custom",
+            owner="player_1",
+            troops=8,
+            location=None,
+            destination="citadel",
+            path=["citadel"],
+            ticks_remaining=2,
+        )
+    ]
+    assert result.next_state.cities["citadel"].upgrades.fortification == 2
 
 
 def test_resolve_tick_keeps_route_open_when_adjacent_city_is_allied() -> None:

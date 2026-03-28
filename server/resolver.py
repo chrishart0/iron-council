@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import Literal
 
-from server.data.maps import load_uk_1900_map
+from server.data.maps import MapDefinition, load_uk_1900_map
 from server.models.domain import StrictModel, UpgradeTrack
 from server.models.orders import MovementOrder, OrderBatch, RecruitmentOrder, UpgradeOrder
 from server.models.state import ArmyState, BuildingQueueItem, CityState, MatchState
@@ -69,6 +68,7 @@ class TickResolutionResult(StrictModel):
 
 @dataclass
 class ResolverPhaseState:
+    map_definition: MapDefinition
     unpaid_fortification_city_ids: set[str] = field(default_factory=set)
     degraded_fortification_city_ids: set[str] = field(default_factory=set)
 
@@ -76,9 +76,14 @@ class ResolverPhaseState:
 PhaseHandler = Callable[[MatchState, OrderBatch, ResolverPhaseState], TickPhaseOutcome]
 
 
-def resolve_tick(match_state: MatchState, validated_orders: OrderBatch) -> TickResolutionResult:
+def resolve_tick(
+    match_state: MatchState,
+    validated_orders: OrderBatch,
+    *,
+    map_definition: MapDefinition | None = None,
+) -> TickResolutionResult:
     next_state = match_state.model_copy(deep=True)
-    phase_state = ResolverPhaseState()
+    phase_state = ResolverPhaseState(map_definition=_resolve_map_definition(map_definition))
     phase_outcomes = [
         handler(next_state, validated_orders, phase_state) for handler in PHASE_HANDLERS
     ]
@@ -152,9 +157,12 @@ def _resolve_build_phase(
 def _resolve_movement_phase(
     match_state: MatchState, validated_orders: OrderBatch, phase_state: ResolverPhaseState
 ) -> TickPhaseOutcome:
-    del phase_state
     _advance_transit_armies(match_state)
-    _start_movement_orders(match_state, validated_orders.movements)
+    _start_movement_orders(
+        match_state,
+        validated_orders.movements,
+        map_definition=phase_state.map_definition,
+    )
     return _complete_phase(match_state, validated_orders, "movement")
 
 
@@ -172,6 +180,7 @@ def _resolve_siege_phase(
 ) -> TickPhaseOutcome:
     _degrade_besieged_fortifications(
         match_state,
+        map_definition=phase_state.map_definition,
         degraded_city_ids=phase_state.degraded_fortification_city_ids,
     )
     return _complete_phase(match_state, validated_orders, "siege")
@@ -518,12 +527,17 @@ def _advance_transit_armies(match_state: MatchState) -> None:
             army.path = None
 
 
-def _start_movement_orders(match_state: MatchState, movement_orders: list[MovementOrder]) -> None:
+def _start_movement_orders(
+    match_state: MatchState,
+    movement_orders: list[MovementOrder],
+    *,
+    map_definition: MapDefinition,
+) -> None:
     if not movement_orders:
         return
 
     armies_by_id = {army.id: army for army in match_state.armies}
-    edge_distances = _edge_distance_by_route()
+    edge_distances = _edge_distance_by_route(map_definition)
 
     for order in movement_orders:
         army = armies_by_id.get(order.army_id)
@@ -681,18 +695,15 @@ def _next_recruitment_army_id(
     return f"{prefix}{suffix}"
 
 
-@lru_cache(maxsize=1)
-def _edge_distance_by_route() -> dict[frozenset[str], int]:
+def _edge_distance_by_route(map_definition: MapDefinition) -> dict[frozenset[str], int]:
     return {
-        frozenset((edge.city_a, edge.city_b)): edge.distance_ticks
-        for edge in load_uk_1900_map().edges
+        frozenset((edge.city_a, edge.city_b)): edge.distance_ticks for edge in map_definition.edges
     }
 
 
-@lru_cache(maxsize=1)
-def _adjacent_city_ids_by_city() -> dict[str, tuple[str, ...]]:
+def _adjacent_city_ids_by_city(map_definition: MapDefinition) -> dict[str, tuple[str, ...]]:
     adjacent_city_ids: dict[str, set[str]] = {}
-    for edge in load_uk_1900_map().edges:
+    for edge in map_definition.edges:
         adjacent_city_ids.setdefault(edge.city_a, set()).add(edge.city_b)
         adjacent_city_ids.setdefault(edge.city_b, set()).add(edge.city_a)
 
@@ -704,25 +715,37 @@ def _adjacent_city_ids_by_city() -> dict[str, tuple[str, ...]]:
 def _degrade_besieged_fortifications(
     match_state: MatchState,
     *,
+    map_definition: MapDefinition,
     degraded_city_ids: set[str],
 ) -> None:
     for city_id in sorted(match_state.cities):
         city_state = match_state.cities[city_id]
         if city_state.owner is None or city_state.upgrades.fortification == 0:
             continue
-        if not _is_besieged_city(match_state, city_id=city_id, city_state=city_state):
+        if not _is_besieged_city(
+            match_state,
+            city_id=city_id,
+            city_state=city_state,
+            map_definition=map_definition,
+        ):
             continue
 
         city_state.upgrades.fortification -= 1
         degraded_city_ids.add(city_id)
 
 
-def _is_besieged_city(match_state: MatchState, *, city_id: str, city_state: CityState) -> bool:
+def _is_besieged_city(
+    match_state: MatchState,
+    *,
+    city_id: str,
+    city_state: CityState,
+    map_definition: MapDefinition,
+) -> bool:
     owner = city_state.owner
     if owner is None:
         return False
 
-    adjacent_city_ids = _adjacent_city_ids_by_city().get(city_id, ())
+    adjacent_city_ids = _adjacent_city_ids_by_city(map_definition).get(city_id, ())
     if not adjacent_city_ids:
         return False
 
@@ -741,6 +764,12 @@ def _is_besieged_city(match_state: MatchState, *, city_id: str, city_state: City
             return False
 
     return True
+
+
+def _resolve_map_definition(map_definition: MapDefinition | None) -> MapDefinition:
+    if map_definition is not None:
+        return map_definition
+    return load_uk_1900_map()
 
 
 def _player_coalition(match_state: MatchState, player_id: str) -> CoalitionKey:

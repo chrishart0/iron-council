@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from server.data.maps import MapDefinition
 from server.models.domain import StrictModel
 from server.models.orders import OrderBatch
 from server.models.state import MatchState
@@ -30,6 +31,7 @@ def simulate_ticks(
     ticks: int,
     orders: OrderBatch | None = None,
     order_provider: OrderProvider | None = None,
+    map_definition: MapDefinition | None = None,
 ) -> SimulationResult:
     if ticks < 0:
         raise ValueError("ticks must be non-negative")
@@ -49,7 +51,11 @@ def simulate_ticks(
             if order_provider is not None
             else static_orders.model_copy(deep=True)
         )
-        resolution = resolve_tick(current_state, tick_orders)
+        resolution = resolve_tick(
+            current_state,
+            tick_orders,
+            map_definition=map_definition,
+        )
         next_state = resolution.next_state.model_copy(update={"tick": current_state.tick + 1})
         simulated_ticks.append(
             SimulatedTick(
