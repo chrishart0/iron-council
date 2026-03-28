@@ -49,3 +49,7 @@ development_status:
   9-1-deduct-fortification-upkeep-and-degrade-unpaid-defenses-deterministically: done
   9-2-degrade-besieged-fortifications-when-hostile-control-seals-every-adjacent-route: done
   epic-9-retrospective: optional
+
+  epic-10: in-progress
+  10-1-project-fog-filtered-agent-state-from-canonical-match-data: drafted
+  10-2-expose-in-memory-agent-match-listing-state-polling-and-order-submission-endpoints: drafted

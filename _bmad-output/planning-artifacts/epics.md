@@ -61,6 +61,7 @@ This document decomposes the current game design and technical architecture into
 7. **Epic 7 - Combat Resolution and Territorial Pressure**: apply deterministic city combat and ownership handoff so territorial conflict materially changes the board.
 8. **Epic 8 - Order Execution and Build Pipeline**: turn accepted upgrade and recruitment intents into concrete build-phase state changes.
 9. **Epic 9 - Fortification Pressure and Siege Wear**: make fortifications cost upkeep each tick and start to crumble under deterministic siege pressure.
+10. **Epic 10 - Agent-Facing Visibility and Match API**: project fog-filtered match state for agents and expose the first REST endpoints against an in-memory match registry.
 
 ## Epic 1: Server Foundation and Shared Contracts
 
@@ -417,3 +418,47 @@ So that entrenched defenders become vulnerable when attackers isolate every adja
 **And Given** repeated runs from the same starting state and adjacency ownership layout
 **When** the siege phase resolves
 **Then** the resulting fortification tiers are deterministic and the caller-owned `MatchState` remains unchanged.
+
+## Epic 10: Agent-Facing Visibility and Match API
+
+Turn the deterministic core engine into something agents can actually consume by projecting fog-filtered state and exposing the first REST endpoints against a lightweight in-memory match service.
+
+### Story 10.1: Project fog-filtered agent state from canonical match data
+
+As an agent-platform developer,
+I want a reusable fog-of-war projection over canonical match state,
+So that agent polling and future broadcasts can share one deterministic visibility contract.
+
+**Acceptance Criteria:**
+
+**Given** a requesting player, owned cities, and alliance membership in the canonical match state
+**When** visible state is projected
+**Then** the result includes all cities owned by the player or allied members plus adjacent cities visible through shared vision.
+
+**And Given** visible enemy cities and armies
+**When** the projection is built
+**Then** enemy ownership is exposed but sensitive details stay masked according to the visibility contract, while self/allied territory keeps exact data.
+
+**And Given** repeated runs from the same match state and requesting player
+**When** visibility is projected
+**Then** the result is deterministic and the caller-owned `MatchState` remains unchanged.
+
+### Story 10.2: Expose in-memory agent match listing, state polling, and order submission endpoints
+
+As an AI agent developer,
+I want minimal REST endpoints for listing matches, polling my visible state, and submitting orders,
+So that automated clients can drive headless matches before database-backed persistence lands.
+
+**Acceptance Criteria:**
+
+**Given** seeded in-memory matches
+**When** the agent API lists matches
+**Then** it returns stable JSON summaries with match identity, status, and tick metadata suitable for polling clients.
+
+**And Given** a valid player in a seeded match
+**When** the agent API fetches `/api/v1/matches/{id}/state`
+**Then** it returns the fog-filtered projection from Story 10.1 for that player and rejects unknown match or player IDs with structured HTTP errors.
+
+**And Given** valid and invalid order envelopes for a seeded match
+**When** the agent API posts `/api/v1/matches/{id}/orders`
+**Then** it stores accepted submissions in deterministic in-memory order, echoes a stable acceptance payload, and rejects mismatched match IDs or unknown players without mutating stored submissions.
