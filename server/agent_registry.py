@@ -4,9 +4,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from server.models.api import (
+    AgentProfileHistory,
+    AgentProfileRating,
+    AgentProfileResponse,
     AllianceActionRequest,
     AllianceMemberRecord,
     AllianceRecord,
+    MatchJoinResponse,
     MatchMessageCreateRequest,
     MatchMessageRecord,
     MessageChannel,
@@ -73,12 +77,22 @@ class AllianceTransitionError(Exception):
         super().__init__(message)
 
 
+class MatchJoinError(Exception):
+    def __init__(self, *, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
 @dataclass(slots=True)
 class MatchRecord:
     match_id: str
     status: MatchStatus
     tick_interval_seconds: int
     state: MatchState
+    joinable_player_ids: list[str] = field(default_factory=list)
+    agent_profiles: list[AgentProfileResponse] = field(default_factory=list)
+    joined_agents: dict[str, str] = field(default_factory=dict)
     order_submissions: list[OrderEnvelope] = field(default_factory=list)
     messages: list[MatchMessage] = field(default_factory=list)
     treaties: list[MatchTreaty] = field(default_factory=list)
@@ -88,14 +102,20 @@ class MatchRecord:
 class InMemoryMatchRegistry:
     def __init__(self) -> None:
         self._matches: dict[str, MatchRecord] = {}
+        self._agent_profiles: dict[str, AgentProfileResponse] = {}
 
     def seed_match(self, record: MatchRecord) -> None:
         cloned_state = record.state.model_copy(deep=True)
+        for profile in record.agent_profiles:
+            self.seed_agent_profile(profile)
         self._matches[record.match_id] = MatchRecord(
             match_id=record.match_id,
             status=record.status,
             tick_interval_seconds=record.tick_interval_seconds,
             state=cloned_state,
+            joinable_player_ids=list(record.joinable_player_ids),
+            agent_profiles=[],
+            joined_agents=dict(record.joined_agents),
             order_submissions=[
                 submission.model_copy(deep=True) for submission in record.order_submissions
             ],
@@ -149,12 +169,62 @@ class InMemoryMatchRegistry:
 
     def reset(self) -> None:
         self._matches.clear()
+        self._agent_profiles.clear()
 
     def list_matches(self) -> list[MatchRecord]:
         return [self._matches[match_id] for match_id in sorted(self._matches)]
 
     def get_match(self, match_id: str) -> MatchRecord | None:
         return self._matches.get(match_id)
+
+    def seed_agent_profile(self, profile: AgentProfileResponse) -> None:
+        self._agent_profiles[profile.agent_id] = profile.model_copy(deep=True)
+
+    def get_agent_profile(self, agent_id: str) -> AgentProfileResponse | None:
+        profile = self._agent_profiles.get(agent_id)
+        if profile is None:
+            return None
+        return profile.model_copy(deep=True)
+
+    def join_match(self, *, match_id: str, agent_id: str) -> MatchJoinResponse:
+        record = self._matches[match_id]
+        existing_player_id = record.joined_agents.get(agent_id)
+        if existing_player_id is not None:
+            return MatchJoinResponse(
+                status="accepted",
+                match_id=match_id,
+                agent_id=agent_id,
+                player_id=existing_player_id,
+            )
+
+        if not record.joinable_player_ids:
+            raise MatchJoinError(
+                code="match_not_joinable",
+                message=f"Match '{match_id}' does not support agent joins.",
+            )
+
+        occupied_player_ids = set(record.joined_agents.values())
+        available_player_id = next(
+            (
+                player_id
+                for player_id in record.joinable_player_ids
+                if player_id not in occupied_player_ids
+            ),
+            None,
+        )
+        if available_player_id is None:
+            raise MatchJoinError(
+                code="no_open_slots",
+                message=f"Match '{match_id}' has no open join slots.",
+            )
+
+        record.joined_agents[agent_id] = available_player_id
+        return MatchJoinResponse(
+            status="accepted",
+            match_id=match_id,
+            agent_id=agent_id,
+            player_id=available_player_id,
+        )
 
     def record_submission(self, *, match_id: str, envelope: OrderEnvelope) -> int:
         record = self._matches[match_id]
@@ -616,24 +686,53 @@ def build_seeded_match_records(
     primary_match_id: str = "match-alpha",
     secondary_match_id: str = "match-beta",
 ) -> list[MatchRecord]:
+    seeded_profiles = build_seeded_agent_profiles()
     return [
         MatchRecord(
             match_id=primary_match_id,
             status=MatchStatus.ACTIVE,
             tick_interval_seconds=30,
             state=MatchState.model_validate(_seeded_match_state_payload()),
+            agent_profiles=seeded_profiles,
         ),
         MatchRecord(
             match_id=secondary_match_id,
             status=MatchStatus.PAUSED,
             tick_interval_seconds=45,
+            joinable_player_ids=sorted(_seeded_match_state_payload()["players"]),
             state=MatchState.model_validate(
                 {
                     **_seeded_match_state_payload(),
                     "tick": 7,
                 }
             ),
+            agent_profiles=seeded_profiles,
         ),
+    ]
+
+
+def build_seeded_agent_profiles() -> list[AgentProfileResponse]:
+    seeded_profile_specs = (
+        ("player-1", "Arthur", 1210),
+        ("player-2", "Morgana", 1190),
+        ("player-3", "Gawain", 1175),
+        ("player-4", "Lancelot", 1160),
+        ("player-5", "Percival", 1140),
+    )
+    return [
+        AgentProfileResponse(
+            agent_id=f"agent-{player_id}",
+            display_name=display_name,
+            is_seeded=True,
+            rating=AgentProfileRating(elo=elo_rating, provisional=True),
+            history=AgentProfileHistory(
+                matches_played=0,
+                wins=0,
+                losses=0,
+                draws=0,
+            ),
+        )
+        for player_id, display_name, elo_rating in seeded_profile_specs
     ]
 
 

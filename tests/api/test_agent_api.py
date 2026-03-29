@@ -75,6 +75,17 @@ def _alliance_payload(
     }
 
 
+def _join_payload(
+    *,
+    match_id: str = "match-beta",
+    agent_id: str = "agent-player-2",
+) -> dict[str, Any]:
+    return {
+        "match_id": match_id,
+        "agent_id": agent_id,
+    }
+
+
 @pytest.fixture
 def seeded_registry() -> InMemoryMatchRegistry:
     registry = InMemoryMatchRegistry()
@@ -1613,5 +1624,185 @@ async def test_get_alliances_rejects_unknown_match(
         "error": {
             "code": "match_not_found",
             "message": "Match 'match-missing' was not found.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_join_match_assigns_deterministic_slot_and_returns_idempotent_result(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        first_response = await client.post(
+            "/api/v1/matches/match-beta/join",
+            json=_join_payload(agent_id="agent-player-2"),
+        )
+        repeat_response = await client.post(
+            "/api/v1/matches/match-beta/join",
+            json=_join_payload(agent_id="agent-player-2"),
+        )
+        second_response = await client.post(
+            "/api/v1/matches/match-beta/join",
+            json=_join_payload(agent_id="agent-player-3"),
+        )
+
+    assert first_response.status_code == HTTPStatus.ACCEPTED
+    assert first_response.json() == {
+        "status": "accepted",
+        "match_id": "match-beta",
+        "agent_id": "agent-player-2",
+        "player_id": "player-1",
+    }
+    assert repeat_response.status_code == HTTPStatus.ACCEPTED
+    assert repeat_response.json() == first_response.json()
+    assert second_response.status_code == HTTPStatus.ACCEPTED
+    assert second_response.json() == {
+        "status": "accepted",
+        "match_id": "match-beta",
+        "agent_id": "agent-player-3",
+        "player_id": "player-2",
+    }
+
+
+@pytest.mark.asyncio
+async def test_join_match_rejects_unknown_agent_and_non_joinable_match_without_consuming_slots(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        unknown_agent_response = await client.post(
+            "/api/v1/matches/match-beta/join",
+            json=_join_payload(agent_id="agent-missing"),
+        )
+        non_joinable_response = await client.post(
+            "/api/v1/matches/match-alpha/join",
+            json=_join_payload(match_id="match-alpha", agent_id="agent-player-2"),
+        )
+        follow_up_join_response = await client.post(
+            "/api/v1/matches/match-beta/join",
+            json=_join_payload(agent_id="agent-player-2"),
+        )
+
+    assert unknown_agent_response.status_code == HTTPStatus.NOT_FOUND
+    assert unknown_agent_response.json() == {
+        "error": {
+            "code": "agent_not_found",
+            "message": "Agent 'agent-missing' was not found.",
+        }
+    }
+    assert non_joinable_response.status_code == HTTPStatus.BAD_REQUEST
+    assert non_joinable_response.json() == {
+        "error": {
+            "code": "match_not_joinable",
+            "message": "Match 'match-alpha' does not support agent joins.",
+        }
+    }
+    assert follow_up_join_response.status_code == HTTPStatus.ACCEPTED
+    assert follow_up_join_response.json()["player_id"] == "player-1"
+
+
+@pytest.mark.asyncio
+async def test_get_agent_profile_returns_stable_profile_shape_and_404_for_unknown_agent(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        profile_response = await client.get("/api/v1/agents/agent-player-2/profile")
+        missing_response = await client.get("/api/v1/agents/agent-missing/profile")
+
+    assert profile_response.status_code == HTTPStatus.OK
+    assert profile_response.json() == {
+        "agent_id": "agent-player-2",
+        "display_name": "Morgana",
+        "is_seeded": True,
+        "rating": {"elo": 1190, "provisional": True},
+        "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
+    }
+    assert missing_response.status_code == HTTPStatus.NOT_FOUND
+    assert missing_response.json() == {
+        "error": {
+            "code": "agent_not_found",
+            "message": "Agent 'agent-missing' was not found.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_join_and_profile_endpoints_expose_stable_openapi_contracts(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        response = await client.get("/openapi.json")
+
+    assert response.status_code == HTTPStatus.OK
+    paths = response.json()["paths"]
+    assert paths["/api/v1/matches/{match_id}/join"]["post"]["responses"]["202"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/MatchJoinResponse"}
+    assert paths["/api/v1/matches/{match_id}/join"]["post"]["responses"]["400"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/matches/{match_id}/join"]["post"]["responses"]["404"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/matches/{match_id}/join"]["post"]["responses"]["422"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/agents/{agent_id}/profile"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/AgentProfileResponse"}
+    assert paths["/api/v1/agents/{agent_id}/profile"]["get"]["responses"]["404"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+
+
+@pytest.mark.asyncio
+async def test_join_match_rejects_unknown_match_mismatched_payload_and_invalid_validation(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        unknown_match_response = await client.post(
+            "/api/v1/matches/match-missing/join",
+            json=_join_payload(match_id="match-missing", agent_id="agent-player-2"),
+        )
+        mismatch_response = await client.post(
+            "/api/v1/matches/match-beta/join",
+            json=_join_payload(match_id="match-alpha", agent_id="agent-player-2"),
+        )
+        missing_agent_response = await client.post(
+            "/api/v1/matches/match-beta/join",
+            json={"match_id": "match-beta"},
+        )
+        invalid_agent_response = await client.post(
+            "/api/v1/matches/match-beta/join",
+            json={"match_id": "match-beta", "agent_id": 123},
+        )
+
+    assert unknown_match_response.status_code == HTTPStatus.NOT_FOUND
+    assert unknown_match_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match 'match-missing' was not found.",
+        }
+    }
+    assert mismatch_response.status_code == HTTPStatus.BAD_REQUEST
+    assert mismatch_response.json() == {
+        "error": {
+            "code": "match_id_mismatch",
+            "message": (
+                "Join payload match_id 'match-alpha' does not match route match 'match-beta'."
+            ),
+        }
+    }
+    assert missing_agent_response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert missing_agent_response.json() == {
+        "error": {
+            "code": "invalid_join_request",
+            "message": "Join request is missing required fields.",
+        }
+    }
+    assert invalid_agent_response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert invalid_agent_response.json() == {
+        "error": {
+            "code": "invalid_join_request",
+            "message": "Join request validation failed.",
         }
     }

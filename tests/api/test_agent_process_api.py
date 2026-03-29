@@ -44,6 +44,35 @@ def test_running_app_lists_db_seeded_matches_and_serves_fog_filtered_state(
     assert "inverness" not in payload["cities"]
 
 
+def test_running_app_rejects_non_agent_profile_and_join_requests(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        profile_response = client.get("/api/v1/agents/agent-player-1/profile")
+        join_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.secondary_match_id}/join",
+            json={
+                "match_id": running_seeded_app.secondary_match_id,
+                "agent_id": "agent-player-1",
+            },
+        )
+
+    assert profile_response.status_code == HTTPStatus.NOT_FOUND
+    assert profile_response.json() == {
+        "error": {
+            "code": "agent_not_found",
+            "message": "Agent 'agent-player-1' was not found.",
+        }
+    }
+    assert join_response.status_code == HTTPStatus.NOT_FOUND
+    assert join_response.json() == {
+        "error": {
+            "code": "agent_not_found",
+            "message": "Agent 'agent-player-1' was not found.",
+        }
+    }
+
+
 def test_running_app_rejects_stale_orders_against_db_seeded_match_state(
     running_seeded_app: RunningApp,
     representative_order_payload: dict[str, Any],

@@ -11,8 +11,10 @@ from server.agent_registry import (
     MatchAlliance,
     MatchAllianceMember,
     MatchRecord,
+    build_seeded_agent_profiles,
 )
 from server.db.models import Alliance, Match, Player
+from server.models.api import AgentProfileHistory, AgentProfileRating, AgentProfileResponse
 from server.models.domain import MatchStatus
 from server.models.state import MatchState
 
@@ -34,15 +36,24 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
             alliance_rows=alliance_rows,
             player_rows=player_rows,
         )
+        agent_profiles_by_match = _load_agent_profiles_by_match(
+            matches=matches,
+            player_rows=player_rows,
+        )
 
         for match in matches:
             match_id = str(match.id)
             persisted_alliances = alliances_by_match.get(match_id, [])
+            state = MatchState.model_validate(match.state)
             record = MatchRecord(
                 match_id=match_id,
                 status=MatchStatus(match.status),
                 tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
-                state=MatchState.model_validate(match.state),
+                state=state,
+                joinable_player_ids=(
+                    sorted(state.players) if match.status == MatchStatus.PAUSED.value else []
+                ),
+                agent_profiles=agent_profiles_by_match.get(match_id, build_seeded_agent_profiles()),
                 alliances=persisted_alliances,
             )
             registry.seed_match(record)
@@ -90,6 +101,74 @@ def _load_persisted_alliances_by_match(
             alliances_by_match[match_id] = persisted_alliances
 
     return alliances_by_match
+
+
+def _load_agent_profiles_by_match(
+    *,
+    matches: Sequence[Match],
+    player_rows: Sequence[Player],
+) -> dict[str, list[AgentProfileResponse]]:
+    players_by_match: dict[str, list[Player]] = defaultdict(list)
+    persisted_agent_ids: set[str] = set()
+    for player in player_rows:
+        players_by_match[str(player.match_id)].append(player)
+
+    for match in matches:
+        state = MatchState.model_validate(match.state)
+        persisted_player_mapping = _build_persisted_player_mapping(
+            canonical_player_ids=sorted(state.players),
+            persisted_players=players_by_match.get(str(match.id), []),
+        )
+        for player in players_by_match.get(str(match.id), []):
+            if not player.is_agent:
+                continue
+            canonical_player_id = persisted_player_mapping.get(str(player.id))
+            if canonical_player_id is not None:
+                persisted_agent_ids.add(f"agent-{canonical_player_id}")
+
+    fallback_profiles_by_agent_id = {
+        profile.agent_id: profile
+        for profile in build_seeded_agent_profiles()
+        if profile.agent_id in persisted_agent_ids
+    }
+    profiles_by_match: dict[str, list[AgentProfileResponse]] = {}
+    for match in matches:
+        match_id = str(match.id)
+        state = MatchState.model_validate(match.state)
+        persisted_player_mapping = _build_persisted_player_mapping(
+            canonical_player_ids=sorted(state.players),
+            persisted_players=players_by_match.get(match_id, []),
+        )
+        loaded_profiles = [
+            AgentProfileResponse(
+                agent_id=f"agent-{canonical_player_id}",
+                display_name=player.display_name,
+                is_seeded=True,
+                rating=AgentProfileRating(elo=int(player.elo_rating), provisional=True),
+                history=AgentProfileHistory(
+                    matches_played=0,
+                    wins=0,
+                    losses=0,
+                    draws=0,
+                ),
+            )
+            for player in sorted(
+                players_by_match.get(match_id, []),
+                key=lambda persisted: str(persisted.id),
+            )
+            if player.is_agent
+            and (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None
+        ]
+        merged_profiles = {
+            profile.agent_id: profile for profile in fallback_profiles_by_agent_id.values()
+        }
+        for profile in loaded_profiles:
+            merged_profiles[profile.agent_id] = profile
+        profiles_by_match[match_id] = [
+            merged_profiles[agent_id] for agent_id in sorted(merged_profiles)
+        ]
+
+    return profiles_by_match
 
 
 def _build_persisted_player_mapping(

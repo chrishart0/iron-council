@@ -35,6 +35,38 @@ class OrderAcceptanceResponse(StrictModel):
     submission_index: int = Field(ge=0)
 
 
+class MatchJoinRequest(StrictModel):
+    match_id: str
+    agent_id: str = Field(min_length=1)
+
+
+class MatchJoinResponse(StrictModel):
+    status: Literal["accepted"]
+    match_id: str
+    agent_id: str
+    player_id: str
+
+
+class AgentProfileRating(StrictModel):
+    elo: int = Field(ge=0)
+    provisional: bool
+
+
+class AgentProfileHistory(StrictModel):
+    matches_played: int = Field(ge=0)
+    wins: int = Field(ge=0)
+    losses: int = Field(ge=0)
+    draws: int = Field(ge=0)
+
+
+class AgentProfileResponse(StrictModel):
+    agent_id: str
+    display_name: str
+    is_seeded: bool
+    rating: AgentProfileRating
+    history: AgentProfileHistory
+
+
 MessageChannel = Literal["world", "direct"]
 TreatyAction = Literal["propose", "accept", "withdraw"]
 TreatyType = Literal["non_aggression", "defensive", "trade"]

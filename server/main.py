@@ -13,16 +13,20 @@ from server import __version__
 from server.agent_registry import (
     AllianceTransitionError,
     InMemoryMatchRegistry,
+    MatchJoinError,
     TreatyTransitionError,
 )
 from server.db.registry import load_match_registry_from_database
 from server.fog import project_agent_state
 from server.models.api import (
+    AgentProfileResponse,
     AllianceActionAcceptanceResponse,
     AllianceActionRequest,
     AllianceListResponse,
     ApiErrorDetail,
     ApiErrorResponse,
+    MatchJoinRequest,
+    MatchJoinResponse,
     MatchListResponse,
     MatchMessageCreateRequest,
     MatchMessageInboxResponse,
@@ -169,6 +173,27 @@ def _alliance_validation_error_response(exc: RequestValidationError) -> JSONResp
     )
 
 
+def _join_validation_error_response(exc: RequestValidationError) -> JSONResponse:
+    for error in exc.errors():
+        location = list(error.get("loc", ()))
+        error_type = error.get("type")
+        if location and location[0] == "body" and error_type == "missing":
+            return _build_validation_error_response(
+                code="invalid_join_request",
+                message="Join request is missing required fields.",
+            )
+        if location == ["body", "agent_id"] and error_type == "string_too_short":
+            return _build_validation_error_response(
+                code="invalid_join_request",
+                message="Join request requires a non-empty agent_id.",
+            )
+
+    return _build_validation_error_response(
+        code="invalid_join_request",
+        message="Join request validation failed.",
+    )
+
+
 def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAPI:
     app = FastAPI(title="iron-counsil-server", version=__version__)
     app.state.match_registry = match_registry or _load_default_match_registry()
@@ -195,6 +220,8 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
             "/alliances"
         ):
             return _alliance_validation_error_response(exc)
+        if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith("/join"):
+            return _join_validation_error_response(exc)
         return await request_validation_exception_handler(request, exc)
 
     @app.get("/")
@@ -228,6 +255,24 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         )
 
     @api_router.get(
+        "/agents/{agent_id}/profile",
+        response_model=AgentProfileResponse,
+        responses={HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA},
+    )
+    async def get_agent_profile(
+        agent_id: str,
+        registry: MatchRegistryDependency,
+    ) -> AgentProfileResponse:
+        profile = registry.get_agent_profile(agent_id)
+        if profile is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="agent_not_found",
+                message=f"Agent '{agent_id}' was not found.",
+            )
+        return profile
+
+    @api_router.get(
         "/matches/{match_id}/state",
         response_model=AgentStateProjection,
         responses={HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA},
@@ -252,6 +297,53 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
             )
 
         return project_agent_state(record.state, player_id=player_id, match_id=match_id)
+
+    @api_router.post(
+        "/matches/{match_id}/join",
+        response_model=MatchJoinResponse,
+        status_code=HTTPStatus.ACCEPTED,
+        responses={
+            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def join_match(
+        match_id: str,
+        join_request: MatchJoinRequest,
+        registry: MatchRegistryDependency,
+    ) -> MatchJoinResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+        if join_request.match_id != match_id:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="match_id_mismatch",
+                message=(
+                    f"Join payload match_id '{join_request.match_id}' does not match route match "
+                    f"'{match_id}'."
+                ),
+            )
+        if registry.get_agent_profile(join_request.agent_id) is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="agent_not_found",
+                message=f"Agent '{join_request.agent_id}' was not found.",
+            )
+
+        try:
+            return registry.join_match(match_id=match_id, agent_id=join_request.agent_id)
+        except MatchJoinError as exc:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code=exc.code,
+                message=exc.message,
+            ) from exc
 
     @api_router.post(
         "/matches/{match_id}/orders",

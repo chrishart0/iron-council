@@ -54,3 +54,42 @@ def test_agent_api_smoke_flow_runs_through_real_process_and_seeded_database(
     }
     assert follow_up_state_response.status_code == HTTPStatus.OK
     assert follow_up_state_response.json() == initial_state_response.json()
+
+
+def test_agent_join_and_profile_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        profile_response = client.get("/api/v1/agents/agent-player-2/profile")
+        join_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.secondary_match_id}/join",
+            json={
+                "match_id": running_seeded_app.secondary_match_id,
+                "agent_id": "agent-player-2",
+            },
+        )
+        repeat_join_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.secondary_match_id}/join",
+            json={
+                "match_id": running_seeded_app.secondary_match_id,
+                "agent_id": "agent-player-2",
+            },
+        )
+
+    assert profile_response.status_code == HTTPStatus.OK
+    assert profile_response.json() == {
+        "agent_id": "agent-player-2",
+        "display_name": "Morgana",
+        "is_seeded": True,
+        "rating": {"elo": 1190, "provisional": True},
+        "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
+    }
+    assert join_response.status_code == HTTPStatus.ACCEPTED
+    assert join_response.json() == {
+        "status": "accepted",
+        "match_id": running_seeded_app.secondary_match_id,
+        "agent_id": "agent-player-2",
+        "player_id": "player-1",
+    }
+    assert repeat_join_response.status_code == HTTPStatus.ACCEPTED
+    assert repeat_join_response.json() == join_response.json()
