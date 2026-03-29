@@ -9,33 +9,38 @@ from server.agent_registry import build_seeded_agent_api_key
 from tests.support import RunningApp
 
 
+def _headers(agent_id: str = "agent-player-2") -> dict[str, str]:
+    return {"X-API-Key": build_seeded_agent_api_key(agent_id)}
+
+
 def test_agent_api_smoke_flow_runs_through_real_process_and_seeded_database(
     running_seeded_app: RunningApp,
     representative_order_payload: dict[str, Any],
 ) -> None:
     payload = deepcopy(representative_order_payload)
     payload["match_id"] = running_seeded_app.primary_match_id
-    payload["player_id"] = "player-1"
     payload["tick"] = 142
     payload["orders"] = {
         **payload["orders"],
         "movements": [{"army_id": "army-b", "destination": "birmingham"}],
     }
+    payload.pop("player_id", None)
 
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
         health_response = client.get("/health")
         list_response = client.get("/api/v1/matches")
         initial_state_response = client.get(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/state",
-            params={"player_id": "player-1"},
+            headers=_headers(),
         )
         submit_response = client.post(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/orders",
             json=payload,
+            headers=_headers(),
         )
         follow_up_state_response = client.get(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/state",
-            params={"player_id": "player-1"},
+            headers=_headers(),
         )
 
     assert health_response.status_code == HTTPStatus.OK
@@ -49,7 +54,7 @@ def test_agent_api_smoke_flow_runs_through_real_process_and_seeded_database(
     assert submit_response.json() == {
         "status": "accepted",
         "match_id": running_seeded_app.primary_match_id,
-        "player_id": "player-1",
+        "player_id": "player-2",
         "tick": 142,
         "submission_index": 0,
     }
@@ -64,17 +69,13 @@ def test_agent_join_and_profile_smoke_flow_runs_through_real_process(
         profile_response = client.get("/api/v1/agents/agent-player-2/profile")
         join_response = client.post(
             f"/api/v1/matches/{running_seeded_app.secondary_match_id}/join",
-            json={
-                "match_id": running_seeded_app.secondary_match_id,
-                "agent_id": "agent-player-2",
-            },
+            json={"match_id": running_seeded_app.secondary_match_id},
+            headers=_headers(),
         )
         repeat_join_response = client.post(
             f"/api/v1/matches/{running_seeded_app.secondary_match_id}/join",
-            json={
-                "match_id": running_seeded_app.secondary_match_id,
-                "agent_id": "agent-player-2",
-            },
+            json={"match_id": running_seeded_app.secondary_match_id},
+            headers=_headers(),
         )
 
     assert profile_response.status_code == HTTPStatus.OK
@@ -103,7 +104,7 @@ def test_authenticated_current_agent_profile_smoke_flow_runs_through_real_proces
         unauthenticated_response = client.get("/api/v1/agent/profile")
         authenticated_response = client.get(
             "/api/v1/agent/profile",
-            headers={"X-API-Key": build_seeded_agent_api_key("agent-player-2")},
+            headers=_headers(),
         )
 
     assert unauthenticated_response.status_code == HTTPStatus.UNAUTHORIZED
@@ -120,4 +121,58 @@ def test_authenticated_current_agent_profile_smoke_flow_runs_through_real_proces
         "is_seeded": True,
         "rating": {"elo": 1190, "provisional": True},
         "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
+    }
+
+
+def test_authenticated_join_state_and_order_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+    representative_order_payload: dict[str, Any],
+) -> None:
+    payload = deepcopy(representative_order_payload)
+    payload["match_id"] = running_seeded_app.secondary_match_id
+    payload["tick"] = 7
+    payload["orders"] = {
+        **payload["orders"],
+        "movements": [],
+        "recruitment": [],
+        "upgrades": [],
+        "transfers": [],
+    }
+    payload.pop("player_id", None)
+
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        join_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.secondary_match_id}/join",
+            json={"match_id": running_seeded_app.secondary_match_id},
+            headers=_headers(),
+        )
+        state_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.secondary_match_id}/state",
+            headers=_headers(),
+        )
+        order_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.secondary_match_id}/orders",
+            json=payload,
+            headers=_headers(),
+        )
+        unjoined_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.secondary_match_id}/state",
+            headers=_headers("agent-player-3"),
+        )
+
+    assert join_response.status_code == HTTPStatus.ACCEPTED
+    assert join_response.json()["player_id"] == "player-1"
+    assert state_response.status_code == HTTPStatus.OK
+    assert state_response.json()["player_id"] == "player-1"
+    assert order_response.status_code == HTTPStatus.ACCEPTED
+    assert order_response.json()["player_id"] == "player-1"
+    assert unjoined_response.status_code == HTTPStatus.BAD_REQUEST
+    assert unjoined_response.json() == {
+        "error": {
+            "code": "agent_not_joined",
+            "message": (
+                "Agent 'agent-player-3' has not joined match "
+                f"'{running_seeded_app.secondary_match_id}' as a player."
+            ),
+        }
     }

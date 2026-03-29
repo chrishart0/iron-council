@@ -86,6 +86,13 @@ class MatchJoinError(Exception):
         super().__init__(message)
 
 
+class MatchAccessError(Exception):
+    def __init__(self, *, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
 @dataclass(slots=True)
 class MatchRecord:
     match_id: str
@@ -282,6 +289,22 @@ class InMemoryMatchRegistry:
             player_id=available_player_id,
         )
 
+    def require_joined_player_id(self, *, match_id: str, agent_id: str) -> str:
+        record = self._matches.get(match_id)
+        if record is None:
+            raise MatchAccessError(
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+
+        player_id = record.joined_agents.get(agent_id)
+        if player_id is None:
+            raise MatchAccessError(
+                code="agent_not_joined",
+                message=f"Agent '{agent_id}' has not joined match '{match_id}' as a player.",
+            )
+        return player_id
+
     def record_submission(self, *, match_id: str, envelope: OrderEnvelope) -> int:
         record = self._matches[match_id]
         record.order_submissions.append(envelope.model_copy(deep=True))
@@ -298,11 +321,12 @@ class InMemoryMatchRegistry:
         *,
         match_id: str,
         message: MatchMessageCreateRequest,
+        sender_id: str,
     ) -> MatchMessageRecord:
         stored_message = self._append_message(
             match_id=match_id,
             channel=message.channel,
-            sender_id=message.sender_id,
+            sender_id=sender_id,
             recipient_id=message.recipient_id,
             tick=message.tick,
             content=message.content,
@@ -345,9 +369,11 @@ class InMemoryMatchRegistry:
         *,
         match_id: str,
         action: AllianceActionRequest,
+        player_id: str,
     ) -> AllianceRecord | None:
         record = self._matches[match_id]
-        player_state = record.state.players[action.player_id]
+
+        player_state = record.state.players[player_id]
         current_alliance_id = player_state.alliance_id
 
         if action.action == "create":
@@ -355,8 +381,7 @@ class InMemoryMatchRegistry:
                 raise AllianceTransitionError(
                     code="player_already_in_alliance",
                     message=(
-                        f"Player '{action.player_id}' is already in alliance "
-                        f"'{current_alliance_id}'."
+                        f"Player '{player_id}' is already in alliance '{current_alliance_id}'."
                     ),
                 )
             if action.name is None:
@@ -368,11 +393,11 @@ class InMemoryMatchRegistry:
             stored_alliance = MatchAlliance(
                 alliance_id=self._next_alliance_id(record.alliances),
                 name=action.name,
-                leader_id=action.player_id,
+                leader_id=player_id,
                 formed_tick=record.state.tick,
                 members=[
                     MatchAllianceMember(
-                        player_id=action.player_id,
+                        player_id=player_id,
                         joined_tick=record.state.tick,
                     )
                 ],
@@ -387,8 +412,7 @@ class InMemoryMatchRegistry:
                 raise AllianceTransitionError(
                     code="player_already_in_alliance",
                     message=(
-                        f"Player '{action.player_id}' is already in alliance "
-                        f"'{current_alliance_id}'."
+                        f"Player '{player_id}' is already in alliance '{current_alliance_id}'."
                     ),
                 )
             if action.alliance_id is None:
@@ -411,7 +435,7 @@ class InMemoryMatchRegistry:
 
             join_alliance.members.append(
                 MatchAllianceMember(
-                    player_id=action.player_id,
+                    player_id=player_id,
                     joined_tick=record.state.tick,
                 )
             )
@@ -422,7 +446,7 @@ class InMemoryMatchRegistry:
         if current_alliance_id is None:
             raise AllianceTransitionError(
                 code="player_not_in_alliance",
-                message=f"Player '{action.player_id}' is not currently in an alliance.",
+                message=f"Player '{player_id}' is not currently in an alliance.",
             )
 
         leave_alliance = self._find_alliance(
@@ -436,7 +460,7 @@ class InMemoryMatchRegistry:
             )
 
         leave_alliance.members = [
-            member for member in leave_alliance.members if member.player_id != action.player_id
+            member for member in leave_alliance.members if member.player_id != player_id
         ]
         player_state.alliance_id = None
 
@@ -449,7 +473,7 @@ class InMemoryMatchRegistry:
             self._sync_victory_state(record.state)
             return None
 
-        if leave_alliance.leader_id == action.player_id:
+        if leave_alliance.leader_id == player_id:
             leave_alliance.leader_id = min(member.player_id for member in leave_alliance.members)
 
         self._sync_victory_state(record.state)
@@ -460,9 +484,11 @@ class InMemoryMatchRegistry:
         *,
         match_id: str,
         action: TreatyActionRequest,
+        player_id: str,
     ) -> TreatyRecord:
         record = self._matches[match_id]
-        player_a_id, player_b_id = sorted((action.player_id, action.counterparty_id))
+
+        player_a_id, player_b_id = sorted((player_id, action.counterparty_id))
         latest_treaty = self._find_latest_treaty(
             treaties=record.treaties,
             player_a_id=player_a_id,
@@ -485,7 +511,7 @@ class InMemoryMatchRegistry:
                 player_b_id=player_b_id,
                 treaty_type=action.treaty_type,
                 status="proposed",
-                proposed_by=action.player_id,
+                proposed_by=player_id,
                 proposed_tick=record.state.tick,
             )
             record.treaties.append(stored_treaty)
@@ -510,7 +536,7 @@ class InMemoryMatchRegistry:
             )
 
         if action.action == "accept":
-            if latest_treaty.status != "proposed" or latest_treaty.proposed_by == action.player_id:
+            if latest_treaty.status != "proposed" or latest_treaty.proposed_by == player_id:
                 raise TreatyTransitionError(
                     code="unsupported_treaty_transition",
                     message=(
@@ -539,13 +565,13 @@ class InMemoryMatchRegistry:
                 ),
             )
         latest_treaty.status = "withdrawn"
-        latest_treaty.withdrawn_by = action.player_id
+        latest_treaty.withdrawn_by = player_id
         latest_treaty.withdrawn_tick = record.state.tick
         self._record_world_treaty_message(
             match_id=match_id,
             tick=record.state.tick,
             content=(
-                f"Treaty withdrawn: {action.player_id} withdrew the {action.treaty_type} "
+                f"Treaty withdrawn: {player_id} withdrew the {action.treaty_type} "
                 f"treaty with {action.counterparty_id}."
             ),
         )
@@ -751,6 +777,10 @@ def build_seeded_match_records(
             tick_interval_seconds=30,
             state=MatchState.model_validate(_seeded_match_state_payload()),
             agent_profiles=seeded_profiles,
+            joined_agents={
+                f"agent-{player_id}": player_id
+                for player_id in _seeded_match_state_payload()["players"]
+            },
             authenticated_agent_keys=seeded_authenticated_keys,
         ),
         MatchRecord(

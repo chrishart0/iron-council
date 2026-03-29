@@ -4,7 +4,7 @@ import os
 from http import HTTPStatus
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -13,6 +13,7 @@ from server import __version__
 from server.agent_registry import (
     AllianceTransitionError,
     InMemoryMatchRegistry,
+    MatchAccessError,
     MatchJoinError,
     TreatyTransitionError,
 )
@@ -26,6 +27,7 @@ from server.models.api import (
     ApiErrorDetail,
     ApiErrorResponse,
     AuthenticatedAgentContext,
+    AuthenticatedOrderSubmissionRequest,
     MatchJoinRequest,
     MatchJoinResponse,
     MatchListResponse,
@@ -59,7 +61,6 @@ def get_match_registry(request: Request) -> InMemoryMatchRegistry:
 
 MatchRegistryDependency = Annotated[InMemoryMatchRegistry, Depends(get_match_registry)]
 ApiKeyHeader = Annotated[str | None, Header(alias="X-API-Key")]
-PlayerIdQuery = Annotated[str, Query(...)]
 API_ERROR_RESPONSE_SCHEMA = {"model": ApiErrorResponse}
 
 
@@ -75,11 +76,6 @@ def _message_validation_error_response(exc: RequestValidationError) -> JSONRespo
     for error in exc.errors():
         location = list(error.get("loc", ()))
         error_type = error.get("type")
-        if location == ["query", "player_id"] and error_type == "missing":
-            return _build_validation_error_response(
-                code="missing_player_id",
-                message="Query parameter 'player_id' is required.",
-            )
         if location == ["body", "content"] and error_type == "string_too_short":
             return _build_validation_error_response(
                 code="invalid_message_content",
@@ -184,11 +180,6 @@ def _join_validation_error_response(exc: RequestValidationError) -> JSONResponse
                 code="invalid_join_request",
                 message="Join request is missing required fields.",
             )
-        if location == ["body", "agent_id"] and error_type == "string_too_short":
-            return _build_validation_error_response(
-                code="invalid_join_request",
-                message="Join request requires a non-empty agent_id.",
-            )
 
     return _build_validation_error_response(
         code="invalid_join_request",
@@ -215,6 +206,25 @@ def get_authenticated_agent(
             message="A valid active X-API-Key header is required.",
         )
     return authenticated_agent
+
+
+def _require_joined_player_id(
+    *,
+    registry: InMemoryMatchRegistry,
+    match_id: str,
+    authenticated_agent: AuthenticatedAgentContext,
+) -> str:
+    try:
+        return registry.require_joined_player_id(
+            match_id=match_id,
+            agent_id=authenticated_agent.agent_id,
+        )
+    except MatchAccessError as exc:
+        raise ApiError(
+            status_code=HTTPStatus.BAD_REQUEST,
+            code=exc.code,
+            message=exc.message,
+        ) from exc
 
 
 def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAPI:
@@ -321,7 +331,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     async def get_match_state(
         match_id: str,
         registry: MatchRegistryDependency,
-        player_id: PlayerIdQuery,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
     ) -> AgentStateProjection:
         record = registry.get_match(match_id)
         if record is None:
@@ -330,14 +340,13 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                 code="match_not_found",
                 message=f"Match '{match_id}' was not found.",
             )
-        if player_id not in record.state.players:
-            raise ApiError(
-                status_code=HTTPStatus.NOT_FOUND,
-                code="player_not_found",
-                message=f"Player '{player_id}' was not found in match '{match_id}'.",
-            )
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
 
-        return project_agent_state(record.state, player_id=player_id, match_id=match_id)
+        return project_agent_state(record.state, player_id=resolved_player_id, match_id=match_id)
 
     @api_router.post(
         "/matches/{match_id}/join",
@@ -353,6 +362,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         match_id: str,
         join_request: MatchJoinRequest,
         registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
     ) -> MatchJoinResponse:
         record = registry.get_match(match_id)
         if record is None:
@@ -370,15 +380,9 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                     f"'{match_id}'."
                 ),
             )
-        if registry.get_agent_profile(join_request.agent_id) is None:
-            raise ApiError(
-                status_code=HTTPStatus.NOT_FOUND,
-                code="agent_not_found",
-                message=f"Agent '{join_request.agent_id}' was not found.",
-            )
 
         try:
-            return registry.join_match(match_id=match_id, agent_id=join_request.agent_id)
+            return registry.join_match(match_id=match_id, agent_id=authenticated_agent.agent_id)
         except MatchJoinError as exc:
             raise ApiError(
                 status_code=HTTPStatus.BAD_REQUEST,
@@ -397,8 +401,9 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     )
     async def submit_orders(
         match_id: str,
-        envelope: OrderEnvelope,
+        submission: AuthenticatedOrderSubmissionRequest,
         registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
     ) -> OrderAcceptanceResponse:
         record = registry.get_match(match_id)
         if record is None:
@@ -407,31 +412,36 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                 code="match_not_found",
                 message=f"Match '{match_id}' was not found.",
             )
-        if envelope.match_id != match_id:
+        if submission.match_id != match_id:
             raise ApiError(
                 status_code=HTTPStatus.BAD_REQUEST,
                 code="match_id_mismatch",
                 message=(
-                    f"Order payload match_id '{envelope.match_id}' does not match route match "
+                    f"Order payload match_id '{submission.match_id}' does not match route match "
                     f"'{match_id}'."
                 ),
             )
-        if envelope.player_id not in record.state.players:
-            raise ApiError(
-                status_code=HTTPStatus.NOT_FOUND,
-                code="player_not_found",
-                message=f"Player '{envelope.player_id}' was not found in match '{match_id}'.",
-            )
-        if envelope.tick != record.state.tick:
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
+        if submission.tick != record.state.tick:
             raise ApiError(
                 status_code=HTTPStatus.BAD_REQUEST,
                 code="tick_mismatch",
                 message=(
-                    f"Order payload tick '{envelope.tick}' does not match current match tick "
+                    f"Order payload tick '{submission.tick}' does not match current match tick "
                     f"'{record.state.tick}'."
                 ),
             )
 
+        envelope = OrderEnvelope(
+            match_id=submission.match_id,
+            player_id=resolved_player_id,
+            tick=submission.tick,
+            orders=submission.orders,
+        )
         submission_index = registry.record_submission(match_id=match_id, envelope=envelope)
         return OrderAcceptanceResponse(
             status="accepted",
@@ -452,7 +462,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     async def get_match_messages(
         match_id: str,
         registry: MatchRegistryDependency,
-        player_id: PlayerIdQuery,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
     ) -> MatchMessageInboxResponse:
         record = registry.get_match(match_id)
         if record is None:
@@ -461,17 +471,18 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                 code="match_not_found",
                 message=f"Match '{match_id}' was not found.",
             )
-        if player_id not in record.state.players:
-            raise ApiError(
-                status_code=HTTPStatus.NOT_FOUND,
-                code="player_not_found",
-                message=f"Player '{player_id}' was not found in match '{match_id}'.",
-            )
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
 
         return MatchMessageInboxResponse(
             match_id=match_id,
-            player_id=player_id,
-            messages=registry.list_visible_messages(match_id=match_id, player_id=player_id),
+            player_id=resolved_player_id,
+            messages=registry.list_visible_messages(
+                match_id=match_id, player_id=resolved_player_id
+            ),
         )
 
     @api_router.post(
@@ -488,6 +499,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         match_id: str,
         message: MatchMessageCreateRequest,
         registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
     ) -> MessageAcceptanceResponse:
         record = registry.get_match(match_id)
         if record is None:
@@ -505,12 +517,11 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                     f"'{match_id}'."
                 ),
             )
-        if message.sender_id not in record.state.players:
-            raise ApiError(
-                status_code=HTTPStatus.NOT_FOUND,
-                code="player_not_found",
-                message=f"Player '{message.sender_id}' was not found in match '{match_id}'.",
-            )
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
         if message.tick != record.state.tick:
             raise ApiError(
                 status_code=HTTPStatus.BAD_REQUEST,
@@ -536,7 +547,11 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                 ),
             )
 
-        accepted_message = registry.record_message(match_id=match_id, message=message)
+        accepted_message = registry.record_message(
+            match_id=match_id,
+            message=message,
+            sender_id=resolved_player_id,
+        )
         return MessageAcceptanceResponse(
             status="accepted",
             match_id=match_id,
@@ -556,6 +571,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     async def get_match_treaties(
         match_id: str,
         registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
     ) -> TreatyListResponse:
         record = registry.get_match(match_id)
         if record is None:
@@ -565,6 +581,11 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                 message=f"Match '{match_id}' was not found.",
             )
 
+        _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
         return TreatyListResponse(
             match_id=match_id,
             treaties=registry.list_treaties(match_id=match_id),
@@ -584,6 +605,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         match_id: str,
         treaty_action: TreatyActionRequest,
         registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
     ) -> TreatyActionAcceptanceResponse:
         record = registry.get_match(match_id)
         if record is None:
@@ -601,14 +623,11 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                     f"match '{match_id}'."
                 ),
             )
-        if treaty_action.player_id not in record.state.players:
-            raise ApiError(
-                status_code=HTTPStatus.NOT_FOUND,
-                code="player_not_found",
-                message=(
-                    f"Player '{treaty_action.player_id}' was not found in match '{match_id}'."
-                ),
-            )
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
         if treaty_action.counterparty_id not in record.state.players:
             raise ApiError(
                 status_code=HTTPStatus.NOT_FOUND,
@@ -617,7 +636,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                     f"Player '{treaty_action.counterparty_id}' was not found in match '{match_id}'."
                 ),
             )
-        if treaty_action.player_id == treaty_action.counterparty_id:
+        if resolved_player_id == treaty_action.counterparty_id:
             raise ApiError(
                 status_code=HTTPStatus.BAD_REQUEST,
                 code="self_targeted_treaty",
@@ -625,7 +644,11 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
             )
 
         try:
-            treaty = registry.apply_treaty_action(match_id=match_id, action=treaty_action)
+            treaty = registry.apply_treaty_action(
+                match_id=match_id,
+                action=treaty_action,
+                player_id=resolved_player_id,
+            )
         except TreatyTransitionError as exc:
             raise ApiError(
                 status_code=HTTPStatus.BAD_REQUEST,
@@ -647,6 +670,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     async def get_match_alliances(
         match_id: str,
         registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
     ) -> AllianceListResponse:
         record = registry.get_match(match_id)
         if record is None:
@@ -656,6 +680,11 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                 message=f"Match '{match_id}' was not found.",
             )
 
+        _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
         return AllianceListResponse(
             match_id=match_id,
             alliances=registry.list_alliances(match_id=match_id),
@@ -675,6 +704,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         match_id: str,
         alliance_action: AllianceActionRequest,
         registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
     ) -> AllianceActionAcceptanceResponse:
         record = registry.get_match(match_id)
         if record is None:
@@ -692,17 +722,18 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                     f"match '{match_id}'."
                 ),
             )
-        if alliance_action.player_id not in record.state.players:
-            raise ApiError(
-                status_code=HTTPStatus.NOT_FOUND,
-                code="player_not_found",
-                message=(
-                    f"Player '{alliance_action.player_id}' was not found in match '{match_id}'."
-                ),
-            )
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
 
         try:
-            alliance = registry.apply_alliance_action(match_id=match_id, action=alliance_action)
+            alliance = registry.apply_alliance_action(
+                match_id=match_id,
+                action=alliance_action,
+                player_id=resolved_player_id,
+            )
         except AllianceTransitionError as exc:
             raise ApiError(
                 status_code=HTTPStatus.BAD_REQUEST,
@@ -713,7 +744,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         return AllianceActionAcceptanceResponse(
             status="accepted",
             match_id=match_id,
-            player_id=alliance_action.player_id,
+            player_id=resolved_player_id,
             alliance=alliance,
         )
 

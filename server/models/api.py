@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from server.models.domain import MatchStatus, StrictModel, TickDuration
+from server.models.orders import OrderBatch
 
 
 class ApiErrorDetail(StrictModel):
@@ -37,7 +38,12 @@ class OrderAcceptanceResponse(StrictModel):
 
 class MatchJoinRequest(StrictModel):
     match_id: str
-    agent_id: str = Field(min_length=1)
+
+
+class AuthenticatedOrderSubmissionRequest(StrictModel):
+    match_id: str
+    tick: TickDuration
+    orders: OrderBatch
 
 
 class MatchJoinResponse(StrictModel):
@@ -82,7 +88,6 @@ AllianceAction = Literal["create", "join", "leave"]
 
 class MatchMessageCreateRequest(StrictModel):
     match_id: str
-    sender_id: str
     tick: TickDuration
     channel: MessageChannel
     recipient_id: str | None = None
@@ -117,7 +122,6 @@ class MessageAcceptanceResponse(StrictModel):
 
 class TreatyActionRequest(StrictModel):
     match_id: str
-    player_id: str
     counterparty_id: str
     action: TreatyAction
     treaty_type: TreatyType
@@ -149,7 +153,6 @@ class TreatyActionAcceptanceResponse(StrictModel):
 
 class AllianceActionRequest(StrictModel):
     match_id: str
-    player_id: str
     action: AllianceAction
     alliance_id: str | None = None
     name: str | None = Field(default=None, min_length=1)

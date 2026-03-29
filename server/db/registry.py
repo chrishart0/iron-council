@@ -47,6 +47,10 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
             player_rows=player_rows,
             api_key_rows=api_key_rows,
         )
+        joined_agents_by_match = _load_joined_agents_by_match(
+            matches=matches,
+            player_rows=player_rows,
+        )
 
         for match in matches:
             match_id = str(match.id)
@@ -61,6 +65,7 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
                     sorted(state.players) if match.status == MatchStatus.PAUSED.value else []
                 ),
                 agent_profiles=agent_profiles_by_match.get(match_id, build_seeded_agent_profiles()),
+                joined_agents=joined_agents_by_match.get(match_id, {}),
                 alliances=persisted_alliances,
                 authenticated_agent_keys=authenticated_keys_by_match.get(match_id, []),
             )
@@ -217,6 +222,35 @@ def _load_authenticated_agent_keys_by_match(
             authenticated_keys_by_match[match_id] = authenticated_keys
 
     return authenticated_keys_by_match
+
+
+def _load_joined_agents_by_match(
+    *,
+    matches: Sequence[Match],
+    player_rows: Sequence[Player],
+) -> dict[str, dict[str, str]]:
+    players_by_match: dict[str, list[Player]] = defaultdict(list)
+    for player in player_rows:
+        players_by_match[str(player.match_id)].append(player)
+
+    joined_agents_by_match: dict[str, dict[str, str]] = {}
+    for match in matches:
+        match_id = str(match.id)
+        state = MatchState.model_validate(match.state)
+        persisted_player_mapping = _build_persisted_player_mapping(
+            canonical_player_ids=sorted(state.players),
+            persisted_players=players_by_match.get(match_id, []),
+        )
+        joined_agents = {
+            f"agent-{canonical_player_id}": canonical_player_id
+            for player in players_by_match.get(match_id, [])
+            if player.is_agent
+            and (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None
+        }
+        if joined_agents:
+            joined_agents_by_match[match_id] = joined_agents
+
+    return joined_agents_by_match
 
 
 def _build_persisted_player_mapping(

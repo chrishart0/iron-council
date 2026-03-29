@@ -348,3 +348,20 @@ def test_load_match_registry_from_database_rejects_inactive_agent_api_keys(
     assert (
         registry.resolve_authenticated_agent(build_seeded_agent_api_key("agent-player-2")) is None
     )
+
+
+def test_load_match_registry_from_database_exposes_authenticated_join_mapping_for_agent_players(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-joined-agents.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    registry = load_match_registry_from_database(database_url)
+
+    assert (
+        registry.require_joined_player_id(
+            match_id="00000000-0000-0000-0000-000000000101",
+            agent_id="agent-player-2",
+        )
+        == "player-2"
+    )

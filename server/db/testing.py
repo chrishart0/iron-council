@@ -158,6 +158,14 @@ def seed_database(database_url: str) -> None:
                     "is_active": True,
                     "created_at": seed_timestamp,
                 },
+                {
+                    "id": "00000000-0000-0000-0000-000000000203",
+                    "user_id": "00000000-0000-0000-0000-000000000303",
+                    "key_hash": hash_api_key(build_seeded_agent_api_key("agent-player-3")),
+                    "elo_rating": 1175,
+                    "is_active": True,
+                    "created_at": seed_timestamp,
+                },
             ],
         )
         connection.execute(
@@ -223,8 +231,8 @@ def seed_database(database_url: str) -> None:
                     "user_id": "00000000-0000-0000-0000-000000000303",
                     "match_id": "00000000-0000-0000-0000-000000000101",
                     "display_name": "Gawain",
-                    "is_agent": False,
-                    "api_key_id": None,
+                    "is_agent": True,
+                    "api_key_id": "00000000-0000-0000-0000-000000000203",
                     "elo_rating": 1175,
                     "alliance_id": None,
                     "alliance_joined_tick": None,

@@ -61,9 +61,9 @@ development_status:
   12-3-add-deterministic-seed-reset-tooling-and-per-worktree-isolated-test-databases: done
   12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: done
 
-  epic-14: in-progress
+  epic-14: done
   14-1-add-x-api-key-authentication-and-an-authenticated-current-agent-profile-endpoint: done
-  14-2-bind-match-joins-and-match-scoped-reads-writes-to-the-authenticated-agent-identity: backlog
+  14-2-bind-match-joins-and-match-scoped-reads-writes-to-the-authenticated-agent-identity: done
 
   epic-11: done
   11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: done

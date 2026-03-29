@@ -8,14 +8,18 @@ from server.agent_registry import build_seeded_agent_api_key
 from tests.support import RunningApp
 
 
-def test_running_app_lists_db_seeded_matches_and_serves_fog_filtered_state(
+def _headers(agent_id: str = "agent-player-2") -> dict[str, str]:
+    return {"X-API-Key": build_seeded_agent_api_key(agent_id)}
+
+
+def test_running_app_lists_db_seeded_matches_and_serves_authenticated_fog_filtered_state(
     running_seeded_app: RunningApp,
 ) -> None:
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
         list_response = client.get("/api/v1/matches")
         state_response = client.get(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/state",
-            params={"player_id": "player-1"},
+            headers=_headers(),
         )
 
     assert list_response.status_code == HTTPStatus.OK
@@ -38,24 +42,22 @@ def test_running_app_lists_db_seeded_matches_and_serves_fog_filtered_state(
     assert state_response.status_code == HTTPStatus.OK
     payload = state_response.json()
     assert payload["match_id"] == running_seeded_app.primary_match_id
-    assert payload["player_id"] == "player-1"
+    assert payload["player_id"] == "player-2"
     assert payload["alliance_members"] == ["player-1", "player-2"]
     assert payload["cities"]["london"]["visibility"] == "full"
     assert payload["cities"]["birmingham"]["visibility"] == "partial"
     assert "inverness" not in payload["cities"]
 
 
-def test_running_app_rejects_non_agent_profile_and_join_requests(
+def test_running_app_rejects_non_agent_public_profile_and_non_agent_api_key_join_attempt(
     running_seeded_app: RunningApp,
 ) -> None:
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
         profile_response = client.get("/api/v1/agents/agent-player-1/profile")
         join_response = client.post(
             f"/api/v1/matches/{running_seeded_app.secondary_match_id}/join",
-            json={
-                "match_id": running_seeded_app.secondary_match_id,
-                "agent_id": "agent-player-1",
-            },
+            json={"match_id": running_seeded_app.secondary_match_id},
+            headers=_headers("agent-player-1"),
         )
 
     assert profile_response.status_code == HTTPStatus.NOT_FOUND
@@ -65,23 +67,66 @@ def test_running_app_rejects_non_agent_profile_and_join_requests(
             "message": "Agent 'agent-player-1' was not found.",
         }
     }
-    assert join_response.status_code == HTTPStatus.NOT_FOUND
+    assert join_response.status_code == HTTPStatus.UNAUTHORIZED
     assert join_response.json() == {
         "error": {
-            "code": "agent_not_found",
-            "message": "Agent 'agent-player-1' was not found.",
+            "code": "invalid_api_key",
+            "message": "A valid active X-API-Key header is required.",
         }
     }
+
+
+def test_running_app_requires_authenticated_join_and_match_scoped_reads(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        unauthenticated_join_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.secondary_match_id}/join",
+            json={"match_id": running_seeded_app.secondary_match_id},
+        )
+        pre_join_state_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.secondary_match_id}/state",
+            headers=_headers(),
+        )
+        authenticated_join_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.secondary_match_id}/join",
+            json={"match_id": running_seeded_app.secondary_match_id},
+            headers=_headers(),
+        )
+        state_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.secondary_match_id}/state",
+            headers=_headers(),
+        )
+
+    assert unauthenticated_join_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert unauthenticated_join_response.json() == {
+        "error": {
+            "code": "invalid_api_key",
+            "message": "A valid active X-API-Key header is required.",
+        }
+    }
+    assert pre_join_state_response.status_code == HTTPStatus.BAD_REQUEST
+    assert pre_join_state_response.json() == {
+        "error": {
+            "code": "agent_not_joined",
+            "message": (
+                "Agent 'agent-player-2' has not joined match "
+                f"'{running_seeded_app.secondary_match_id}' as a player."
+            ),
+        }
+    }
+    assert authenticated_join_response.status_code == HTTPStatus.ACCEPTED
+    assert authenticated_join_response.json()["agent_id"] == "agent-player-2"
+    assert authenticated_join_response.json()["player_id"] == "player-1"
+    assert state_response.status_code == HTTPStatus.OK
+    assert state_response.json()["player_id"] == "player-1"
 
 
 def test_running_app_serves_authenticated_current_agent_profile_from_db_registry(
     running_seeded_app: RunningApp,
 ) -> None:
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
-        response = client.get(
-            "/api/v1/agent/profile",
-            headers={"X-API-Key": build_seeded_agent_api_key("agent-player-2")},
-        )
+        response = client.get("/api/v1/agent/profile", headers=_headers())
 
     assert response.status_code == HTTPStatus.OK
     assert response.json() == {
@@ -120,13 +165,14 @@ def test_running_app_rejects_stale_orders_against_db_seeded_match_state(
 ) -> None:
     payload = dict(representative_order_payload)
     payload["match_id"] = running_seeded_app.primary_match_id
-    payload["player_id"] = "player-1"
     payload["tick"] = 141
+    payload.pop("player_id", None)
 
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
         response = client.post(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/orders",
             json=payload,
+            headers=_headers(),
         )
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
@@ -138,7 +184,7 @@ def test_running_app_rejects_stale_orders_against_db_seeded_match_state(
     }
 
 
-def test_running_app_posts_and_filters_visible_messages(
+def test_running_app_posts_and_filters_visible_messages_for_authenticated_player(
     running_seeded_app: RunningApp,
 ) -> None:
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
@@ -146,68 +192,57 @@ def test_running_app_posts_and_filters_visible_messages(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
             json={
                 "match_id": running_seeded_app.primary_match_id,
-                "sender_id": "player-1",
                 "tick": 142,
                 "channel": "world",
                 "recipient_id": None,
                 "content": "Open briefing.",
             },
+            headers=_headers(),
         )
         direct_response = client.post(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
             json={
                 "match_id": running_seeded_app.primary_match_id,
-                "sender_id": "player-2",
                 "tick": 142,
                 "channel": "direct",
                 "recipient_id": "player-1",
                 "content": "Private briefing.",
             },
+            headers=_headers(),
         )
-        visible_to_player_one = client.get(
+        visible_to_player_two = client.get(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
-            params={"player_id": "player-1"},
-        )
-        visible_to_player_three = client.get(
-            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
-            params={"player_id": "player-3"},
+            headers=_headers(),
         )
 
     assert world_response.status_code == HTTPStatus.ACCEPTED
     assert direct_response.status_code == HTTPStatus.ACCEPTED
-    assert visible_to_player_one.status_code == HTTPStatus.OK
-    assert visible_to_player_one.json()["messages"] == [
-        {
-            "message_id": 0,
-            "channel": "world",
-            "sender_id": "player-1",
-            "recipient_id": None,
-            "tick": 142,
-            "content": "Open briefing.",
-        },
-        {
-            "message_id": 1,
-            "channel": "direct",
-            "sender_id": "player-2",
-            "recipient_id": "player-1",
-            "tick": 142,
-            "content": "Private briefing.",
-        },
-    ]
-    assert visible_to_player_three.status_code == HTTPStatus.OK
-    assert visible_to_player_three.json()["messages"] == [
-        {
-            "message_id": 0,
-            "channel": "world",
-            "sender_id": "player-1",
-            "recipient_id": None,
-            "tick": 142,
-            "content": "Open briefing.",
-        }
-    ]
+    assert visible_to_player_two.status_code == HTTPStatus.OK
+    assert visible_to_player_two.json() == {
+        "match_id": running_seeded_app.primary_match_id,
+        "player_id": "player-2",
+        "messages": [
+            {
+                "message_id": 0,
+                "channel": "world",
+                "sender_id": "player-2",
+                "recipient_id": None,
+                "tick": 142,
+                "content": "Open briefing.",
+            },
+            {
+                "message_id": 1,
+                "channel": "direct",
+                "sender_id": "player-2",
+                "recipient_id": "player-1",
+                "tick": 142,
+                "content": "Private briefing.",
+            },
+        ],
+    }
 
 
-def test_running_app_processes_treaty_reads_and_public_announcements(
+def test_running_app_processes_treaty_reads_for_authenticated_player(
     running_seeded_app: RunningApp,
 ) -> None:
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
@@ -215,30 +250,34 @@ def test_running_app_processes_treaty_reads_and_public_announcements(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/treaties",
             json={
                 "match_id": running_seeded_app.primary_match_id,
-                "player_id": "player-2",
                 "counterparty_id": "player-1",
                 "action": "propose",
                 "treaty_type": "trade",
             },
+            headers=_headers(),
         )
-        accept_response = client.post(
+        treaty_read = client.get(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/treaties",
-            json={
-                "match_id": running_seeded_app.primary_match_id,
-                "player_id": "player-1",
-                "counterparty_id": "player-2",
-                "action": "accept",
-                "treaty_type": "trade",
-            },
-        )
-        treaty_read = client.get(f"/api/v1/matches/{running_seeded_app.primary_match_id}/treaties")
-        visible_messages = client.get(
-            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
-            params={"player_id": "player-5"},
+            headers=_headers(),
         )
 
     assert propose_response.status_code == HTTPStatus.ACCEPTED
-    assert accept_response.status_code == HTTPStatus.ACCEPTED
+    assert propose_response.json() == {
+        "status": "accepted",
+        "match_id": running_seeded_app.primary_match_id,
+        "treaty": {
+            "treaty_id": 0,
+            "player_a_id": "player-1",
+            "player_b_id": "player-2",
+            "treaty_type": "trade",
+            "status": "proposed",
+            "proposed_by": "player-2",
+            "proposed_tick": 142,
+            "signed_tick": None,
+            "withdrawn_by": None,
+            "withdrawn_tick": None,
+        },
+    }
     assert treaty_read.status_code == HTTPStatus.OK
     assert treaty_read.json() == {
         "match_id": running_seeded_app.primary_match_id,
@@ -248,109 +287,46 @@ def test_running_app_processes_treaty_reads_and_public_announcements(
                 "player_a_id": "player-1",
                 "player_b_id": "player-2",
                 "treaty_type": "trade",
-                "status": "active",
+                "status": "proposed",
                 "proposed_by": "player-2",
                 "proposed_tick": 142,
-                "signed_tick": 142,
+                "signed_tick": None,
                 "withdrawn_by": None,
                 "withdrawn_tick": None,
             }
         ],
     }
-    assert visible_messages.status_code == HTTPStatus.OK
-    assert visible_messages.json()["messages"] == [
-        {
-            "message_id": 0,
-            "channel": "world",
-            "sender_id": "system",
-            "recipient_id": None,
-            "tick": 142,
-            "content": "Treaty signed: player-1 and player-2 entered a trade treaty.",
-        }
-    ]
 
 
-def test_running_app_processes_alliance_reads_and_membership_updates(
+def test_running_app_reads_and_updates_alliance_membership_for_authenticated_player(
     running_seeded_app: RunningApp,
 ) -> None:
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
-        create_response = client.post(
+        initial_alliance_read = client.get(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/alliances",
-            json={
-                "match_id": running_seeded_app.primary_match_id,
-                "player_id": "player-3",
-                "action": "create",
-                "alliance_id": None,
-                "name": "Northern Pact",
-            },
+            headers=_headers(),
         )
-        join_response = client.post(
+        leave_response = client.post(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/alliances",
             json={
                 "match_id": running_seeded_app.primary_match_id,
-                "player_id": "player-4",
-                "action": "join",
-                "alliance_id": "alliance-1",
+                "action": "leave",
+                "alliance_id": None,
                 "name": None,
             },
+            headers=_headers(),
         )
-        alliance_read = client.get(
-            f"/api/v1/matches/{running_seeded_app.primary_match_id}/alliances"
+        post_leave_alliance_read = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/alliances",
+            headers=_headers(),
         )
-        player_three_state = client.get(
+        player_two_state = client.get(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/state",
-            params={"player_id": "player-3"},
+            headers=_headers(),
         )
 
-    assert create_response.status_code == HTTPStatus.ACCEPTED
-    assert join_response.status_code == HTTPStatus.ACCEPTED
-    assert alliance_read.status_code == HTTPStatus.OK
-    assert alliance_read.json() == {
-        "match_id": running_seeded_app.primary_match_id,
-        "alliances": [
-            {
-                "alliance_id": "alliance-1",
-                "name": "Northern Pact",
-                "leader_id": "player-3",
-                "formed_tick": 142,
-                "members": [
-                    {"player_id": "player-3", "joined_tick": 142},
-                    {"player_id": "player-4", "joined_tick": 142},
-                ],
-            },
-            {
-                "alliance_id": "alliance-red",
-                "name": "Western Accord",
-                "leader_id": "player-1",
-                "formed_tick": 120,
-                "members": [
-                    {"player_id": "player-1", "joined_tick": 120},
-                    {"player_id": "player-2", "joined_tick": 120},
-                ],
-            },
-        ],
-    }
-    assert player_three_state.status_code == HTTPStatus.OK
-    assert player_three_state.json()["alliance_id"] == "alliance-1"
-    assert player_three_state.json()["alliance_members"] == ["player-3", "player-4"]
-    assert player_three_state.json()["victory"] == {
-        "leading_alliance": None,
-        "cities_held": 2,
-        "threshold": 13,
-        "countdown_ticks_remaining": None,
-    }
-
-
-def test_running_app_reads_seeded_alliance_metadata_from_db_registry(
-    running_seeded_app: RunningApp,
-) -> None:
-    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
-        alliance_read = client.get(
-            f"/api/v1/matches/{running_seeded_app.primary_match_id}/alliances"
-        )
-
-    assert alliance_read.status_code == HTTPStatus.OK
-    assert alliance_read.json() == {
+    assert initial_alliance_read.status_code == HTTPStatus.OK
+    assert initial_alliance_read.json() == {
         "match_id": running_seeded_app.primary_match_id,
         "alliances": [
             {
@@ -365,6 +341,35 @@ def test_running_app_reads_seeded_alliance_metadata_from_db_registry(
             }
         ],
     }
+    assert leave_response.status_code == HTTPStatus.ACCEPTED
+    assert leave_response.json() == {
+        "status": "accepted",
+        "match_id": running_seeded_app.primary_match_id,
+        "player_id": "player-2",
+        "alliance": {
+            "alliance_id": "alliance-red",
+            "name": "Western Accord",
+            "leader_id": "player-1",
+            "formed_tick": 120,
+            "members": [{"player_id": "player-1", "joined_tick": 120}],
+        },
+    }
+    assert post_leave_alliance_read.status_code == HTTPStatus.OK
+    assert post_leave_alliance_read.json() == {
+        "match_id": running_seeded_app.primary_match_id,
+        "alliances": [
+            {
+                "alliance_id": "alliance-red",
+                "name": "Western Accord",
+                "leader_id": "player-1",
+                "formed_tick": 120,
+                "members": [{"player_id": "player-1", "joined_tick": 120}],
+            }
+        ],
+    }
+    assert player_two_state.status_code == HTTPStatus.OK
+    assert player_two_state.json()["alliance_id"] is None
+    assert player_two_state.json()["alliance_members"] == ["player-2"]
 
 
 def test_running_app_rejects_stale_and_future_messages_without_mutation(
@@ -375,27 +380,27 @@ def test_running_app_rejects_stale_and_future_messages_without_mutation(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
             json={
                 "match_id": running_seeded_app.primary_match_id,
-                "sender_id": "player-1",
                 "tick": 141,
                 "channel": "world",
                 "recipient_id": None,
                 "content": "Stale message.",
             },
+            headers=_headers(),
         )
         future_response = client.post(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
             json={
                 "match_id": running_seeded_app.primary_match_id,
-                "sender_id": "player-1",
                 "tick": 143,
                 "channel": "world",
                 "recipient_id": None,
                 "content": "Future message.",
             },
+            headers=_headers(),
         )
         inbox_response = client.get(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
-            params={"player_id": "player-1"},
+            headers=_headers(),
         )
 
     assert stale_response.status_code == HTTPStatus.BAD_REQUEST
@@ -415,6 +420,6 @@ def test_running_app_rejects_stale_and_future_messages_without_mutation(
     assert inbox_response.status_code == HTTPStatus.OK
     assert inbox_response.json() == {
         "match_id": running_seeded_app.primary_match_id,
-        "player_id": "player-1",
+        "player_id": "player-2",
         "messages": [],
     }

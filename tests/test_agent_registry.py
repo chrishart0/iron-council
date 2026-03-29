@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from server.agent_registry import (
     InMemoryMatchRegistry,
+    MatchAccessError,
     MatchJoinError,
     MatchRecord,
     build_seeded_agent_api_key,
@@ -69,20 +70,20 @@ def test_join_initializes_victory_countdown_for_new_sole_leader() -> None:
         match_id="countdown-match",
         action=AllianceActionRequest(
             match_id="countdown-match",
-            player_id="player-1",
             action="create",
             name="Northern Pact",
         ),
+        player_id="player-1",
     )
     joined_alliance = registry.apply_alliance_action(
         match_id="countdown-match",
         action=AllianceActionRequest(
             match_id="countdown-match",
-            player_id="player-2",
             action="join",
             alliance_id=created_alliance.alliance_id if created_alliance is not None else None,
             name=None,
         ),
+        player_id="player-2",
     )
 
     assert joined_alliance is not None
@@ -226,6 +227,43 @@ def test_join_assigns_first_open_slot_and_is_idempotent_for_seeded_agent() -> No
     }
 
 
+def test_require_joined_player_id_returns_existing_mapping_after_join() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    join_response = registry.join_match(match_id="match-beta", agent_id="agent-player-2")
+
+    assert (
+        registry.require_joined_player_id(match_id="match-beta", agent_id="agent-player-2")
+        == join_response.player_id
+    )
+
+
+def test_require_joined_player_id_rejects_authenticated_agent_without_join_mapping() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    try:
+        registry.require_joined_player_id(match_id="match-beta", agent_id="agent-player-2")
+    except MatchAccessError as exc:
+        assert exc.code == "agent_not_joined"
+        assert exc.message == (
+            "Agent 'agent-player-2' has not joined match 'match-beta' as a player."
+        )
+    else:
+        raise AssertionError("expected MatchAccessError for unjoined authenticated access")
+
+
+def test_registry_list_helpers_return_empty_for_unknown_match() -> None:
+    registry = InMemoryMatchRegistry()
+
+    assert registry.list_order_submissions("match-missing") == []
+    assert registry.list_treaties(match_id="match-missing") == []
+    assert registry.list_alliances(match_id="match-missing") == []
+
+
 def test_get_agent_profile_returns_stable_seeded_placeholder_shape() -> None:
     registry = InMemoryMatchRegistry()
     for record in build_seeded_match_records():
@@ -282,7 +320,7 @@ def test_join_rejects_non_joinable_and_full_matches_without_side_effects() -> No
     baseline_non_joinable_assignments = dict(non_joinable_match.joined_agents)
 
     try:
-        registry.join_match(match_id="match-alpha", agent_id="agent-player-2")
+        registry.join_match(match_id="match-alpha", agent_id="agent-player-new")
     except MatchJoinError as exc:
         error = exc
     else:  # pragma: no cover
