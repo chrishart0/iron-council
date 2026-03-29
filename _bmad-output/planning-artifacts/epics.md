@@ -638,3 +638,91 @@ So that we stop shipping large amounts of unvalidated code that has never run ag
 **And Given** the repository quality workflow and CI configuration
 **When** the new test layers are introduced
 **Then** the project has clear command targets and an enforceable quality gate for real-API validation plus a maintainable smoke-level e2e suite.
+
+## Epic 13: Diplomacy Messaging and Reputation Surface
+
+Build the next layer of the agent-facing server API by adding deterministic messaging and diplomacy surfaces that match the design docs closely enough for real bot-vs-bot play to begin. Sequence the work so message transport lands first, treaty status builds on those public communications, and alliance management follows once diplomatic state can be inspected and announced.
+
+### Story 13.1: Add agent-facing match message inbox and send endpoints
+
+As an AI agent developer,
+I want deterministic message send and inbox APIs for a match,
+So that bots can coordinate publicly and privately through the same communication surface described in the game design.
+
+**Acceptance Criteria:**
+
+**Given** an active match and a valid player identity
+**When** the player posts a world or direct message through the agent API
+**Then** the server stores it in deterministic order, returns a stable acceptance payload, and preserves exact sender, recipients, tick, and content data.
+
+**And Given** a player polls their message inbox
+**When** the match contains world messages plus direct messages involving that player
+**Then** the response includes only the messages visible to that player, in stable chronological order, with enough metadata for agents to distinguish world chat from direct communication.
+
+**And Given** invalid messaging inputs such as unknown players, mismatched match IDs, unsupported direct-message recipients, or inbox polling against an unknown match
+**When** the API handles the request
+**Then** it returns structured API errors without mutating stored message history.
+
+**And Given** the real running app quality workflow
+**When** the message API story is implemented
+**Then** it includes behavior-first in-process API coverage plus at least one real-process integration or smoke flow covering visible message delivery.
+
+### Story 13.2: Add public treaty status and lifecycle endpoints
+
+As an AI agent developer,
+I want to inspect and change treaty status through the API,
+So that diplomatic commitments and betrayals become visible, replayable, and actionable during a match.
+
+**Acceptance Criteria:**
+
+**Given** two players proposing, accepting, or withdrawing a treaty action
+**When** the treaty API handles the request
+**Then** it records a deterministic treaty status transition with the documented treaty types and exposes the resulting treaty state through a stable read model.
+
+**And Given** treaty actions are public in the design
+**When** a treaty is signed or withdrawn
+**Then** the API emits or records a corresponding world-visible announcement through the messaging surface instead of hiding the event in a private-only side channel.
+
+**And Given** repeated reads from the same match state
+**When** clients fetch treaty status again
+**Then** they receive deterministic ordering and no duplicate side effects.
+
+### Story 13.3: Add alliance create/join/leave endpoints with deterministic status views
+
+As an AI agent developer,
+I want to create alliances, apply to them, and inspect membership through the API,
+So that coalition structure can evolve through explicit public actions rather than only out-of-band assumptions.
+
+**Acceptance Criteria:**
+
+**Given** a player creates an alliance or changes membership
+**When** the alliance API handles the request
+**Then** it returns a stable alliance status view with deterministic member ordering, leader identity, and join metadata.
+
+**And Given** alliance membership affects shared vision and shared victory semantics
+**When** alliance state changes are exposed through the API
+**Then** the resulting read model aligns with the canonical player `alliance_id` state used elsewhere in the engine.
+
+**And Given** invalid alliance actions such as joining an unknown alliance or leaving a match that does not exist
+**When** the API rejects the request
+**Then** it does so with structured errors and no hidden mutation.
+
+### Story 13.4: Add match join and lightweight agent profile scaffolding
+
+As an AI agent developer,
+I want a minimal join/profile surface,
+So that Phase 2 API completeness improves without blocking on the full production authentication and billing stack.
+
+**Acceptance Criteria:**
+
+**Given** a lobby or joinable match record
+**When** an agent requests to join
+**Then** the API exposes a minimal deterministic join contract or a clear not-yet-joinable rejection path consistent with repo conventions.
+
+**And Given** the architecture calls for agent profile visibility
+**When** the lightweight profile endpoint is introduced
+**Then** it returns a stable placeholder or DB-backed rating/history shape that can evolve later without breaking clients.
+
+**And Given** these surfaces remain early-phase scaffolding
+**When** they are implemented
+**Then** they stay intentionally narrow, avoid speculative auth/billing complexity, and remain covered by behavior-first tests.
