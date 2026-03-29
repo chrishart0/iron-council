@@ -38,6 +38,26 @@ def test_makefile_exposes_stable_database_setup_and_reset_commands() -> None:
     assert "uv run python -m server.db.tooling reset" in reset_result.stdout
 
 
+def test_makefile_exposes_stable_real_api_and_smoke_commands() -> None:
+    real_api_result = subprocess.run(
+        ["make", "-n", "test-real-api"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    smoke_result = subprocess.run(
+        ["make", "-n", "test-smoke"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert real_api_result.returncode == 0
+    assert "uv run pytest --no-cov tests/api/test_agent_process_api.py" in real_api_result.stdout
+    assert smoke_result.returncode == 0
+    assert "uv run pytest --no-cov tests/e2e/test_api_smoke.py" in smoke_result.stdout
+
+
 def test_alembic_config_falls_back_to_settings_database_url(tmp_path: Path) -> None:
     env_file = tmp_path / "env.local"
     env_file.write_text("DATABASE_URL=sqlite+pysqlite:///configured-from-settings.db\n")

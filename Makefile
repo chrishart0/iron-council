@@ -6,7 +6,7 @@ DOCKER_COMPOSE ?= docker compose -f $(SUPPORT_SERVICES_COMPOSE_FILE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install install-dev hooks format format-check lint test smoke-test pre-commit quality ci support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
+.PHONY: help setup install install-dev hooks format format-check lint test smoke-test test-real-api test-smoke pre-commit quality ci support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
 
 help: ## Show the available developer workflow commands.
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-14s %s\n", $$1, $$2}'
@@ -31,11 +31,17 @@ lint: ## Run linting and static type checks.
 	$(UV) run ruff check $(SOURCE_DIRS)
 	$(UV) run mypy $(SOURCE_DIRS)
 
-test: ## Run the behavior-first API test suite.
+test: ## Run the full behavior-first test suite, including real-process DB-backed checks.
 	$(UV) run pytest
 
 smoke-test: ## Run only the deterministic gameplay smoke scenarios for targeted reruns.
 	$(UV) run pytest --no-cov tests/test_simulation_smoke.py
+
+test-real-api: ## Run the real-process, real-DB API integration checks.
+	$(UV) run pytest --no-cov tests/api/test_agent_process_api.py
+
+test-smoke: ## Run the small real-process API smoke flow suite.
+	$(UV) run pytest --no-cov tests/e2e/test_api_smoke.py
 
 pre-commit: ## Run the repository hooks across all files.
 	$(UV) run pre-commit run --all-files --show-diff-on-failure

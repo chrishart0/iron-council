@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from http import HTTPStatus
 from typing import Annotated
 
@@ -8,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from server import __version__
 from server.agent_registry import InMemoryMatchRegistry
+from server.db.registry import load_match_registry_from_database
 from server.fog import project_agent_state
 from server.models.api import (
     ApiErrorDetail,
@@ -18,6 +20,9 @@ from server.models.api import (
 )
 from server.models.fog import AgentStateProjection
 from server.models.orders import OrderEnvelope
+from server.settings import get_settings
+
+MATCH_REGISTRY_BACKEND_VARIABLE = "IRON_COUNCIL_MATCH_REGISTRY_BACKEND"
 
 
 class ApiError(Exception):
@@ -39,7 +44,7 @@ API_ERROR_RESPONSE_SCHEMA = {"model": ApiErrorResponse}
 
 def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAPI:
     app = FastAPI(title="iron-counsil-server", version=__version__)
-    app.state.match_registry = match_registry or InMemoryMatchRegistry()
+    app.state.match_registry = match_registry or _load_default_match_registry()
 
     @app.exception_handler(ApiError)
     async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:
@@ -159,6 +164,19 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
 
     app.include_router(api_router)
     return app
+
+
+def _load_default_match_registry() -> InMemoryMatchRegistry:
+    backend = os.environ.get(MATCH_REGISTRY_BACKEND_VARIABLE, "memory")
+    if backend == "memory":
+        return InMemoryMatchRegistry()
+    if backend == "db":
+        return load_match_registry_from_database(get_settings().database_url)
+    raise ValueError(
+        "Unsupported "
+        f"{MATCH_REGISTRY_BACKEND_VARIABLE} value {backend!r}; "
+        "expected 'memory' or 'db'."
+    )
 
 
 app = create_app()

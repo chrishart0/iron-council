@@ -35,3 +35,12 @@ def test_readme_documents_worktree_local_database_setup_and_reset_workflow() -> 
     assert "make db-reset" in readme
     assert "IRON_COUNCIL_DB_LANE" in readme
     assert "current worktree path" in readme
+
+
+def test_readme_documents_real_process_api_targets_and_db_registry_mode() -> None:
+    readme = (REPO_ROOT / "README.md").read_text()
+
+    assert "make test-real-api" in readme
+    assert "make test-smoke" in readme
+    assert "IRON_COUNCIL_MATCH_REGISTRY_BACKEND=db" in readme
+    assert "temporary migrated and deterministically seeded SQLite database" in readme

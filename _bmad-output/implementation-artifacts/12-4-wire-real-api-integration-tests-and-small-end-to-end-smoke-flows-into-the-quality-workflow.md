@@ -1,6 +1,6 @@
 # Story 12.4: Wire real API integration tests and small end-to-end smoke flows into the quality workflow
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -19,22 +19,22 @@ So that we stop shipping large amounts of unvalidated code that has never run ag
 
 ## Tasks / Subtasks
 
-- [ ] Define the real-API integration test boundary and the smoke-level e2e scope. (AC: 1, 2, 4, 5, 6)
-  - [ ] Distinguish clearly between existing in-process API coverage and the new real-process validation layer.
-  - [ ] Keep the e2e layer intentionally small and focused on critical user flows.
-  - [ ] Tie smoke flows back to user-facing acceptance behavior in readable scenario language.
-- [ ] Implement DB-backed integration test execution against the running app. (AC: 1, 3, 4, 5)
-  - [ ] Boot the app as a real process for the relevant tests.
-  - [ ] Ensure tests hit real HTTP endpoints rather than only ASGI in-process transports where full-stack validation is needed.
-  - [ ] Ensure each worktree can run the suite without colliding with siblings.
-- [ ] Add and maintain a small smoke suite for critical user journeys. (AC: 2, 4, 6)
-  - [ ] Cover enough high-value flows to give real confidence, but do not explode into a brittle suite.
-  - [ ] Validate visible outcomes meaningful to API consumers and eventual human players.
-  - [ ] Defer heavyweight browser coverage unless a real frontend surface exists that justifies it.
-- [ ] Wire the new layer into local and CI quality workflows. (AC: 3, 4)
-  - [ ] Add stable command targets for real-API checks and smoke checks.
-  - [ ] Make the expected local prerequisite flow explicit.
-  - [ ] Re-run the repository quality gate after the new test layers land.
+- [x] Define the real-API integration test boundary and the smoke-level e2e scope. (AC: 1, 2, 4, 5, 6)
+  - [x] Distinguish clearly between existing in-process API coverage and the new real-process validation layer.
+  - [x] Keep the e2e layer intentionally small and focused on critical user flows.
+  - [x] Tie smoke flows back to user-facing acceptance behavior in readable scenario language.
+- [x] Implement DB-backed integration test execution against the running app. (AC: 1, 3, 4, 5)
+  - [x] Boot the app as a real process for the relevant tests.
+  - [x] Ensure tests hit real HTTP endpoints rather than only ASGI in-process transports where full-stack validation is needed.
+  - [x] Ensure each worktree can run the suite without colliding with siblings.
+- [x] Add and maintain a small smoke suite for critical user journeys. (AC: 2, 4, 6)
+  - [x] Cover enough high-value flows to give real confidence, but do not explode into a brittle suite.
+  - [x] Validate visible outcomes meaningful to API consumers and eventual human players.
+  - [x] Defer heavyweight browser coverage unless a real frontend surface exists that justifies it.
+- [x] Wire the new layer into local and CI quality workflows. (AC: 3, 4)
+  - [x] Add stable command targets for real-API checks and smoke checks.
+  - [x] Make the expected local prerequisite flow explicit.
+  - [x] Re-run the repository quality gate after the new test layers land.
 
 ## Dev Notes
 
@@ -65,22 +65,45 @@ So that we stop shipping large amounts of unvalidated code that has never run ag
 
 ### Agent Model Used
 
-_TBD_
+GPT-5 Codex
 
 ### Debug Log References
 
 - 2026-03-29: Local environment review confirmed the machine can now run Docker-backed Postgres and migrations, but the quality gate still relies on in-process API tests and does not boot the app as a real service.
 - 2026-03-29: Review conclusion: Story 12.4 remains necessary even though Story 11.4 is done, because the missing layer is real-process, real-DB validation.
+- Red phase: `uv run --extra dev pytest --no-cov tests/api/test_agent_process_api.py tests/e2e/test_api_smoke.py`
+- Focused verification: `uv run --extra dev pytest --no-cov tests/api/test_agent_process_api.py tests/e2e/test_api_smoke.py tests/api/test_agent_api.py tests/test_database_migrations.py tests/test_local_dev_docs.py tests/test_db_tooling.py`
+- Formatting and lint/type: `make format` and `make lint`
+- Stable workflow verification and full gate: `make test-real-api && make test-smoke && make quality`
 
 ### Completion Notes List
 
-- _TBD_
+- Added a DB-backed registry loader path selected by `IRON_COUNCIL_MATCH_REGISTRY_BACKEND=db`, so a real `uvicorn` process can serve deterministic seeded match state without introducing a full persistence subsystem.
+- Reused one canonical seeded agent-match dataset for Story 11.4 in-process coverage and for Story 12.4 database seed rows, then added two running-process integration tests plus one lean API smoke journey.
+- Added stable `make test-real-api` and `make test-smoke` targets, documented when to use the DB-backed runtime mode locally, and kept the enforced quality gate on `make quality`/`make ci` by letting the default pytest run collect the new suites.
+- Kept the real-process layer worktree-safe by provisioning temporary migrated and deterministically seeded SQLite databases per test run while preserving the existing Postgres support-services workflow for manual local DB-backed runs.
 
 ### File List
 
-- _TBD_
+- `Makefile`
+- `README.md`
+- `_bmad-output/implementation-artifacts/12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `server/agent_registry.py`
+- `server/db/registry.py`
+- `server/db/testing.py`
+- `server/main.py`
+- `tests/__init__.py`
+- `tests/api/test_agent_api.py`
+- `tests/api/test_agent_process_api.py`
+- `tests/conftest.py`
+- `tests/e2e/test_api_smoke.py`
+- `tests/support.py`
+- `tests/test_database_migrations.py`
+- `tests/test_local_dev_docs.py`
 
 ### Change Log
 
 - 2026-03-28 14:57 UTC: Drafted Story 12.4 for real-API integration testing and a small smoke-level e2e suite.
 - 2026-03-29 05:55 UTC: Expanded Story 12.4 to clarify the distinction from Story 11.4 and to target real running-app, real-DB validation in the quality workflow.
+- 2026-03-29 00:00 UTC: Added a DB-backed running-app registry mode, process-level API integration coverage, a lean API smoke flow, stable Make targets, and updated local workflow documentation.

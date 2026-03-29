@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
+from server.agent_registry import build_seeded_match_records
 from server.db.config import configure_alembic_database_url
 from server.db.migrations import reset_database, upgrade_database
 
@@ -71,6 +73,10 @@ def seed_database(database_url: str) -> None:
     engine = create_engine(database_url)
     backend_name = make_url(database_url).get_backend_name()
     seed_timestamp = datetime(2026, 3, 29, 0, 0, tzinfo=UTC)
+    seeded_matches = build_seeded_match_records(
+        primary_match_id="00000000-0000-0000-0000-000000000101",
+        secondary_match_id="00000000-0000-0000-0000-000000000102",
+    )
 
     with engine.begin() as connection:
         for table_name in (
@@ -97,17 +103,31 @@ def seed_database(database_url: str) -> None:
             ),
             [
                 {
-                    "id": "00000000-0000-0000-0000-000000000101",
-                    "config": '{"map":"britain","max_players":3,"turn_seconds":86400}',
-                    "status": "active",
-                    "current_tick": 142,
-                    "state": (
-                        '{"tick":142,"season":"spring","headline":"North Sea convoys under escort"}'
+                    "id": seeded_matches[0].match_id,
+                    "config": (
+                        '{"map":"britain","max_players":5,"turn_seconds":30,'
+                        '"seed_profile":"agent_api_primary"}'
                     ),
+                    "status": seeded_matches[0].status.value,
+                    "current_tick": seeded_matches[0].state.tick,
+                    "state": json.dumps(seeded_matches[0].state.model_dump(mode="json")),
                     "winner_alliance": None,
                     "created_at": seed_timestamp,
                     "updated_at": seed_timestamp,
-                }
+                },
+                {
+                    "id": seeded_matches[1].match_id,
+                    "config": (
+                        '{"map":"britain","max_players":5,"turn_seconds":45,'
+                        '"seed_profile":"agent_api_secondary"}'
+                    ),
+                    "status": seeded_matches[1].status.value,
+                    "current_tick": seeded_matches[1].state.tick,
+                    "state": json.dumps(seeded_matches[1].state.model_dump(mode="json")),
+                    "winner_alliance": None,
+                    "created_at": seed_timestamp,
+                    "updated_at": seed_timestamp,
+                },
             ],
         )
         connection.execute(

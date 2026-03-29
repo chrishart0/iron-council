@@ -59,7 +59,7 @@ development_status:
   12-1-add-a-local-support-services-stack-for-database-backed-development-and-validation: done
   12-2-introduce-a-proper-database-migration-service-and-migration-driven-schema-lifecycle: done
   12-3-add-deterministic-seed-reset-tooling-and-per-worktree-isolated-test-databases: done
-  12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: drafted
+  12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: done
 
   epic-11: in-progress
   11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: done

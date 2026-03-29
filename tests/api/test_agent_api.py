@@ -6,134 +6,8 @@ from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from server.agent_registry import InMemoryMatchRegistry, MatchRecord
+from server.agent_registry import InMemoryMatchRegistry, build_seeded_match_records
 from server.main import create_app
-from server.models.domain import MatchStatus
-from server.models.state import MatchState
-
-
-def _api_match_state_payload() -> dict[str, Any]:
-    return {
-        "tick": 142,
-        "cities": {
-            "london": {
-                "owner": "player-1",
-                "population": 12,
-                "resources": {"food": 3, "production": 2, "money": 8},
-                "upgrades": {"economy": 2, "military": 1, "fortification": 0},
-                "garrison": 15,
-                "building_queue": [{"type": "fortification", "tier": 1, "ticks_remaining": 3}],
-            },
-            "manchester": {
-                "owner": "player-2",
-                "population": 10,
-                "resources": {"food": 2, "production": 4, "money": 1},
-                "upgrades": {"economy": 0, "military": 1, "fortification": 0},
-                "garrison": 9,
-                "building_queue": [],
-            },
-            "birmingham": {
-                "owner": "player-3",
-                "population": 8,
-                "resources": {"food": 1, "production": 5, "money": 1},
-                "upgrades": {"economy": 0, "military": 0, "fortification": 1},
-                "garrison": 7,
-                "building_queue": [],
-            },
-            "leeds": {
-                "owner": "player-4",
-                "population": 7,
-                "resources": {"food": 1, "production": 3, "money": 1},
-                "upgrades": {"economy": 1, "military": 0, "fortification": 0},
-                "garrison": 11,
-                "building_queue": [],
-            },
-            "inverness": {
-                "owner": "player-5",
-                "population": 5,
-                "resources": {"food": 3, "production": 1, "money": 0},
-                "upgrades": {"economy": 0, "military": 2, "fortification": 0},
-                "garrison": 13,
-                "building_queue": [],
-            },
-        },
-        "armies": [
-            {
-                "id": "army-c",
-                "owner": "player-3",
-                "troops": 18,
-                "location": None,
-                "destination": "birmingham",
-                "path": ["birmingham"],
-                "ticks_remaining": 2,
-            },
-            {
-                "id": "army-a",
-                "owner": "player-2",
-                "troops": 14,
-                "location": None,
-                "destination": "leeds",
-                "path": ["leeds"],
-                "ticks_remaining": 1,
-            },
-            {
-                "id": "army-b",
-                "owner": "player-1",
-                "troops": 20,
-                "location": "london",
-                "destination": None,
-                "path": None,
-                "ticks_remaining": 0,
-            },
-            {
-                "id": "army-z",
-                "owner": "player-5",
-                "troops": 25,
-                "location": None,
-                "destination": "inverness",
-                "path": ["inverness"],
-                "ticks_remaining": 3,
-            },
-        ],
-        "players": {
-            "player-1": {
-                "resources": {"food": 120, "production": 85, "money": 200},
-                "cities_owned": ["london"],
-                "alliance_id": "alliance-red",
-                "is_eliminated": False,
-            },
-            "player-2": {
-                "resources": {"food": 90, "production": 70, "money": 110},
-                "cities_owned": ["manchester"],
-                "alliance_id": "alliance-red",
-                "is_eliminated": False,
-            },
-            "player-3": {
-                "resources": {"food": 75, "production": 65, "money": 80},
-                "cities_owned": ["birmingham"],
-                "alliance_id": None,
-                "is_eliminated": False,
-            },
-            "player-4": {
-                "resources": {"food": 60, "production": 55, "money": 70},
-                "cities_owned": ["leeds"],
-                "alliance_id": None,
-                "is_eliminated": False,
-            },
-            "player-5": {
-                "resources": {"food": 40, "production": 35, "money": 30},
-                "cities_owned": ["inverness"],
-                "alliance_id": None,
-                "is_eliminated": False,
-            },
-        },
-        "victory": {
-            "leading_alliance": "alliance-red",
-            "cities_held": 2,
-            "threshold": 13,
-            "countdown_ticks_remaining": None,
-        },
-    }
 
 
 def _army_by_id(payload: dict[str, Any], army_id: str) -> dict[str, Any]:
@@ -151,27 +25,8 @@ def _match_state_dump(
 @pytest.fixture
 def seeded_registry() -> InMemoryMatchRegistry:
     registry = InMemoryMatchRegistry()
-    registry.seed_match(
-        MatchRecord(
-            match_id="match-alpha",
-            status=MatchStatus.ACTIVE,
-            tick_interval_seconds=30,
-            state=MatchState.model_validate(_api_match_state_payload()),
-        )
-    )
-    registry.seed_match(
-        MatchRecord(
-            match_id="match-beta",
-            status=MatchStatus.PAUSED,
-            tick_interval_seconds=45,
-            state=MatchState.model_validate(
-                {
-                    **_api_match_state_payload(),
-                    "tick": 7,
-                }
-            ),
-        )
-    )
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
     return registry
 
 

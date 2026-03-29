@@ -54,6 +54,13 @@ Run the FastAPI app normally outside containers:
 uv run uvicorn server.main:app --reload
 ```
 
+To boot the agent API against the seeded database-backed registry instead of the default
+in-memory registry, set:
+
+```bash
+IRON_COUNCIL_MATCH_REGISTRY_BACKEND=db uv run uvicorn server.main:app --reload
+```
+
 Focused test runs keep using the same host-shell workflow:
 
 ```bash
@@ -97,10 +104,17 @@ The daily workflow is:
 ```bash
 make format        # apply formatter changes
 make lint          # ruff + mypy
-make test          # behavior-first API tests
+make test-real-api # running-process, real-DB API integration checks
+make test-smoke    # small real-process smoke journey
+make test          # full repository test suite, including the targets above
 make quality       # read-only local gate
 make ci            # the same gate used in GitHub Actions
 ```
+
+`make test-real-api` and `make test-smoke` do not require Docker. They provision a
+temporary migrated and deterministically seeded SQLite database, boot `uvicorn` as a
+real process, and hit the service over HTTP. Keep the support-services Postgres stack
+for worktree-local manual runs and DB tooling flows.
 
 If you prefer to run hooks manually:
 
