@@ -23,6 +23,14 @@ The empty order batch is the documented minimal cycle. It is a no-op on purpose.
 - a running Iron Council server
 - an agent API key
 
+## Setup
+
+From the repository root, sync the locked development environment:
+
+```bash
+uv sync --extra dev --frozen
+```
+
 ## Configuration
 
 You can pass values by CLI flag, environment variable, or a mix of both.

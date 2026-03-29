@@ -48,11 +48,11 @@ def test_example_agent_runs_one_deterministic_cycle_and_prints_json_summary(
 
         def join_match(self, match_id: str) -> Any:
             calls.append(("join_match", match_id))
-            return SimpleNamespace(player_id="player-2")
+            return SimpleNamespace(player_id="join-player")
 
         def get_match_state(self, match_id: str) -> Any:
             calls.append(("get_match_state", match_id))
-            return SimpleNamespace(match_id=match_id, player_id="player-2", tick=142)
+            return SimpleNamespace(match_id=match_id, player_id="state-player", tick=142)
 
         def submit_orders(self, match_id: str, *, tick: int, orders: Any) -> Any:
             calls.append(("submit_orders", {"match_id": match_id, "tick": tick, "orders": orders}))
@@ -95,7 +95,7 @@ def test_example_agent_runs_one_deterministic_cycle_and_prints_json_summary(
     assert json.loads(capsys.readouterr().out) == {
         "agent_id": "agent-player-2",
         "match_id": "match-beta",
-        "player_id": "player-2",
+        "player_id": "state-player",
         "tick": 142,
         "submission_status": "accepted",
         "submission_index": 0,
@@ -123,11 +123,11 @@ def test_example_agent_uses_env_fallbacks_and_first_listed_match(
 
         def join_match(self, match_id: str) -> Any:
             calls.append(("join_match", match_id))
-            return SimpleNamespace(player_id="player-7")
+            return SimpleNamespace(player_id="join-player")
 
         def get_match_state(self, match_id: str) -> Any:
             calls.append(("get_match_state", match_id))
-            return SimpleNamespace(match_id=match_id, player_id="player-7", tick=7)
+            return SimpleNamespace(match_id=match_id, player_id="state-player", tick=7)
 
         def submit_orders(self, match_id: str, *, tick: int, orders: Any) -> Any:
             calls.append(("submit_orders", {"match_id": match_id, "tick": tick, "orders": orders}))
@@ -161,7 +161,17 @@ def test_example_agent_uses_env_fallbacks_and_first_listed_match(
         ),
     ]
 
-    assert json.loads(capsys.readouterr().out)["match_id"] == "match-alpha"
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["match_id"] == "match-alpha"
+    assert payload["player_id"] == "state-player"
+
+
+def test_readme_documents_setup_and_run_commands() -> None:
+    readme = (Path(__file__).resolve().parents[2] / "agent-sdk/README.md").read_text()
+
+    assert "uv sync --extra dev --frozen" in readme
+    assert "uv run python agent-sdk/python/example_agent.py --base-url" in readme
+    assert "uv run python agent-sdk/python/example_agent.py" in readme
 
 
 def test_example_agent_is_importable_without_repo_server_package() -> None:

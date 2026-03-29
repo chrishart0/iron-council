@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     client = IronCouncilClient(base_url=args.base_url, api_key=args.api_key)
     match_id = args.match_id or _select_first_match_id(client)
     profile = client.get_current_agent_profile()
-    join = client.join_match(match_id)
+    client.join_match(match_id)
     state = client.get_match_state(match_id)
     submission = client.submit_orders(
         match_id,
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "agent_id": profile.agent_id,
                 "match_id": match_id,
-                "player_id": join.player_id,
+                "player_id": state.player_id,
                 "tick": state.tick,
                 "submission_status": submission.status,
                 "submission_index": submission.submission_index,
