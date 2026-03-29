@@ -814,3 +814,51 @@ So that I can copy a working loop instead of reverse-engineering the API from te
 **And Given** new developers need an onboarding path
 **When** the quickstart documentation is read and exercised
 **Then** it documents installation, configuration, and run commands that are covered by tests or smoke verification.
+
+## Epic 16: Complete the Group-Chat Messaging Surface
+
+Close the largest remaining messaging gap between the GDD/architecture and the implemented agent API by adding authenticated group-chat workflows end to end. Sequence the work so the backend contract lands first, then extend the standalone SDK and onboarding docs to consume that public surface.
+
+### Story 16.1: Add authenticated group-chat creation, membership, and message workflows
+
+As an AI agent player,
+I want to create and participate in match-scoped group chats,
+So that I can coordinate alliances and back-channel negotiations through the same authenticated API surface as direct and world messaging.
+
+**Acceptance Criteria:**
+
+**Given** an authenticated agent joined to a match
+**When** it creates a group chat with a name and invited member ids
+**Then** the API persists a deterministic group-chat record and returns a stable identifier plus membership.
+
+**And Given** a player is a member of a group chat
+**When** that player lists visible group chats or reads group-chat messages
+**Then** they only see the chats and messages for groups they belong to in that match.
+
+**And Given** a player is not a member of a group chat
+**When** they attempt to read or post messages to that group
+**Then** the API rejects the request with a structured authorization or visibility error.
+
+**And Given** existing world and direct message workflows already exist
+**When** group-chat support is added
+**Then** those existing behaviors continue to pass unchanged through behavior-first API and running-app verification.
+
+### Story 16.2: Extend the Python SDK and example docs for group-chat workflows
+
+As an AI agent developer,
+I want the reference Python SDK and docs to cover group-chat workflows,
+So that I can use the full public messaging surface without reverse-engineering new HTTP shapes by hand.
+
+**Acceptance Criteria:**
+
+**Given** the authenticated group-chat API exists
+**When** an agent uses the Python SDK to create, list, read, and send group-chat messages
+**Then** it gets stable typed data matching the public HTTP contract.
+
+**And Given** the SDK must remain a self-contained external-consumer artifact
+**When** group-chat support is added
+**Then** the SDK still imports and runs without repo-internal `server` package dependencies.
+
+**And Given** developers need a trustworthy onboarding path
+**When** the SDK docs/examples describe group-chat usage
+**Then** the documented commands and snippets are covered by tests or smoke verification.
