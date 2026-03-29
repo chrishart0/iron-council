@@ -1,6 +1,6 @@
 # Story 11.2: Add realistic scenario-based smoke tests for deterministic gameplay flows
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -16,18 +16,18 @@ So that the game rules are validated through meaningful gameplay situations rath
 
 ## Tasks / Subtasks
 
-- [ ] Design a concise but realistic smoke-scenario catalog. (AC: 1)
-  - [ ] Include at least one scenario each for movement, invalid orders, attrition, combat, occupation/control handoff, build progression, siege pressure, and victory countdown behavior.
-  - [ ] Reuse canonical map and match-state fixtures where possible instead of inventing alternate rulesets.
-  - [ ] Keep scenario names and fixtures stable enough for targeted reruns.
-- [ ] Implement behavior-first smoke tests at the simulation boundary. (AC: 1, 2, 3)
-  - [ ] Assert business outcomes that a game designer or agent client would care about.
-  - [ ] Avoid helper-only or implementation-detail assertions unless required to explain a business outcome.
-  - [ ] Verify repeated runs from the same inputs produce identical snapshots or equivalent externally visible outcomes.
-- [ ] Add a practical smoke-test execution path for local and CI use. (AC: 2, 3)
-  - [ ] Keep runtime modest enough to remain part of a normal quality workflow.
-  - [ ] Document or encode a stable command target for rerunning the smoke suite.
-  - [ ] Re-run the repository quality gate after the smoke suite lands.
+- [x] Design a concise but realistic smoke-scenario catalog. (AC: 1)
+  - [x] Include at least one scenario each for movement, invalid orders, attrition, combat, occupation/control handoff, build progression, siege pressure, and victory countdown behavior.
+  - [x] Reuse canonical map and match-state fixtures where possible instead of inventing alternate rulesets.
+  - [x] Keep scenario names and fixtures stable enough for targeted reruns.
+- [x] Implement behavior-first smoke tests at the simulation boundary. (AC: 1, 2, 3)
+  - [x] Assert business outcomes that a game designer or agent client would care about.
+  - [x] Avoid helper-only or implementation-detail assertions unless required to explain a business outcome.
+  - [x] Verify repeated runs from the same inputs produce identical snapshots or equivalent externally visible outcomes.
+- [x] Add a practical smoke-test execution path for local and CI use. (AC: 2, 3)
+  - [x] Keep runtime modest enough to remain part of a normal quality workflow.
+  - [x] Document or encode a stable command target for rerunning the smoke suite.
+  - [x] Re-run the repository quality gate after the smoke suite lands.
 
 ## Dev Notes
 
@@ -45,20 +45,29 @@ So that the game rules are validated through meaningful gameplay situations rath
 
 ### Agent Model Used
 
-_TBD_
+GPT-5 Codex
 
 ### Debug Log References
 
-- _TBD_
+- `uv run pytest --no-cov tests/test_simulation_smoke.py`
+- `make smoke-test`
+- `make quality`
 
 ### Completion Notes List
 
-- _TBD_
+- Tightened the smoke assertions around externally visible gameplay outcomes instead of exact per-tick internal troop snapshots.
+- Expanded deterministic coverage to include emitted simulation events alongside outcome digests.
+- Moved scenario-specific expectations into the scenario catalog and asserted the full rejection set per tick.
+- Kept `make smoke-test` as the narrow rerun path while relying on normal `pytest` discovery for `make quality` and `make ci`.
 
 ### File List
 
-- _TBD_
+- `Makefile`
+- `tests/test_simulation_smoke.py`
+- `_bmad-output/implementation-artifacts/11-2-add-realistic-scenario-based-smoke-tests-for-deterministic-gameplay-flows.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ### Change Log
 
 - 2026-03-28 14:40 UTC: Drafted Story 11.2 for realistic deterministic gameplay smoke scenarios.
+- 2026-03-29 06:24 UTC: Hardened the smoke suite after review by shifting assertions to gameplay outcomes, including event determinism, and clarifying the normal quality-gate path.

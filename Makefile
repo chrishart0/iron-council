@@ -6,7 +6,7 @@ DOCKER_COMPOSE ?= docker compose -f $(SUPPORT_SERVICES_COMPOSE_FILE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install install-dev hooks format format-check lint test pre-commit quality ci support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
+.PHONY: help setup install install-dev hooks format format-check lint test smoke-test pre-commit quality ci support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
 
 help: ## Show the available developer workflow commands.
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-14s %s\n", $$1, $$2}'
@@ -34,10 +34,13 @@ lint: ## Run linting and static type checks.
 test: ## Run the behavior-first API test suite.
 	$(UV) run pytest
 
+smoke-test: ## Run only the deterministic gameplay smoke scenarios for targeted reruns.
+	$(UV) run pytest --no-cov tests/test_simulation_smoke.py
+
 pre-commit: ## Run the repository hooks across all files.
 	$(UV) run pre-commit run --all-files --show-diff-on-failure
 
-quality: format-check lint test ## Run the local quality gate.
+quality: format-check lint test ## Run the local quality gate, including smoke tests via pytest discovery.
 
 ci: pre-commit quality ## Run the CI quality gate locally.
 
