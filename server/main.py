@@ -4,7 +4,7 @@ import os
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
-from typing import Annotated, Any
+from typing import Annotated, Any, Final, cast
 
 from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
@@ -74,6 +74,8 @@ def get_match_registry(request: Request) -> InMemoryMatchRegistry:
 
 
 MatchRegistryDependency = Annotated[InMemoryMatchRegistry, Depends(get_match_registry)]
+TickPersistence = Callable[[AdvancedMatchTick], None]
+_DEFAULT_TICK_PERSISTENCE: Final = object()
 ApiKeyHeader = Annotated[str | None, Header(alias="X-API-Key")]
 API_ERROR_RESPONSE_SCHEMA: dict[str, Any] = {"model": ApiErrorResponse}
 AUTHENTICATED_API_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -367,14 +369,25 @@ def _require_joined_player_id(
         ) from exc
 
 
-def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAPI:
+def create_app(
+    *,
+    match_registry: InMemoryMatchRegistry | None = None,
+    tick_persistence: TickPersistence | None | object = _DEFAULT_TICK_PERSISTENCE,
+) -> FastAPI:
     registry = match_registry or _load_default_match_registry()
-    tick_persistence = _load_runtime_tick_persistence(match_registry=match_registry)
+    runtime_tick_persistence = (
+        _load_runtime_tick_persistence(match_registry=match_registry)
+        if tick_persistence is _DEFAULT_TICK_PERSISTENCE
+        else cast(TickPersistence | None, tick_persistence)
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         app.state.match_registry = registry
-        app.state.match_runtime = MatchRuntime(registry, tick_persistence=tick_persistence)
+        app.state.match_runtime = MatchRuntime(
+            registry,
+            tick_persistence=runtime_tick_persistence,
+        )
         await app.state.match_runtime.start()
         try:
             yield

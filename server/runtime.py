@@ -42,8 +42,18 @@ class MatchRuntime:
                 if match is None or match.status != MatchStatus.ACTIVE:
                     return
                 await asyncio.sleep(match.tick_interval_seconds)
+                match_snapshot = (
+                    self._registry.snapshot_match(match_id)
+                    if self._tick_persistence is not None
+                    else None
+                )
                 advanced_tick = self._registry.advance_match_tick(match_id)
                 if self._tick_persistence is not None:
-                    self._tick_persistence(advanced_tick)
+                    try:
+                        self._tick_persistence(advanced_tick)
+                    except Exception:
+                        if match_snapshot is not None:
+                            self._registry.restore_match(match_id, match_snapshot)
+                        raise
         except asyncio.CancelledError:
             raise

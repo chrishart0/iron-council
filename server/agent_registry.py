@@ -293,6 +293,12 @@ class InMemoryMatchRegistry:
     def get_match(self, match_id: str) -> MatchRecord | None:
         return self._matches.get(match_id)
 
+    def snapshot_match(self, match_id: str) -> MatchRecord:
+        return deepcopy(self._matches[match_id])
+
+    def restore_match(self, match_id: str, snapshot: MatchRecord) -> None:
+        self._matches[match_id] = deepcopy(snapshot)
+
     def seed_agent_profile(self, profile: AgentProfileResponse) -> None:
         self._agent_profiles[profile.agent_id] = profile.model_copy(deep=True)
 

@@ -35,6 +35,7 @@ GPT-5 Codex
 - `uv run pytest --no-cov tests/e2e/test_api_smoke.py -k active_match_ticks_forward_without_manual_advance_endpoint`
 - `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_agent_registry.py tests/test_db_registry.py`
 - `uv run pytest --no-cov tests/api/test_agent_process_api.py tests/e2e/test_api_smoke.py`
+- `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'restores_match_state or explicit_tick_persistence'`
 - `make quality`
 
 ### Completion Notes List
@@ -44,6 +45,8 @@ GPT-5 Codex
 - Wired `MatchRuntime` with an optional persistence callback and enabled it only for the default DB-backed app startup path, leaving explicit in-memory `create_app(match_registry=...)` workflows unchanged.
 - Added focused registry/DB tests and real-process smoke coverage proving a runtime-advanced DB-backed match persists and survives a fresh registry reload.
 - Kept Story 18.2 scoped to durability only; broadcast fanout remains deferred to Story 18.3.
+- Follow-up fix: runtime tick persistence now snapshots the in-memory match before advancement and restores that snapshot if persistence raises, so current-tick submissions and pre-tick state are not lost on failure.
+- Follow-up fix: `create_app(..., tick_persistence=...)` now exposes runtime persistence wiring explicitly while preserving the existing default in-memory and default DB-backed startup behavior when omitted.
 
 ### File List
 
@@ -53,6 +56,7 @@ GPT-5 Codex
 - server/db/registry.py
 - server/main.py
 - server/runtime.py
+- tests/api/test_agent_api.py
 - tests/conftest.py
 - tests/e2e/test_api_smoke.py
 - tests/support.py
@@ -63,6 +67,7 @@ GPT-5 Codex
 
 - 2026-03-29 22:25 UTC: Drafted Story 18.2 and the live tick persistence implementation plan.
 - 2026-03-29 23:14 UTC: Implemented the advanced tick contract, transactional DB persistence seam, DB-backed runtime wiring, focused tests, and running-process reload coverage.
+- 2026-03-29 23:24 UTC: Applied follow-up rollback protection for persistence failures and made runtime tick persistence wiring explicit for injected registries.
 
 ## Dev Notes
 

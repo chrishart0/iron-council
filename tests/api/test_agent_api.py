@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from httpx import ASGITransport, AsyncClient
 from server.agent_registry import (
+    AdvancedMatchTick,
     InMemoryMatchRegistry,
     build_seeded_agent_api_key,
     build_seeded_match_records,
@@ -21,6 +22,7 @@ from server.models.api import (
     MatchMessageCreateRequest,
     TreatyActionRequest,
 )
+from server.models.orders import OrderEnvelope
 
 
 def _army_by_id(payload: dict[str, Any], army_id: str) -> dict[str, Any]:
@@ -247,6 +249,97 @@ async def test_app_lifespan_advances_active_match_and_stops_after_shutdown(
     await asyncio.sleep(1.2)
 
     assert active_match.state.tick == stopped_tick
+
+
+@pytest.mark.asyncio
+async def test_app_lifespan_restores_match_state_and_submissions_when_tick_persistence_fails(
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    active_match = seeded_registry.get_match("match-alpha")
+    assert active_match is not None
+    active_match.tick_interval_seconds = 1
+    seeded_registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-1",
+                "tick": 142,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "london", "troops": 5}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    seeded_registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-1",
+                "tick": 143,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "london", "troops": 1}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    baseline_state = active_match.state.model_dump(mode="json")
+    baseline_submissions = [
+        submission.model_dump(mode="json") for submission in active_match.order_submissions
+    ]
+    persistence_calls = 0
+
+    def fail_tick_persistence(_: AdvancedMatchTick) -> None:
+        nonlocal persistence_calls
+        persistence_calls += 1
+        raise RuntimeError("tick persistence failed")
+
+    app = create_app(match_registry=seeded_registry, tick_persistence=fail_tick_persistence)
+
+    async with app.router.lifespan_context(app):
+        await asyncio.sleep(1.2)
+        runtime_task = app.state.match_runtime._tasks["match-alpha"]
+        with pytest.raises(RuntimeError, match="tick persistence failed"):
+            await runtime_task
+
+    restored_match = seeded_registry.get_match("match-alpha")
+    assert restored_match is not None
+    assert restored_match.state.model_dump(mode="json") == baseline_state
+    assert [
+        submission.model_dump(mode="json") for submission in restored_match.order_submissions
+    ] == baseline_submissions
+    assert persistence_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_create_app_uses_explicit_tick_persistence_for_injected_registry(
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    active_match = seeded_registry.get_match("match-alpha")
+    paused_match = seeded_registry.get_match("match-beta")
+    assert active_match is not None
+    assert paused_match is not None
+    active_match.tick_interval_seconds = 1
+    paused_match.tick_interval_seconds = 1
+    persisted_ticks: list[AdvancedMatchTick] = []
+
+    def record_tick_persistence(advanced_tick: AdvancedMatchTick) -> None:
+        persisted_ticks.append(advanced_tick)
+
+    app = create_app(match_registry=seeded_registry, tick_persistence=record_tick_persistence)
+
+    async with app.router.lifespan_context(app):
+        await asyncio.sleep(1.2)
+
+    assert [tick.match_id for tick in persisted_ticks] == ["match-alpha"]
+    assert persisted_ticks[0].resolved_tick == 143
 
 
 @pytest.mark.asyncio
