@@ -64,5 +64,5 @@ development_status:
   epic-11: in-progress
   11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: done
   11-2-add-realistic-scenario-based-smoke-tests-for-deterministic-gameplay-flows: done
-  11-3-add-a-large-batch-simulation-regression-harness-with-invariant-checks: drafted
+  11-3-add-a-large-batch-simulation-regression-harness-with-invariant-checks: done
   11-4-add-critical-api-end-to-end-tests-for-agent-gameplay-journeys: done

@@ -6,7 +6,7 @@ DOCKER_COMPOSE ?= docker compose -f $(SUPPORT_SERVICES_COMPOSE_FILE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install install-dev hooks format format-check lint test smoke-test test-real-api test-smoke pre-commit quality ci support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
+.PHONY: help setup install install-dev hooks format format-check lint test smoke-test regression-test test-real-api test-smoke pre-commit quality ci support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
 
 help: ## Show the available developer workflow commands.
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-14s %s\n", $$1, $$2}'
@@ -36,6 +36,9 @@ test: ## Run the full behavior-first test suite, including real-process DB-backe
 
 smoke-test: ## Run only the deterministic gameplay smoke scenarios for targeted reruns.
 	$(UV) run pytest --no-cov tests/test_simulation_smoke.py
+
+regression-test: ## Run the deterministic simulation regression batch harness.
+	$(UV) run pytest --no-cov tests/test_simulation_regression.py
 
 test-real-api: ## Run the real-process, real-DB API integration checks.
 	$(UV) run pytest --no-cov tests/api/test_agent_process_api.py

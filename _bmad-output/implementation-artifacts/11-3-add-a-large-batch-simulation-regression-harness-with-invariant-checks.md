@@ -1,6 +1,6 @@
 # Story 11.3: Add a large-batch simulation regression harness with invariant checks
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -16,18 +16,18 @@ So that many deterministic scenarios can be exercised quickly to catch invalid s
 
 ## Tasks / Subtasks
 
-- [ ] Define the invariant set and batch input strategy. (AC: 1, 2, 3)
-  - [ ] Document the invariants that should always hold for match state, orders, ownership, resources, and references.
-  - [ ] Choose a stable mix of curated fixtures and generated/sequenced inputs.
-  - [ ] Keep seeds or fixture identifiers explicit so failures are reproducible.
-- [ ] Implement the regression harness and failure reporting. (AC: 1, 2)
-  - [ ] Ensure each batch run reports which scenario/seed failed and which invariant was violated.
-  - [ ] Keep the harness deterministic and independent of external services.
-  - [ ] Avoid overbuilding a full fuzzing framework if a narrower deterministic harness is sufficient.
-- [ ] Integrate the harness into local and CI-quality workflows. (AC: 1, 3)
-  - [ ] Add a stable command path for running the regression batch alone.
-  - [ ] Verify runtime stays practical for repeated execution.
-  - [ ] Re-run the repository quality gate after the harness lands.
+- [x] Define the invariant set and batch input strategy. (AC: 1, 2, 3)
+  - [x] Document the invariants that should always hold for match state, orders, ownership, resources, and references.
+  - [x] Choose a stable mix of curated fixtures and generated/sequenced inputs.
+  - [x] Keep seeds or fixture identifiers explicit so failures are reproducible.
+- [x] Implement the regression harness and failure reporting. (AC: 1, 2)
+  - [x] Ensure each batch run reports which scenario/seed failed and which invariant was violated.
+  - [x] Keep the harness deterministic and independent of external services.
+  - [x] Avoid overbuilding a full fuzzing framework if a narrower deterministic harness is sufficient.
+- [x] Integrate the harness into local and CI-quality workflows. (AC: 1, 3)
+  - [x] Add a stable command path for running the regression batch alone.
+  - [x] Verify runtime stays practical for repeated execution.
+  - [x] Re-run the repository quality gate after the harness lands.
 
 ## Dev Notes
 
@@ -45,20 +45,34 @@ So that many deterministic scenarios can be exercised quickly to catch invalid s
 
 ### Agent Model Used
 
-_TBD_
+GPT-5 Codex
 
 ### Debug Log References
 
-- _TBD_
+- `uv sync --extra dev --frozen`
+- `uv run pytest --no-cov tests/test_simulation_regression.py::test_regression_harness_executes_declared_batch`
+- `uv run pytest --no-cov tests/test_simulation_regression.py -q`
+- `make regression-test`
+- `make format`
+- `make quality`
 
 ### Completion Notes List
 
-- _TBD_
+- Added `server/simulation_regression.py` with a deterministic 12-scenario batch harness, invariant checks, failure records, and stable outcome digests.
+- Added `tests/test_simulation_regression.py` covering batch execution, reproducible invariant reporting, repeated-run determinism, and malformed-state failure formatting.
+- Added `make regression-test` as the stable targeted command path for rerunning only the regression harness.
+- Kept the harness deterministic and CI-friendly by reusing `simulate_ticks` with validated per-tick orders and modest curated scenario families instead of fuzzing.
 
 ### File List
 
-- _TBD_
+- `server/simulation_regression.py`
+- `tests/test_simulation_regression.py`
+- `Makefile`
+- `_bmad-output/implementation-artifacts/11-3-add-a-large-batch-simulation-regression-harness-with-invariant-checks.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ### Change Log
 
 - 2026-03-28 14:40 UTC: Drafted Story 11.3 for deterministic batch regression and invariant validation.
+- 2026-03-29 08:31 UTC: Marked story in progress for deterministic regression harness implementation.
+- 2026-03-29 08:31 UTC: Implemented the deterministic batch regression harness, added invariant-focused tests and `make regression-test`, reran `make quality`, and marked the story done.
