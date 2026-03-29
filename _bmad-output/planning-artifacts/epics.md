@@ -811,10 +811,6 @@ So that I can copy a working loop instead of reverse-engineering the API from te
 **When** it decides what to do each tick
 **Then** it stays intentionally simple, deterministic, and free of internal server imports or implementation-detail shortcuts.
 
-**And Given** new developers need an onboarding path
-**When** the quickstart documentation is read and exercised
-**Then** it documents installation, configuration, and run commands that are covered by tests or smoke verification.
-
 ## Epic 16: Complete the Group-Chat Messaging Surface
 
 Close the largest remaining messaging gap between the GDD/architecture and the implemented agent API by adding authenticated group-chat workflows end to end. Sequence the work so the backend contract lands first, then extend the standalone SDK and onboarding docs to consume that public surface.
@@ -862,3 +858,47 @@ So that I can use the full public messaging surface without reverse-engineering 
 **And Given** developers need a trustworthy onboarding path
 **When** the SDK docs/examples describe group-chat usage
 **Then** the documented commands and snippets are covered by tests or smoke verification.
+
+## Epic 17: Consolidated Agent Turn Contract
+
+Close the remaining gap between the architecture's per-tick agent payloads and the currently fragmented REST surface by adding a bundled authenticated briefing read and a single-command submission write. Sequence the work so the read-side contract lands first, then add the consolidated command envelope on top of the existing validated order, messaging, treaty, and alliance primitives.
+
+### Story 17.1: Add an authenticated bundled agent briefing endpoint
+
+As an AI agent developer,
+I want one authenticated endpoint that returns my current fog-filtered state plus relevant communication and diplomacy context,
+So that I can evaluate a turn from one stable contract instead of stitching together multiple HTTP reads.
+
+**Acceptance Criteria:**
+
+**Given** an authenticated agent joined to a match
+**When** it requests the bundled agent briefing for that match
+**Then** the response includes the existing fog-filtered state projection, visible alliance status, visible treaties, visible group chats, and message buckets shaped for direct, group, and world consumption.
+
+**And Given** agents need an incremental polling loop instead of replaying the entire communication history every tick
+**When** the client passes a deterministic since-tick cursor
+**Then** the bundled briefing only includes messages and diplomacy events at or after that tick while keeping the current state snapshot authoritative.
+
+**And Given** the bundled contract is meant to reduce integration risk for external agents
+**When** the endpoint is documented and tested
+**Then** behavior-first API tests, running-app checks, and SDK-facing contract smoke coverage verify the exact public JSON shape without depending on repo-internal server imports.
+
+### Story 17.2: Add a consolidated authenticated agent command endpoint
+
+As an AI agent developer,
+I want to submit orders, outgoing messages, and diplomacy actions in one authenticated command envelope,
+So that my turn loop can write one public contract per tick instead of coordinating multiple mutation endpoints by hand.
+
+**Acceptance Criteria:**
+
+**Given** an authenticated agent joined to a match
+**When** it posts a consolidated command envelope for the current tick
+**Then** the server validates the match/tick identity once, applies accepted orders through the existing validation pipeline, records outgoing messages, applies requested treaty or alliance actions, and returns a stable acceptance summary.
+
+**And Given** any contained action is invalid for the authenticated player or match
+**When** the command endpoint validates the envelope
+**Then** it returns structured errors without partially mutating unrelated side effects.
+
+**And Given** the consolidated command endpoint is only a public-contract convenience layer
+**When** it is implemented
+**Then** the underlying focused REST endpoints remain available and keep their existing behavior-first tests passing unchanged.
