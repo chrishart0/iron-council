@@ -172,32 +172,40 @@ def test_sdk_workflow_methods_cover_orders_messages_treaties_and_alliances(
 
 
 def test_sdk_group_chat_methods_cover_create_list_read_and_send_workflows(
-    client: Any,
+    sdk_module: Any,
+    seeded_registry: InMemoryMatchRegistry,
 ) -> None:
-    group_chat = client.create_group_chat(
-        "match-alpha",
-        tick=142,
-        name="War Room",
-        member_ids=["player-4"],
-    )
-    visible_group_chats = client.get_group_chats("match-alpha")
+    app = create_app(match_registry=seeded_registry)
+    with TestClient(app, base_url="http://testserver") as session:
+        creator_client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=build_seeded_agent_api_key("agent-player-2"),
+            session=session,
+        )
+        invited_client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=build_seeded_agent_api_key("agent-player-4"),
+            session=session,
+        )
 
-    invited_client = client.__class__(
-        base_url="http://testserver",
-        api_key=build_seeded_agent_api_key("agent-player-4"),
-        session=client._session,
-    )
-    invited_visible_group_chats = invited_client.get_group_chats("match-alpha")
-    sent_group_message = invited_client.send_group_chat_message(
-        "match-alpha",
-        group_chat_id=group_chat.group_chat.group_chat_id,
-        tick=142,
-        content="Ready to coordinate.",
-    )
-    messages = client.get_group_chat_messages(
-        "match-alpha",
-        group_chat_id=group_chat.group_chat.group_chat_id,
-    )
+        group_chat = creator_client.create_group_chat(
+            "match-alpha",
+            tick=142,
+            name="War Room",
+            member_ids=["player-4"],
+        )
+        visible_group_chats = creator_client.get_group_chats("match-alpha")
+        invited_visible_group_chats = invited_client.get_group_chats("match-alpha")
+        sent_group_message = invited_client.send_group_chat_message(
+            "match-alpha",
+            group_chat_id=group_chat.group_chat.group_chat_id,
+            tick=142,
+            content="Ready to coordinate.",
+        )
+        messages = creator_client.get_group_chat_messages(
+            "match-alpha",
+            group_chat_id=group_chat.group_chat.group_chat_id,
+        )
 
     assert group_chat.status == "accepted"
     assert group_chat.group_chat.group_chat_id == "group-chat-1"
@@ -214,6 +222,42 @@ def test_sdk_group_chat_methods_cover_create_list_read_and_send_workflows(
     assert messages.group_chat_id == "group-chat-1"
     assert messages.messages[0].sender_id == "player-4"
     assert messages.messages[0].content == "Ready to coordinate."
+
+
+def test_sdk_group_chat_methods_wrap_structured_visibility_errors(
+    sdk_module: Any,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    app = create_app(match_registry=seeded_registry)
+    with TestClient(app, base_url="http://testserver") as session:
+        creator_client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=build_seeded_agent_api_key("agent-player-2"),
+            session=session,
+        )
+        outsider_client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=build_seeded_agent_api_key("agent-player-3"),
+            session=session,
+        )
+
+        created_group_chat = creator_client.create_group_chat(
+            "match-alpha",
+            tick=142,
+            name="Quiet Council",
+            member_ids=["player-4"],
+        )
+
+        with pytest.raises(sdk_module.IronCouncilApiError) as exc_info:
+            outsider_client.get_group_chat_messages(
+                "match-alpha",
+                group_chat_id=created_group_chat.group_chat.group_chat_id,
+            )
+
+    error = exc_info.value
+    assert error.status_code == HTTPStatus.FORBIDDEN
+    assert error.error_code == "group_chat_not_visible"
+    assert error.message == "Group chat 'group-chat-1' is not visible to player 'player-3'."
 
 
 def test_sdk_wraps_structured_api_failures_without_leaking_api_key(
