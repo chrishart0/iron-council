@@ -171,6 +171,137 @@ def test_sdk_workflow_methods_cover_orders_messages_treaties_and_alliances(
     assert alliances.alliances[0].alliance_id == "alliance-red"
 
 
+def test_sdk_get_agent_briefing_propagates_since_tick_and_parses_typed_response(
+    sdk_module: Any,
+) -> None:
+    captured_request: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_request["method"] = request.method
+        captured_request["path"] = request.url.path
+        captured_request["query"] = dict(request.url.params)
+        return httpx.Response(
+            status_code=HTTPStatus.OK,
+            json={
+                "match_id": "match-alpha",
+                "player_id": "player-2",
+                "state": {
+                    "match_id": "match-alpha",
+                    "tick": 142,
+                    "player_id": "player-2",
+                    "resources": {"food": 12, "production": 7, "money": 9},
+                    "cities": {},
+                    "visible_armies": [],
+                    "alliance_id": "alliance-red",
+                    "alliance_members": ["player-1", "player-2"],
+                    "victory": {
+                        "leading_alliance": "alliance-red",
+                        "cities_held": 2,
+                        "threshold": 18,
+                        "countdown_ticks_remaining": None,
+                    },
+                },
+                "alliances": [
+                    {
+                        "alliance_id": "alliance-red",
+                        "name": "Red Pact",
+                        "leader_id": "player-1",
+                        "formed_tick": 140,
+                        "members": [
+                            {"player_id": "player-1", "joined_tick": 140},
+                            {"player_id": "player-2", "joined_tick": 140},
+                        ],
+                    }
+                ],
+                "treaties": [
+                    {
+                        "treaty_id": 3,
+                        "player_a_id": "player-2",
+                        "player_b_id": "player-3",
+                        "treaty_type": "trade",
+                        "status": "active",
+                        "proposed_by": "player-2",
+                        "proposed_tick": 141,
+                        "signed_tick": 142,
+                        "withdrawn_by": None,
+                        "withdrawn_tick": None,
+                    }
+                ],
+                "group_chats": [
+                    {
+                        "group_chat_id": "group-chat-7",
+                        "name": "Northern Channel",
+                        "member_ids": ["player-1", "player-2"],
+                        "created_by": "player-2",
+                        "created_tick": 141,
+                    }
+                ],
+                "messages": {
+                    "direct": [
+                        {
+                            "message_id": 9,
+                            "channel": "direct",
+                            "sender_id": "player-1",
+                            "recipient_id": "player-2",
+                            "tick": 142,
+                            "content": "Direct briefing.",
+                        }
+                    ],
+                    "group": [
+                        {
+                            "message_id": 10,
+                            "group_chat_id": "group-chat-7",
+                            "sender_id": "player-1",
+                            "tick": 142,
+                            "content": "Group briefing.",
+                        }
+                    ],
+                    "world": [
+                        {
+                            "message_id": 11,
+                            "channel": "world",
+                            "sender_id": "player-3",
+                            "recipient_id": None,
+                            "tick": 142,
+                            "content": "World briefing.",
+                        }
+                    ],
+                },
+            },
+        )
+
+    session = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="http://testserver",
+    )
+    try:
+        client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key="test-key",
+            session=session,
+        )
+
+        briefing = client.get_agent_briefing("match-alpha", since_tick=142)
+    finally:
+        session.close()
+
+    assert captured_request == {
+        "method": "GET",
+        "path": "/api/v1/matches/match-alpha/agent-briefing",
+        "query": {"since_tick": "142"},
+    }
+    assert isinstance(briefing, sdk_module.AgentBriefingResponse)
+    assert briefing.match_id == "match-alpha"
+    assert briefing.player_id == "player-2"
+    assert briefing.state.tick == 142
+    assert briefing.alliances[0].alliance_id == "alliance-red"
+    assert briefing.treaties[0].signed_tick == 142
+    assert briefing.group_chats[0].group_chat_id == "group-chat-7"
+    assert briefing.messages.direct[0].recipient_id == "player-2"
+    assert briefing.messages.group[0].group_chat_id == "group-chat-7"
+    assert briefing.messages.world[0].content == "World briefing."
+
+
 def test_sdk_group_chat_methods_cover_create_list_read_and_send_workflows(
     sdk_module: Any,
     seeded_registry: InMemoryMatchRegistry,

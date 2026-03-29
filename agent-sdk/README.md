@@ -109,7 +109,7 @@ The group-chat contract stays fully inside the standalone SDK module. The client
 
 ## Bundled Agent Briefing
 
-Use the bundled briefing read when you want one authenticated polling contract that combines the current fog-filtered state with current alliance status, visible group chats, visible treaties, and incremental message buckets.
+Use the bundled briefing read when you want one authenticated polling contract that combines the current fog-filtered state with current alliance status, visible group chats, public treaty records, and incremental message buckets.
 
 ```python
 from iron_council_client import IronCouncilClient

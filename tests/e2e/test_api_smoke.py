@@ -237,6 +237,35 @@ def test_agent_briefing_smoke_flow_runs_through_real_process(
     running_seeded_app: RunningApp,
 ) -> None:
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        create_group_chat_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "name": "Smoke Council",
+                "member_ids": ["player-3"],
+            },
+            headers=_headers(),
+        )
+        group_message_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats/group-chat-1/messages",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "content": "Smoke group briefing.",
+            },
+            headers=_headers("agent-player-3"),
+        )
+        treaty_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/treaties",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "counterparty_id": "player-3",
+                "action": "propose",
+                "treaty_type": "trade",
+            },
+            headers=_headers(),
+        )
         world_message_response = client.post(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
             json={
@@ -264,13 +293,21 @@ def test_agent_briefing_smoke_flow_runs_through_real_process(
             headers=_headers(),
         )
 
+    assert create_group_chat_response.status_code == HTTPStatus.ACCEPTED
+    assert group_message_response.status_code == HTTPStatus.ACCEPTED
+    assert treaty_response.status_code == HTTPStatus.ACCEPTED
     assert world_message_response.status_code == HTTPStatus.ACCEPTED
     assert direct_message_response.status_code == HTTPStatus.ACCEPTED
     assert briefing_response.status_code == HTTPStatus.OK
     assert briefing_response.json()["state"]["player_id"] == "player-2"
     assert briefing_response.json()["alliances"][0]["alliance_id"] == "alliance-red"
+    assert briefing_response.json()["group_chats"][0]["group_chat_id"] == "group-chat-1"
+    assert briefing_response.json()["treaties"][0]["treaty_type"] == "trade"
     assert [message["content"] for message in briefing_response.json()["messages"]["direct"]] == [
         "Smoke direct briefing."
+    ]
+    assert [message["content"] for message in briefing_response.json()["messages"]["group"]] == [
+        "Smoke group briefing."
     ]
     assert [message["content"] for message in briefing_response.json()["messages"]["world"]] == [
         "Smoke world briefing."

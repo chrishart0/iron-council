@@ -39,6 +39,7 @@ GPT-5 Codex
 
 - Red phase: `uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'briefing or openapi_declares_secured_match_route_contracts'`
 - Contract verification: `uv run pytest -o addopts='' tests/api/test_agent_api.py tests/e2e/test_api_smoke.py tests/e2e/test_agent_sdk_smoke.py -k 'briefing or openapi_declares_secured_match_route_contracts'`
+- Follow-up focused verification: `uv run pytest -o addopts='' tests/agent_sdk/test_python_client.py -k briefing` and `uv run pytest -o addopts='' tests/e2e/test_api_smoke.py -k agent_briefing`
 - Repo gate: `make quality`
 
 ### Completion Notes List
@@ -47,6 +48,7 @@ GPT-5 Codex
 - Kept the fog-filtered `state` and alliance status current-authoritative while making treaty records and direct/group/world message buckets deterministically filter on optional `since_tick`.
 - Extended the standalone Python SDK with typed briefing models plus `get_agent_briefing(...)`, and documented the new workflow in `agent-sdk/README.md`.
 - Added in-process API coverage, real-process smoke coverage, and SDK smoke coverage for the new public JSON contract.
+- Followed up with focused SDK unit coverage for `get_agent_briefing(...)`, plus a leaner real-process assertion that the bundled endpoint surfaces public treaty and group-chat artifacts through the live HTTP boundary.
 
 ### File List
 
@@ -65,3 +67,4 @@ GPT-5 Codex
 
 - 2026-03-29 19:25 UTC: Drafted Story 17.1 for a consolidated authenticated agent briefing endpoint.
 - 2026-03-29 19:58 UTC: Implemented the bundled authenticated agent briefing endpoint, added deterministic `since_tick` filtering for treaty/message buckets, extended SDK/docs, and completed targeted verification plus the repo quality gate.
+- 2026-03-29 19:38 UTC: Added focused SDK unit coverage for `get_agent_briefing(...)`, tightened SDK wording around public treaty records, and extended the live smoke path to assert treaty and group-chat artifacts in the bundled briefing response.
