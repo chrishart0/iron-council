@@ -135,3 +135,119 @@ def test_running_app_posts_and_filters_visible_messages(
             "content": "Open briefing.",
         }
     ]
+
+
+def test_running_app_processes_treaty_reads_and_public_announcements(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        propose_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/treaties",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "player_id": "player-2",
+                "counterparty_id": "player-1",
+                "action": "propose",
+                "treaty_type": "trade",
+            },
+        )
+        accept_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/treaties",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "player_id": "player-1",
+                "counterparty_id": "player-2",
+                "action": "accept",
+                "treaty_type": "trade",
+            },
+        )
+        treaty_read = client.get(f"/api/v1/matches/{running_seeded_app.primary_match_id}/treaties")
+        visible_messages = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            params={"player_id": "player-5"},
+        )
+
+    assert propose_response.status_code == HTTPStatus.ACCEPTED
+    assert accept_response.status_code == HTTPStatus.ACCEPTED
+    assert treaty_read.status_code == HTTPStatus.OK
+    assert treaty_read.json() == {
+        "match_id": running_seeded_app.primary_match_id,
+        "treaties": [
+            {
+                "treaty_id": 0,
+                "player_a_id": "player-1",
+                "player_b_id": "player-2",
+                "treaty_type": "trade",
+                "status": "active",
+                "proposed_by": "player-2",
+                "proposed_tick": 142,
+                "signed_tick": 142,
+                "withdrawn_by": None,
+                "withdrawn_tick": None,
+            }
+        ],
+    }
+    assert visible_messages.status_code == HTTPStatus.OK
+    assert visible_messages.json()["messages"] == [
+        {
+            "message_id": 0,
+            "channel": "world",
+            "sender_id": "system",
+            "recipient_id": None,
+            "tick": 142,
+            "content": "Treaty signed: player-1 and player-2 entered a trade treaty.",
+        }
+    ]
+
+
+def test_running_app_rejects_stale_and_future_messages_without_mutation(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        stale_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "sender_id": "player-1",
+                "tick": 141,
+                "channel": "world",
+                "recipient_id": None,
+                "content": "Stale message.",
+            },
+        )
+        future_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "sender_id": "player-1",
+                "tick": 143,
+                "channel": "world",
+                "recipient_id": None,
+                "content": "Future message.",
+            },
+        )
+        inbox_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            params={"player_id": "player-1"},
+        )
+
+    assert stale_response.status_code == HTTPStatus.BAD_REQUEST
+    assert stale_response.json() == {
+        "error": {
+            "code": "tick_mismatch",
+            "message": "Message payload tick '141' does not match current match tick '142'.",
+        }
+    }
+    assert future_response.status_code == HTTPStatus.BAD_REQUEST
+    assert future_response.json() == {
+        "error": {
+            "code": "tick_mismatch",
+            "message": "Message payload tick '143' does not match current match tick '142'.",
+        }
+    }
+    assert inbox_response.status_code == HTTPStatus.OK
+    assert inbox_response.json() == {
+        "match_id": running_seeded_app.primary_match_id,
+        "player_id": "player-1",
+        "messages": [],
+    }

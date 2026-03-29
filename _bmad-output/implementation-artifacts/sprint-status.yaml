@@ -69,6 +69,6 @@ development_status:
 
   epic-13: in-progress
   13-1-add-agent-facing-match-message-inbox-and-send-endpoints: done
-  13-2-add-public-treaty-status-and-lifecycle-endpoints: in-progress
+  13-2-add-public-treaty-status-and-lifecycle-endpoints: done
   13-3-add-alliance-create-join-leave-endpoints-with-deterministic-status-views: backlog
   13-4-add-match-join-and-lightweight-agent-profile-scaffolding: backlog

@@ -1,6 +1,6 @@
 # Story 13.2: Add public treaty status and lifecycle endpoints
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -18,22 +18,22 @@ So that diplomatic commitments and betrayals become visible, replayable, and act
 
 ## Tasks / Subtasks
 
-- [ ] Define narrow treaty API contracts and deterministic ordering rules. (AC: 1, 3, 4)
-  - [ ] Add explicit read/write models for treaty lifecycle actions and treaty status views.
-  - [ ] Reuse the documented treaty types (`non_aggression`, `defensive`, `trade`) and expose deterministic player ordering.
-  - [ ] Keep lifecycle scope intentionally narrow: propose/accept/withdraw only.
-- [ ] Extend the in-memory match registry with treaty storage and public announcements. (AC: 1, 2, 3, 4)
-  - [ ] Store per-match treaties with stable integer IDs and deterministic read ordering.
-  - [ ] Record public world-chat announcement messages when a treaty becomes active or withdrawn.
-  - [ ] Reject invalid lifecycle actions without hidden mutation or duplicate side effects.
-- [ ] Add treaty REST endpoints and structured error handling. (AC: 1, 3, 4)
-  - [ ] Add `GET /api/v1/matches/{match_id}/treaties` for stable treaty status reads.
-  - [ ] Add `POST /api/v1/matches/{match_id}/treaties` for propose/accept/withdraw requests.
-  - [ ] Preserve the repo's structured `ApiErrorResponse` contract for domain and validation failures.
-- [ ] Extend quality coverage at the API boundary. (AC: 5)
-  - [ ] Add behavior-first in-process API tests for happy paths, stable rereads, public announcement visibility, and failure cases.
-  - [ ] Add at least one real-process integration or smoke flow covering treaty lifecycle actions through the running app.
-  - [ ] Re-run the repository quality gate after the story lands.
+- [x] Define narrow treaty API contracts and deterministic ordering rules. (AC: 1, 3, 4)
+  - [x] Add explicit read/write models for treaty lifecycle actions and treaty status views.
+  - [x] Reuse the documented treaty types (`non_aggression`, `defensive`, `trade`) and expose deterministic player ordering.
+  - [x] Keep lifecycle scope intentionally narrow: propose/accept/withdraw only.
+- [x] Extend the in-memory match registry with treaty storage and public announcements. (AC: 1, 2, 3, 4)
+  - [x] Store per-match treaties with stable integer IDs and deterministic read ordering.
+  - [x] Record public world-chat announcement messages when a treaty becomes active or withdrawn.
+  - [x] Reject invalid lifecycle actions without hidden mutation or duplicate side effects.
+- [x] Add treaty REST endpoints and structured error handling. (AC: 1, 3, 4)
+  - [x] Add `GET /api/v1/matches/{match_id}/treaties` for stable treaty status reads.
+  - [x] Add `POST /api/v1/matches/{match_id}/treaties` for propose/accept/withdraw requests.
+  - [x] Preserve the repo's structured `ApiErrorResponse` contract for domain and validation failures.
+- [x] Extend quality coverage at the API boundary. (AC: 5)
+  - [x] Add behavior-first in-process API tests for happy paths, stable rereads, public announcement visibility, and failure cases.
+  - [x] Add at least one real-process integration or smoke flow covering treaty lifecycle actions through the running app.
+  - [x] Re-run the repository quality gate after the story lands.
 
 ## Dev Notes
 
@@ -69,16 +69,27 @@ GPT-5 Codex
 
 ### Debug Log References
 
-- Pending implementation.
+- `uv run pytest --no-cov tests/api/test_agent_api.py -k 'post_messages_rejects_stale_and_future_ticks or post_treaties_maps_validation_failures'`
+- `uv run pytest --no-cov tests/api/test_agent_process_api.py -k 'stale_and_future_messages'`
+- `make quality`
 
 ### Completion Notes List
 
-- Pending implementation.
+- Added a `tick_mismatch` guard to `POST /api/v1/matches/{match_id}/messages` so message posting now matches the current-tick contract already used by orders and treaty lifecycle APIs.
+- Added behavior-first regression coverage for stale and future message ticks in both the in-process API suite and the running-app process suite, asserting structured errors and no message mutation.
+- Added focused treaty validation tests covering invalid action, invalid treaty type, and missing required fields to lock in the custom `ApiErrorResponse` 422 mapping.
+- Re-ran the focused regressions and `make quality`; the full local gate passed.
 
 ### File List
 
+- `server/agent_registry.py`
+- `server/main.py`
+- `server/models/api.py`
+- `tests/api/test_agent_api.py`
+- `tests/api/test_agent_process_api.py`
 - `_bmad-output/implementation-artifacts/13-2-add-public-treaty-status-and-lifecycle-endpoints.md`
 
 ### Change Log
 
 - 2026-03-29 10:18 UTC: Drafted Story 13.2 for deterministic treaty lifecycle APIs and public announcement coverage.
+- 2026-03-29 10:32 UTC: Completed Story 13.2 implementation, including reviewer follow-up coverage for message tick validation and treaty request 422 mappings.

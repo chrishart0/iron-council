@@ -36,6 +36,9 @@ class OrderAcceptanceResponse(StrictModel):
 
 
 MessageChannel = Literal["world", "direct"]
+TreatyAction = Literal["propose", "accept", "withdraw"]
+TreatyType = Literal["non_aggression", "defensive", "trade"]
+TreatyStatus = Literal["proposed", "active", "withdrawn"]
 
 
 class MatchMessageCreateRequest(StrictModel):
@@ -71,3 +74,35 @@ class MessageAcceptanceResponse(StrictModel):
     recipient_id: str | None = None
     tick: TickDuration
     content: str
+
+
+class TreatyActionRequest(StrictModel):
+    match_id: str
+    player_id: str
+    counterparty_id: str
+    action: TreatyAction
+    treaty_type: TreatyType
+
+
+class TreatyRecord(StrictModel):
+    treaty_id: int = Field(ge=0)
+    player_a_id: str
+    player_b_id: str
+    treaty_type: TreatyType
+    status: TreatyStatus
+    proposed_by: str
+    proposed_tick: TickDuration
+    signed_tick: TickDuration | None = None
+    withdrawn_by: str | None = None
+    withdrawn_tick: TickDuration | None = None
+
+
+class TreatyListResponse(StrictModel):
+    match_id: str
+    treaties: list[TreatyRecord] = Field(default_factory=list)
+
+
+class TreatyActionAcceptanceResponse(StrictModel):
+    status: Literal["accepted"]
+    match_id: str
+    treaty: TreatyRecord

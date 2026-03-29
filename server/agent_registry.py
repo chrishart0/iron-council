@@ -3,7 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from server.models.api import MatchMessageCreateRequest, MatchMessageRecord, MessageChannel
+from server.models.api import (
+    MatchMessageCreateRequest,
+    MatchMessageRecord,
+    MessageChannel,
+    TreatyActionRequest,
+    TreatyRecord,
+    TreatyStatus,
+    TreatyType,
+)
 from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
 from server.models.state import MatchState
@@ -20,6 +28,27 @@ class MatchMessage:
 
 
 @dataclass(slots=True)
+class MatchTreaty:
+    treaty_id: int
+    player_a_id: str
+    player_b_id: str
+    treaty_type: TreatyType
+    status: TreatyStatus
+    proposed_by: str
+    proposed_tick: int
+    signed_tick: int | None = None
+    withdrawn_by: str | None = None
+    withdrawn_tick: int | None = None
+
+
+class TreatyTransitionError(Exception):
+    def __init__(self, *, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
+@dataclass(slots=True)
 class MatchRecord:
     match_id: str
     status: MatchStatus
@@ -27,6 +56,7 @@ class MatchRecord:
     state: MatchState
     order_submissions: list[OrderEnvelope] = field(default_factory=list)
     messages: list[MatchMessage] = field(default_factory=list)
+    treaties: list[MatchTreaty] = field(default_factory=list)
 
 
 class InMemoryMatchRegistry:
@@ -52,6 +82,21 @@ class InMemoryMatchRegistry:
                     content=message.content,
                 )
                 for message in record.messages
+            ],
+            treaties=[
+                MatchTreaty(
+                    treaty_id=treaty.treaty_id,
+                    player_a_id=treaty.player_a_id,
+                    player_b_id=treaty.player_b_id,
+                    treaty_type=treaty.treaty_type,
+                    status=treaty.status,
+                    proposed_by=treaty.proposed_by,
+                    proposed_tick=treaty.proposed_tick,
+                    signed_tick=treaty.signed_tick,
+                    withdrawn_by=treaty.withdrawn_by,
+                    withdrawn_tick=treaty.withdrawn_tick,
+                )
+                for treaty in record.treaties
             ],
         )
 
@@ -81,16 +126,14 @@ class InMemoryMatchRegistry:
         match_id: str,
         message: MatchMessageCreateRequest,
     ) -> MatchMessageRecord:
-        record = self._matches[match_id]
-        stored_message = MatchMessage(
-            message_id=len(record.messages),
+        stored_message = self._append_message(
+            match_id=match_id,
             channel=message.channel,
             sender_id=message.sender_id,
             recipient_id=message.recipient_id,
             tick=message.tick,
             content=message.content,
         )
-        record.messages.append(stored_message)
         return MatchMessageRecord(
             message_id=stored_message.message_id,
             channel=stored_message.channel,
@@ -99,6 +142,118 @@ class InMemoryMatchRegistry:
             tick=stored_message.tick,
             content=stored_message.content,
         )
+
+    def list_treaties(self, *, match_id: str) -> list[TreatyRecord]:
+        record = self._matches.get(match_id)
+        if record is None:
+            return []
+
+        treaties = sorted(
+            record.treaties,
+            key=lambda treaty: (
+                treaty.player_a_id,
+                treaty.player_b_id,
+                treaty.treaty_type,
+                treaty.treaty_id,
+            ),
+        )
+        return [self._to_treaty_record(treaty) for treaty in treaties]
+
+    def apply_treaty_action(
+        self,
+        *,
+        match_id: str,
+        action: TreatyActionRequest,
+    ) -> TreatyRecord:
+        record = self._matches[match_id]
+        player_a_id, player_b_id = sorted((action.player_id, action.counterparty_id))
+        latest_treaty = self._find_latest_treaty(
+            treaties=record.treaties,
+            player_a_id=player_a_id,
+            player_b_id=player_b_id,
+            treaty_type=action.treaty_type,
+        )
+
+        if action.action == "propose":
+            if latest_treaty is not None and latest_treaty.status != "withdrawn":
+                raise TreatyTransitionError(
+                    code="unsupported_treaty_transition",
+                    message=(
+                        f"Cannot propose treaty '{action.treaty_type}' for players "
+                        f"'{player_a_id}' and '{player_b_id}'."
+                    ),
+                )
+            stored_treaty = MatchTreaty(
+                treaty_id=len(record.treaties),
+                player_a_id=player_a_id,
+                player_b_id=player_b_id,
+                treaty_type=action.treaty_type,
+                status="proposed",
+                proposed_by=action.player_id,
+                proposed_tick=record.state.tick,
+            )
+            record.treaties.append(stored_treaty)
+            return self._to_treaty_record(stored_treaty)
+
+        if latest_treaty is None and action.action == "accept":
+            raise TreatyTransitionError(
+                code="unsupported_treaty_transition",
+                message=(
+                    f"Cannot accept treaty '{action.treaty_type}' for players "
+                    f"'{player_a_id}' and '{player_b_id}'."
+                ),
+            )
+
+        if latest_treaty is None:
+            raise TreatyTransitionError(
+                code="treaty_not_found",
+                message=(
+                    f"No treaty exists for players '{player_a_id}' and '{player_b_id}' "
+                    f"with type '{action.treaty_type}'."
+                ),
+            )
+
+        if action.action == "accept":
+            if latest_treaty.status != "proposed" or latest_treaty.proposed_by == action.player_id:
+                raise TreatyTransitionError(
+                    code="unsupported_treaty_transition",
+                    message=(
+                        f"Cannot accept treaty '{action.treaty_type}' for players "
+                        f"'{player_a_id}' and '{player_b_id}'."
+                    ),
+                )
+            latest_treaty.status = "active"
+            latest_treaty.signed_tick = record.state.tick
+            self._record_world_treaty_message(
+                match_id=match_id,
+                tick=record.state.tick,
+                content=(
+                    f"Treaty signed: {player_a_id} and {player_b_id} entered a "
+                    f"{action.treaty_type} treaty."
+                ),
+            )
+            return self._to_treaty_record(latest_treaty)
+
+        if latest_treaty.status not in {"proposed", "active"}:
+            raise TreatyTransitionError(
+                code="unsupported_treaty_transition",
+                message=(
+                    f"Cannot withdraw treaty '{action.treaty_type}' for players "
+                    f"'{player_a_id}' and '{player_b_id}'."
+                ),
+            )
+        latest_treaty.status = "withdrawn"
+        latest_treaty.withdrawn_by = action.player_id
+        latest_treaty.withdrawn_tick = record.state.tick
+        self._record_world_treaty_message(
+            match_id=match_id,
+            tick=record.state.tick,
+            content=(
+                f"Treaty withdrawn: {action.player_id} withdrew the {action.treaty_type} "
+                f"treaty with {action.counterparty_id}."
+            ),
+        )
+        return self._to_treaty_record(latest_treaty)
 
     def list_visible_messages(self, *, match_id: str, player_id: str) -> list[MatchMessageRecord]:
         record = self._matches.get(match_id)
@@ -122,6 +277,69 @@ class InMemoryMatchRegistry:
                     )
                 )
         return visible_messages
+
+    def _append_message(
+        self,
+        *,
+        match_id: str,
+        channel: MessageChannel,
+        sender_id: str,
+        recipient_id: str | None,
+        tick: int,
+        content: str,
+    ) -> MatchMessage:
+        record = self._matches[match_id]
+        stored_message = MatchMessage(
+            message_id=len(record.messages),
+            channel=channel,
+            sender_id=sender_id,
+            recipient_id=recipient_id,
+            tick=tick,
+            content=content,
+        )
+        record.messages.append(stored_message)
+        return stored_message
+
+    def _record_world_treaty_message(self, *, match_id: str, tick: int, content: str) -> None:
+        self._append_message(
+            match_id=match_id,
+            channel="world",
+            sender_id="system",
+            recipient_id=None,
+            tick=tick,
+            content=content,
+        )
+
+    def _find_latest_treaty(
+        self,
+        *,
+        treaties: list[MatchTreaty],
+        player_a_id: str,
+        player_b_id: str,
+        treaty_type: TreatyType,
+    ) -> MatchTreaty | None:
+        for treaty in reversed(treaties):
+            if (
+                treaty.player_a_id == player_a_id
+                and treaty.player_b_id == player_b_id
+                and treaty.treaty_type == treaty_type
+            ):
+                return treaty
+        return None
+
+    def _to_treaty_record(self, treaty: MatchTreaty) -> TreatyRecord:
+        return TreatyRecord(
+            treaty_id=treaty.treaty_id,
+            player_a_id=treaty.player_a_id,
+            player_b_id=treaty.player_b_id,
+            treaty_type=treaty.treaty_type,
+            status=treaty.status,
+            proposed_by=treaty.proposed_by,
+            proposed_tick=treaty.proposed_tick,
+            signed_tick=treaty.signed_tick,
+            withdrawn_by=treaty.withdrawn_by,
+            withdrawn_tick=treaty.withdrawn_tick,
+        )
 
 
 def build_seeded_match_records(

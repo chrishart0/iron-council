@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from server import __version__
-from server.agent_registry import InMemoryMatchRegistry
+from server.agent_registry import InMemoryMatchRegistry, TreatyTransitionError
 from server.db.registry import load_match_registry_from_database
 from server.fog import project_agent_state
 from server.models.api import (
@@ -22,6 +22,9 @@ from server.models.api import (
     MatchSummary,
     MessageAcceptanceResponse,
     OrderAcceptanceResponse,
+    TreatyActionAcceptanceResponse,
+    TreatyActionRequest,
+    TreatyListResponse,
 )
 from server.models.fog import AgentStateProjection
 from server.models.orders import OrderEnvelope
@@ -81,6 +84,32 @@ def _message_validation_error_response(exc: RequestValidationError) -> JSONRespo
     )
 
 
+def _treaty_validation_error_response(exc: RequestValidationError) -> JSONResponse:
+    for error in exc.errors():
+        location = list(error.get("loc", ()))
+        error_type = error.get("type")
+        if location and location[0] == "body" and error_type == "missing":
+            return _build_validation_error_response(
+                code="invalid_treaty_request",
+                message="Treaty request is missing required fields.",
+            )
+        if location == ["body", "action"] and error_type == "literal_error":
+            return _build_validation_error_response(
+                code="invalid_treaty_action",
+                message="Treaty action must be one of: propose, accept, withdraw.",
+            )
+        if location == ["body", "treaty_type"] and error_type == "literal_error":
+            return _build_validation_error_response(
+                code="invalid_treaty_type",
+                message="Treaty type must be one of: non_aggression, defensive, trade.",
+            )
+
+    return _build_validation_error_response(
+        code="invalid_treaty_request",
+        message="Treaty request validation failed.",
+    )
+
+
 def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAPI:
     app = FastAPI(title="iron-counsil-server", version=__version__)
     app.state.match_registry = match_registry or _load_default_match_registry()
@@ -99,6 +128,10 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
             "/messages"
         ):
             return _message_validation_error_response(exc)
+        if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
+            "/treaties"
+        ):
+            return _treaty_validation_error_response(exc)
         return await request_validation_exception_handler(request, exc)
 
     @app.get("/")
@@ -282,6 +315,15 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                 code="player_not_found",
                 message=f"Player '{message.sender_id}' was not found in match '{match_id}'.",
             )
+        if message.tick != record.state.tick:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="tick_mismatch",
+                message=(
+                    f"Message payload tick '{message.tick}' does not match current match tick "
+                    f"'{record.state.tick}'."
+                ),
+            )
         if message.channel == "world":
             if message.recipient_id is not None:
                 raise ApiError(
@@ -308,6 +350,97 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
             recipient_id=accepted_message.recipient_id,
             tick=accepted_message.tick,
             content=accepted_message.content,
+        )
+
+    @api_router.get(
+        "/matches/{match_id}/treaties",
+        response_model=TreatyListResponse,
+        responses={HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA},
+    )
+    async def get_match_treaties(
+        match_id: str,
+        registry: MatchRegistryDependency,
+    ) -> TreatyListResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+
+        return TreatyListResponse(
+            match_id=match_id,
+            treaties=registry.list_treaties(match_id=match_id),
+        )
+
+    @api_router.post(
+        "/matches/{match_id}/treaties",
+        response_model=TreatyActionAcceptanceResponse,
+        status_code=HTTPStatus.ACCEPTED,
+        responses={
+            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def post_match_treaty(
+        match_id: str,
+        treaty_action: TreatyActionRequest,
+        registry: MatchRegistryDependency,
+    ) -> TreatyActionAcceptanceResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+        if treaty_action.match_id != match_id:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="match_id_mismatch",
+                message=(
+                    f"Treaty payload match_id '{treaty_action.match_id}' does not match route "
+                    f"match '{match_id}'."
+                ),
+            )
+        if treaty_action.player_id not in record.state.players:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="player_not_found",
+                message=(
+                    f"Player '{treaty_action.player_id}' was not found in match '{match_id}'."
+                ),
+            )
+        if treaty_action.counterparty_id not in record.state.players:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="player_not_found",
+                message=(
+                    f"Player '{treaty_action.counterparty_id}' was not found in match '{match_id}'."
+                ),
+            )
+        if treaty_action.player_id == treaty_action.counterparty_id:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="self_targeted_treaty",
+                message="Treaty actions require two different players.",
+            )
+
+        try:
+            treaty = registry.apply_treaty_action(match_id=match_id, action=treaty_action)
+        except TreatyTransitionError as exc:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code=exc.code,
+                message=exc.message,
+            ) from exc
+
+        return TreatyActionAcceptanceResponse(
+            status="accepted",
+            match_id=match_id,
+            treaty=treaty,
         )
 
     app.include_router(api_router)
