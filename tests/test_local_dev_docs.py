@@ -26,3 +26,12 @@ def test_readme_explains_how_to_run_a_focused_pytest_without_the_coverage_gate()
 
     assert "uv run pytest --no-cov tests/api/test_health.py" in readme
     assert "coverage gate" in readme
+
+
+def test_readme_documents_worktree_local_database_setup_and_reset_workflow() -> None:
+    readme = (REPO_ROOT / "README.md").read_text()
+
+    assert "make db-setup" in readme
+    assert "make db-reset" in readme
+    assert "IRON_COUNCIL_DB_LANE" in readme
+    assert "current worktree path" in readme

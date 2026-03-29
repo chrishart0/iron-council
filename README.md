@@ -22,13 +22,13 @@ make support-services-up
 make support-services-ps
 ```
 
-Apply the schema to a fresh database with the stable migration command:
+Provision the current worktree database with migrated schema plus deterministic seed data:
 
 ```bash
-make db-upgrade
+make db-setup
 ```
 
-Rebuild the configured schema from Alembic base to head with:
+Reset the current worktree database back to the same seeded baseline with:
 
 ```bash
 make db-reset
@@ -37,8 +37,13 @@ make db-reset
 That boots Postgres on `127.0.0.1:54321` with the same runnable credentials used by
 `compose.support-services.yaml` and `env.local.example`:
 `DATABASE_URL=postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil`.
-The server loads `.env.local` automatically by default, falls back to that same default
-URL when no env file is present, and can use a different file via
+The support service owns the cluster-level credentials; the app and DB tooling then derive
+a worktree-local database name from the current worktree path so sibling worktrees do not
+collide. Set `IRON_COUNCIL_DB_LANE` to add a deterministic suffix for parallel Codex
+workers or multiple lanes inside one worktree.
+
+The server loads `.env.local` automatically by default, derives the worktree-local
+database URL from that base Postgres URL, and can use a different env file via
 `IRON_COUNCIL_ENV_FILE=/path/to/file`.
 
 Run the FastAPI app normally outside containers:
@@ -58,9 +63,9 @@ The repo-level pytest config enables the coverage gate by default, so a plain
 selected test itself passes.
 
 DB-backed tests and future integration flows should prepare their database through the
-shared migration helper in `server.db.testing`, which upgrades the target database to
-Alembic `head` before the test uses it. The reusable pytest fixture is
-`migrated_test_database_url`.
+shared helpers in `server.db.testing`. `prepare_test_database` upgrades a target
+database to Alembic `head`, and `provision_seeded_database` recreates the deterministic
+integration baseline. The reusable pytest fixture is `migrated_test_database_url`.
 
 When finished:
 

@@ -1,6 +1,6 @@
 # Story 12.3: Add deterministic seed/reset tooling and per-worktree isolated test databases
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -16,18 +16,18 @@ So that integration and end-to-end tests can run in parallel without state colli
 
 ## Tasks / Subtasks
 
-- [ ] Define the isolation strategy for parallel worktrees and test lanes. (AC: 1, 2, 3)
-  - [ ] Use a deterministic naming or scoping strategy so each worktree gets its own database identity.
-  - [ ] Ensure the approach also works for parallel CI or local test worker execution.
-  - [ ] Keep the setup simple enough that Codex workers can use it reliably.
-- [ ] Implement seed and reset workflows. (AC: 1, 2, 3)
-  - [ ] Recreate the database from migrations plus deterministic seed data.
-  - [ ] Keep seed fixtures realistic enough for integration and end-to-end validation.
-  - [ ] Ensure reruns converge to the same known-good state.
-- [ ] Expose stable developer commands and docs. (AC: 2, 3)
-  - [ ] Add command targets for fresh setup and clean reset.
-  - [ ] Document how worktree-local environment variables map to isolated DB instances.
-  - [ ] Re-verify the repository quality workflow after the isolation tooling lands.
+- [x] Define the isolation strategy for parallel worktrees and test lanes. (AC: 1, 2, 3)
+  - [x] Use a deterministic naming or scoping strategy so each worktree gets its own database identity.
+  - [x] Ensure the approach also works for parallel CI or local test worker execution.
+  - [x] Keep the setup simple enough that Codex workers can use it reliably.
+- [x] Implement seed and reset workflows. (AC: 1, 2, 3)
+  - [x] Recreate the database from migrations plus deterministic seed data.
+  - [x] Keep seed fixtures realistic enough for integration and end-to-end validation.
+  - [x] Ensure reruns converge to the same known-good state.
+- [x] Expose stable developer commands and docs. (AC: 2, 3)
+  - [x] Add command targets for fresh setup and clean reset.
+  - [x] Document how worktree-local environment variables map to isolated DB instances.
+  - [x] Re-verify the repository quality workflow after the isolation tooling lands.
 
 ## Dev Notes
 
@@ -44,20 +44,35 @@ So that integration and end-to-end tests can run in parallel without state colli
 
 ### Agent Model Used
 
-_TBD_
+GPT-5 Codex
 
 ### Debug Log References
 
-- _TBD_
+- `uv run --extra dev pytest --no-cov tests/test_settings.py tests/test_database_migrations.py tests/test_local_dev_docs.py tests/test_db_tooling.py`
+- `make quality`
 
 ### Completion Notes List
 
-- _TBD_
+- Added deterministic worktree-scoped Postgres database URL derivation with optional `IRON_COUNCIL_DB_LANE` suffixing so sibling worktrees and parallel workers do not collide.
+- Added `server.db.tooling` plus `make db-setup` and `make db-reset` to provision a database, apply migrations, and load deterministic seed data through one stable workflow.
+- Seeded a realistic integration baseline across matches, api keys, alliances, players, messages, treaties, and tick log rows, and verified reset converges back to the same seeded snapshot.
+- Updated README workflow docs and sprint tracking after `make quality` passed.
 
 ### File List
 
-- _TBD_
+- `Makefile`
+- `README.md`
+- `server/db/testing.py`
+- `server/db/tooling.py`
+- `server/settings.py`
+- `tests/test_database_migrations.py`
+- `tests/test_db_tooling.py`
+- `tests/test_local_dev_docs.py`
+- `tests/test_settings.py`
+- `_bmad-output/implementation-artifacts/12-3-add-deterministic-seed-reset-tooling-and-per-worktree-isolated-test-databases.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ### Change Log
 
 - 2026-03-28 14:57 UTC: Drafted Story 12.3 for deterministic seed/reset workflows and per-worktree DB isolation.
+- 2026-03-29 00:00 UTC: Implemented worktree-local deterministic database provisioning, seed/reset tooling, docs, and coverage-backed tests.

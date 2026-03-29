@@ -6,7 +6,7 @@ DOCKER_COMPOSE ?= docker compose -f $(SUPPORT_SERVICES_COMPOSE_FILE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install install-dev hooks format format-check lint test pre-commit quality ci support-services-up support-services-down support-services-logs support-services-ps db-upgrade db-reset
+.PHONY: help setup install install-dev hooks format format-check lint test pre-commit quality ci support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
 
 help: ## Show the available developer workflow commands.
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-14s %s\n", $$1, $$2}'
@@ -57,9 +57,10 @@ support-services-logs: ## Tail logs for the local backing services stack.
 support-services-ps: ## Show the local backing services status.
 	$(DOCKER_COMPOSE) ps
 
-db-upgrade: ## Apply Alembic migrations to the configured database.
-	$(UV) run alembic upgrade head
+db-setup: ## Provision the current worktree database with migrations and deterministic seed data.
+	$(UV) run python -m server.db.tooling setup
 
-db-reset: ## Rebuild the configured database schema from base to head.
-	$(UV) run alembic downgrade base
-	$(UV) run alembic upgrade head
+db-upgrade: db-setup ## Backwards-compatible alias for database setup.
+
+db-reset: ## Rebuild the current worktree database from migrations plus deterministic seed data.
+	$(UV) run python -m server.db.tooling reset
