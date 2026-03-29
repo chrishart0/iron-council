@@ -70,7 +70,7 @@ development_status:
   15-2-add-a-minimal-example-agent-and-sdk-quickstart-guide: done
 
   epic-16: in-progress
-  16-1-add-authenticated-group-chat-creation-membership-and-message-workflows: in-progress
+  16-1-add-authenticated-group-chat-creation-membership-and-message-workflows: done
   16-2-extend-the-python-sdk-and-example-docs-for-group-chat-workflows: pending
 
   epic-11: done

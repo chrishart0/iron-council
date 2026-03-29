@@ -176,3 +176,58 @@ def test_authenticated_join_state_and_order_smoke_flow_runs_through_real_process
             ),
         }
     }
+
+
+def test_group_chat_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        create_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "name": "Smoke Council",
+                "member_ids": ["player-3"],
+            },
+            headers=_headers(),
+        )
+        list_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats",
+            headers=_headers("agent-player-3"),
+        )
+        post_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats/group-chat-1/messages",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "content": "Smoke test ready.",
+            },
+            headers=_headers("agent-player-3"),
+        )
+        read_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats/group-chat-1/messages",
+            headers=_headers(),
+        )
+
+    assert create_response.status_code == HTTPStatus.ACCEPTED
+    assert create_response.json()["group_chat"]["member_ids"] == ["player-2", "player-3"]
+    assert list_response.status_code == HTTPStatus.OK
+    assert list_response.json()["group_chats"][0]["group_chat_id"] == "group-chat-1"
+    assert post_response.status_code == HTTPStatus.ACCEPTED
+    assert post_response.json()["message"]["content"] == "Smoke test ready."
+    assert read_response.status_code == HTTPStatus.OK
+    assert read_response.json() == {
+        "match_id": running_seeded_app.primary_match_id,
+        "group_chat_id": "group-chat-1",
+        "player_id": "player-2",
+        "messages": [
+            {
+                "message_id": 0,
+                "group_chat_id": "group-chat-1",
+                "sender_id": "player-3",
+                "tick": 142,
+                "content": "Smoke test ready.",
+            }
+        ],
+    }

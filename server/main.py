@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from server import __version__
 from server.agent_registry import (
     AllianceTransitionError,
+    GroupChatAccessError,
     InMemoryMatchRegistry,
     MatchAccessError,
     MatchJoinError,
@@ -28,6 +29,12 @@ from server.models.api import (
     ApiErrorResponse,
     AuthenticatedAgentContext,
     AuthenticatedOrderSubmissionRequest,
+    GroupChatCreateAcceptanceResponse,
+    GroupChatCreateRequest,
+    GroupChatListResponse,
+    GroupChatMessageAcceptanceResponse,
+    GroupChatMessageCreateRequest,
+    GroupChatMessageListResponse,
     MatchJoinRequest,
     MatchJoinResponse,
     MatchListResponse,
@@ -90,6 +97,37 @@ def _message_validation_error_response(exc: RequestValidationError) -> JSONRespo
     return _build_validation_error_response(
         code="invalid_message_request",
         message="Message request validation failed.",
+    )
+
+
+def _group_chat_validation_error_response(exc: RequestValidationError) -> JSONResponse:
+    for error in exc.errors():
+        location = list(error.get("loc", ()))
+        error_type = error.get("type")
+        if location == ["body", "name"] and error_type == "string_too_short":
+            return _build_validation_error_response(
+                code="invalid_group_chat_name",
+                message="Group chat name must be at least 1 character long.",
+            )
+        if location == ["body", "member_ids"] and error_type == "too_short":
+            return _build_validation_error_response(
+                code="invalid_group_chat_members",
+                message="Group chat creation requires at least 1 invited member.",
+            )
+        if location == ["body", "content"] and error_type == "string_too_short":
+            return _build_validation_error_response(
+                code="invalid_message_content",
+                message="Message content must be at least 1 character long.",
+            )
+        if location and location[0] == "body" and error_type == "missing":
+            return _build_validation_error_response(
+                code="invalid_group_chat_request",
+                message="Group chat request is missing required fields.",
+            )
+
+    return _build_validation_error_response(
+        code="invalid_group_chat_request",
+        message="Group chat request validation failed.",
     )
 
 
@@ -241,6 +279,8 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
+        if request.url.path.startswith("/api/v1/matches/") and "/group-chats" in request.url.path:
+            return _group_chat_validation_error_response(exc)
         if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
             "/messages"
         ):
@@ -483,6 +523,220 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
             messages=registry.list_visible_messages(
                 match_id=match_id, player_id=resolved_player_id
             ),
+        )
+
+    @api_router.get(
+        "/matches/{match_id}/group-chats",
+        response_model=GroupChatListResponse,
+        responses={HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA},
+    )
+    async def get_match_group_chats(
+        match_id: str,
+        registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+    ) -> GroupChatListResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
+        return GroupChatListResponse(
+            match_id=match_id,
+            player_id=resolved_player_id,
+            group_chats=registry.list_visible_group_chats(
+                match_id=match_id,
+                player_id=resolved_player_id,
+            ),
+        )
+
+    @api_router.post(
+        "/matches/{match_id}/group-chats",
+        response_model=GroupChatCreateAcceptanceResponse,
+        status_code=HTTPStatus.ACCEPTED,
+        responses={
+            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def post_match_group_chat(
+        match_id: str,
+        group_chat: GroupChatCreateRequest,
+        registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+    ) -> GroupChatCreateAcceptanceResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+        if group_chat.match_id != match_id:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="match_id_mismatch",
+                message=(
+                    f"Group chat payload match_id '{group_chat.match_id}' does not match route "
+                    f"match '{match_id}'."
+                ),
+            )
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
+        if group_chat.tick != record.state.tick:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="tick_mismatch",
+                message=(
+                    f"Group chat payload tick '{group_chat.tick}' does not match current match "
+                    f"tick '{record.state.tick}'."
+                ),
+            )
+        for member_id in group_chat.member_ids:
+            if member_id not in record.state.players:
+                raise ApiError(
+                    status_code=HTTPStatus.NOT_FOUND,
+                    code="player_not_found",
+                    message=f"Player '{member_id}' was not found in match '{match_id}'.",
+                )
+
+        accepted_group_chat = registry.create_group_chat(
+            match_id=match_id,
+            request=group_chat,
+            creator_id=resolved_player_id,
+        )
+        return GroupChatCreateAcceptanceResponse(
+            status="accepted",
+            match_id=match_id,
+            group_chat=accepted_group_chat,
+        )
+
+    @api_router.get(
+        "/matches/{match_id}/group-chats/{group_chat_id}/messages",
+        response_model=GroupChatMessageListResponse,
+        responses={
+            HTTPStatus.FORBIDDEN: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def get_match_group_chat_messages(
+        match_id: str,
+        group_chat_id: str,
+        registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+    ) -> GroupChatMessageListResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
+
+        try:
+            messages = registry.list_group_chat_messages(
+                match_id=match_id,
+                group_chat_id=group_chat_id,
+                player_id=resolved_player_id,
+            )
+        except GroupChatAccessError as exc:
+            raise ApiError(
+                status_code=HTTPStatus.FORBIDDEN,
+                code=exc.code,
+                message=exc.message,
+            ) from exc
+
+        return GroupChatMessageListResponse(
+            match_id=match_id,
+            group_chat_id=group_chat_id,
+            player_id=resolved_player_id,
+            messages=messages,
+        )
+
+    @api_router.post(
+        "/matches/{match_id}/group-chats/{group_chat_id}/messages",
+        response_model=GroupChatMessageAcceptanceResponse,
+        status_code=HTTPStatus.ACCEPTED,
+        responses={
+            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.FORBIDDEN: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def post_match_group_chat_message(
+        match_id: str,
+        group_chat_id: str,
+        message: GroupChatMessageCreateRequest,
+        registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+    ) -> GroupChatMessageAcceptanceResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+        if message.match_id != match_id:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="match_id_mismatch",
+                message=(
+                    f"Group chat message payload match_id '{message.match_id}' does not match "
+                    f"route match '{match_id}'."
+                ),
+            )
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
+        if message.tick != record.state.tick:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="tick_mismatch",
+                message=(
+                    f"Message payload tick '{message.tick}' does not match current match tick "
+                    f"'{record.state.tick}'."
+                ),
+            )
+
+        try:
+            accepted_message = registry.record_group_chat_message(
+                match_id=match_id,
+                group_chat_id=group_chat_id,
+                message=message,
+                sender_id=resolved_player_id,
+            )
+        except GroupChatAccessError as exc:
+            raise ApiError(
+                status_code=HTTPStatus.FORBIDDEN,
+                code=exc.code,
+                message=exc.message,
+            ) from exc
+
+        return GroupChatMessageAcceptanceResponse(
+            status="accepted",
+            match_id=match_id,
+            group_chat_id=group_chat_id,
+            message=accepted_message,
         )
 
     @api_router.post(

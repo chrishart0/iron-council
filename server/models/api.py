@@ -120,6 +120,61 @@ class MessageAcceptanceResponse(StrictModel):
     content: str
 
 
+class GroupChatCreateRequest(StrictModel):
+    match_id: str
+    tick: TickDuration
+    name: str = Field(min_length=1)
+    member_ids: list[str] = Field(min_length=1)
+
+
+class GroupChatRecord(StrictModel):
+    group_chat_id: str
+    name: str
+    member_ids: list[str] = Field(default_factory=list)
+    created_by: str
+    created_tick: TickDuration
+
+
+class GroupChatListResponse(StrictModel):
+    match_id: str
+    player_id: str
+    group_chats: list[GroupChatRecord] = Field(default_factory=list)
+
+
+class GroupChatCreateAcceptanceResponse(StrictModel):
+    status: Literal["accepted"]
+    match_id: str
+    group_chat: GroupChatRecord
+
+
+class GroupChatMessageCreateRequest(StrictModel):
+    match_id: str
+    tick: TickDuration
+    content: str = Field(min_length=1)
+
+
+class GroupChatMessageRecord(StrictModel):
+    message_id: int = Field(ge=0)
+    group_chat_id: str
+    sender_id: str
+    tick: TickDuration
+    content: str
+
+
+class GroupChatMessageListResponse(StrictModel):
+    match_id: str
+    group_chat_id: str
+    player_id: str
+    messages: list[GroupChatMessageRecord] = Field(default_factory=list)
+
+
+class GroupChatMessageAcceptanceResponse(StrictModel):
+    status: Literal["accepted"]
+    match_id: str
+    group_chat_id: str
+    message: GroupChatMessageRecord
+
+
 class TreatyActionRequest(StrictModel):
     match_id: str
     counterparty_id: str

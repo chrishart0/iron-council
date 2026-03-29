@@ -45,6 +45,21 @@ def _message_payload(
     }
 
 
+def _group_chat_create_payload(
+    *,
+    match_id: str = "match-alpha",
+    tick: int = 142,
+    name: str = "War Council",
+    member_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "match_id": match_id,
+        "tick": tick,
+        "name": name,
+        "member_ids": member_ids or ["player-2"],
+    }
+
+
 def _treaty_payload(
     *,
     match_id: str = "match-alpha",
@@ -439,6 +454,397 @@ async def test_post_messages_accepts_world_and_direct_messages_and_lists_visible
     record = seeded_registry.get_match("match-alpha")
     assert record is not None
     assert len(record.messages) == 2
+
+
+@pytest.mark.asyncio
+async def test_group_chat_creation_visibility_and_member_message_flow(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    create_payload = _group_chat_create_payload(member_ids=["player-2", "player-4"])
+
+    async with app_client as client:
+        create_response = await client.post(
+            "/api/v1/matches/match-alpha/group-chats",
+            json=create_payload,
+            headers=_auth_headers_for_player("player-1"),
+        )
+        creator_group_chats = await client.get(
+            "/api/v1/matches/match-alpha/group-chats",
+            headers=_auth_headers_for_player("player-1"),
+        )
+        invited_group_chats = await client.get(
+            "/api/v1/matches/match-alpha/group-chats",
+            headers=_auth_headers_for_player("player-2"),
+        )
+        outsider_group_chats = await client.get(
+            "/api/v1/matches/match-alpha/group-chats",
+            headers=_auth_headers_for_player("player-3"),
+        )
+        invited_message_response = await client.post(
+            "/api/v1/matches/match-alpha/group-chats/group-chat-1/messages",
+            json={
+                "match_id": "match-alpha",
+                "tick": 142,
+                "content": "Ready to coordinate.",
+            },
+            headers=_auth_headers_for_player("player-2"),
+        )
+        creator_message_read = await client.get(
+            "/api/v1/matches/match-alpha/group-chats/group-chat-1/messages",
+            headers=_auth_headers_for_player("player-1"),
+        )
+        outsider_message_read = await client.get(
+            "/api/v1/matches/match-alpha/group-chats/group-chat-1/messages",
+            headers=_auth_headers_for_player("player-3"),
+        )
+        outsider_message_post = await client.post(
+            "/api/v1/matches/match-alpha/group-chats/group-chat-1/messages",
+            json={
+                "match_id": "match-alpha",
+                "tick": 142,
+                "content": "Let me in.",
+            },
+            headers=_auth_headers_for_player("player-3"),
+        )
+        direct_response = await client.post(
+            "/api/v1/matches/match-alpha/messages",
+            json=_message_payload(
+                channel="direct",
+                recipient_id="player-1",
+                content="Direct message still works.",
+            ),
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+    assert create_response.status_code == HTTPStatus.ACCEPTED
+    assert create_response.json() == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "group_chat": {
+            "group_chat_id": "group-chat-1",
+            "name": "War Council",
+            "member_ids": ["player-1", "player-2", "player-4"],
+            "created_by": "player-1",
+            "created_tick": 142,
+        },
+    }
+    assert creator_group_chats.status_code == HTTPStatus.OK
+    assert creator_group_chats.json() == {
+        "match_id": "match-alpha",
+        "player_id": "player-1",
+        "group_chats": [
+            {
+                "group_chat_id": "group-chat-1",
+                "name": "War Council",
+                "member_ids": ["player-1", "player-2", "player-4"],
+                "created_by": "player-1",
+                "created_tick": 142,
+            }
+        ],
+    }
+    assert invited_group_chats.status_code == HTTPStatus.OK
+    assert invited_group_chats.json() == {
+        "match_id": "match-alpha",
+        "player_id": "player-2",
+        "group_chats": [
+            {
+                "group_chat_id": "group-chat-1",
+                "name": "War Council",
+                "member_ids": ["player-1", "player-2", "player-4"],
+                "created_by": "player-1",
+                "created_tick": 142,
+            }
+        ],
+    }
+    assert outsider_group_chats.status_code == HTTPStatus.OK
+    assert outsider_group_chats.json() == {
+        "match_id": "match-alpha",
+        "player_id": "player-3",
+        "group_chats": [],
+    }
+    assert invited_message_response.status_code == HTTPStatus.ACCEPTED
+    assert invited_message_response.json() == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "group_chat_id": "group-chat-1",
+        "message": {
+            "message_id": 0,
+            "group_chat_id": "group-chat-1",
+            "sender_id": "player-2",
+            "tick": 142,
+            "content": "Ready to coordinate.",
+        },
+    }
+    assert creator_message_read.status_code == HTTPStatus.OK
+    assert creator_message_read.json() == {
+        "match_id": "match-alpha",
+        "group_chat_id": "group-chat-1",
+        "player_id": "player-1",
+        "messages": [
+            {
+                "message_id": 0,
+                "group_chat_id": "group-chat-1",
+                "sender_id": "player-2",
+                "tick": 142,
+                "content": "Ready to coordinate.",
+            }
+        ],
+    }
+    assert outsider_message_read.status_code == HTTPStatus.FORBIDDEN
+    assert outsider_message_read.json() == {
+        "error": {
+            "code": "group_chat_not_visible",
+            "message": "Group chat 'group-chat-1' is not visible to player 'player-3'.",
+        }
+    }
+    assert outsider_message_post.status_code == HTTPStatus.FORBIDDEN
+    assert outsider_message_post.json() == outsider_message_read.json()
+    assert direct_response.status_code == HTTPStatus.ACCEPTED
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+    assert len(record.messages) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("payload", "expected_error"),
+    [
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "name": "",
+                "member_ids": ["player-2"],
+            },
+            {
+                "code": "invalid_group_chat_name",
+                "message": "Group chat name must be at least 1 character long.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "name": "War Council",
+                "member_ids": [],
+            },
+            {
+                "code": "invalid_group_chat_members",
+                "message": "Group chat creation requires at least 1 invited member.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "name": "War Council",
+                "member_ids": ["player-2"],
+            },
+            {
+                "code": "invalid_group_chat_request",
+                "message": "Group chat request is missing required fields.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": "stale",
+                "name": "War Council",
+                "member_ids": ["player-2"],
+            },
+            {
+                "code": "invalid_group_chat_request",
+                "message": "Group chat request validation failed.",
+            },
+        ),
+    ],
+)
+async def test_group_chat_creation_validation_errors_are_structured(
+    app_client: AsyncClient,
+    payload: dict[str, Any],
+    expected_error: dict[str, str],
+) -> None:
+    async with app_client as client:
+        response = await client.post(
+            "/api/v1/matches/match-alpha/group-chats",
+            json=payload,
+            headers=_auth_headers_for_player("player-1"),
+        )
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert response.json() == {"error": expected_error}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("route_match_id", "payload", "expected_status", "expected_error"),
+    [
+        (
+            "match-missing",
+            _group_chat_create_payload(match_id="match-missing"),
+            HTTPStatus.NOT_FOUND,
+            {
+                "code": "match_not_found",
+                "message": "Match 'match-missing' was not found.",
+            },
+        ),
+        (
+            "match-alpha",
+            _group_chat_create_payload(match_id="match-beta"),
+            HTTPStatus.BAD_REQUEST,
+            {
+                "code": "match_id_mismatch",
+                "message": (
+                    "Group chat payload match_id 'match-beta' does not match route "
+                    "match 'match-alpha'."
+                ),
+            },
+        ),
+        (
+            "match-alpha",
+            _group_chat_create_payload(tick=141),
+            HTTPStatus.BAD_REQUEST,
+            {
+                "code": "tick_mismatch",
+                "message": (
+                    "Group chat payload tick '141' does not match current match tick '142'."
+                ),
+            },
+        ),
+        (
+            "match-alpha",
+            _group_chat_create_payload(member_ids=["player-missing"]),
+            HTTPStatus.NOT_FOUND,
+            {
+                "code": "player_not_found",
+                "message": "Player 'player-missing' was not found in match 'match-alpha'.",
+            },
+        ),
+    ],
+)
+async def test_group_chat_creation_rejects_invalid_route_contracts(
+    app_client: AsyncClient,
+    payload: dict[str, Any],
+    route_match_id: str,
+    expected_status: HTTPStatus,
+    expected_error: dict[str, str],
+) -> None:
+    async with app_client as client:
+        response = await client.post(
+            f"/api/v1/matches/{route_match_id}/group-chats",
+            json=payload,
+            headers=_auth_headers_for_player("player-1"),
+        )
+
+    assert response.status_code == expected_status
+    assert response.json() == {"error": expected_error}
+
+
+@pytest.mark.asyncio
+async def test_group_chat_message_routes_return_structured_validation_and_not_found_errors(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        create_response = await client.post(
+            "/api/v1/matches/match-alpha/group-chats",
+            json=_group_chat_create_payload(member_ids=["player-2"]),
+            headers=_auth_headers_for_player("player-1"),
+        )
+        missing_match_read = await client.get(
+            "/api/v1/matches/match-missing/group-chats/group-chat-1/messages",
+            headers=_auth_headers_for_player("player-1"),
+        )
+        missing_match_post = await client.post(
+            "/api/v1/matches/match-missing/group-chats/group-chat-1/messages",
+            json={
+                "match_id": "match-missing",
+                "tick": 142,
+                "content": "Still coordinating.",
+            },
+            headers=_auth_headers_for_player("player-1"),
+        )
+        mismatch_post = await client.post(
+            "/api/v1/matches/match-alpha/group-chats/group-chat-1/messages",
+            json={
+                "match_id": "match-beta",
+                "tick": 142,
+                "content": "Wrong match id.",
+            },
+            headers=_auth_headers_for_player("player-1"),
+        )
+        stale_tick_post = await client.post(
+            "/api/v1/matches/match-alpha/group-chats/group-chat-1/messages",
+            json={
+                "match_id": "match-alpha",
+                "tick": 141,
+                "content": "Out of date.",
+            },
+            headers=_auth_headers_for_player("player-1"),
+        )
+        empty_content_post = await client.post(
+            "/api/v1/matches/match-alpha/group-chats/group-chat-1/messages",
+            json={
+                "match_id": "match-alpha",
+                "tick": 142,
+                "content": "",
+            },
+            headers=_auth_headers_for_player("player-1"),
+        )
+        missing_field_post = await client.post(
+            "/api/v1/matches/match-alpha/group-chats/group-chat-1/messages",
+            json={
+                "match_id": "match-alpha",
+                "content": "Missing tick.",
+            },
+            headers=_auth_headers_for_player("player-1"),
+        )
+
+    assert create_response.status_code == HTTPStatus.ACCEPTED
+    assert missing_match_read.status_code == HTTPStatus.NOT_FOUND
+    assert missing_match_read.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match 'match-missing' was not found.",
+        }
+    }
+    assert missing_match_post.status_code == HTTPStatus.NOT_FOUND
+    assert missing_match_post.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match 'match-missing' was not found.",
+        }
+    }
+    assert mismatch_post.status_code == HTTPStatus.BAD_REQUEST
+    assert mismatch_post.json() == {
+        "error": {
+            "code": "match_id_mismatch",
+            "message": (
+                "Group chat message payload match_id 'match-beta' does not match route "
+                "match 'match-alpha'."
+            ),
+        }
+    }
+    assert stale_tick_post.status_code == HTTPStatus.BAD_REQUEST
+    assert stale_tick_post.json() == {
+        "error": {
+            "code": "tick_mismatch",
+            "message": "Message payload tick '141' does not match current match tick '142'.",
+        }
+    }
+    assert empty_content_post.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert empty_content_post.json() == {
+        "error": {
+            "code": "invalid_message_content",
+            "message": "Message content must be at least 1 character long.",
+        }
+    }
+    assert missing_field_post.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert missing_field_post.json() == {
+        "error": {
+            "code": "invalid_group_chat_request",
+            "message": "Group chat request is missing required fields.",
+        }
+    }
 
 
 @pytest.mark.asyncio

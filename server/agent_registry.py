@@ -12,6 +12,10 @@ from server.models.api import (
     AllianceMemberRecord,
     AllianceRecord,
     AuthenticatedAgentContext,
+    GroupChatCreateRequest,
+    GroupChatMessageCreateRequest,
+    GroupChatMessageRecord,
+    GroupChatRecord,
     MatchJoinResponse,
     MatchMessageCreateRequest,
     MatchMessageRecord,
@@ -65,6 +69,25 @@ class MatchAlliance:
     members: list[MatchAllianceMember] = field(default_factory=list)
 
 
+@dataclass(slots=True)
+class MatchGroupChatMessage:
+    message_id: int
+    group_chat_id: str
+    sender_id: str
+    tick: int
+    content: str
+
+
+@dataclass(slots=True)
+class MatchGroupChat:
+    group_chat_id: str
+    name: str
+    member_ids: list[str]
+    created_by: str
+    created_tick: int
+    messages: list[MatchGroupChatMessage] = field(default_factory=list)
+
+
 class TreatyTransitionError(Exception):
     def __init__(self, *, code: str, message: str) -> None:
         self.code = code
@@ -93,6 +116,13 @@ class MatchAccessError(Exception):
         super().__init__(message)
 
 
+class GroupChatAccessError(Exception):
+    def __init__(self, *, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
 @dataclass(slots=True)
 class MatchRecord:
     match_id: str
@@ -104,6 +134,7 @@ class MatchRecord:
     joined_agents: dict[str, str] = field(default_factory=dict)
     order_submissions: list[OrderEnvelope] = field(default_factory=list)
     messages: list[MatchMessage] = field(default_factory=list)
+    group_chats: list[MatchGroupChat] = field(default_factory=list)
     treaties: list[MatchTreaty] = field(default_factory=list)
     alliances: list[MatchAlliance] = field(default_factory=list)
     authenticated_agent_keys: list[AuthenticatedAgentKeyRecord] = field(default_factory=list)
@@ -161,6 +192,26 @@ class InMemoryMatchRegistry:
                     content=message.content,
                 )
                 for message in record.messages
+            ],
+            group_chats=[
+                MatchGroupChat(
+                    group_chat_id=group_chat.group_chat_id,
+                    name=group_chat.name,
+                    member_ids=list(group_chat.member_ids),
+                    created_by=group_chat.created_by,
+                    created_tick=group_chat.created_tick,
+                    messages=[
+                        MatchGroupChatMessage(
+                            message_id=message.message_id,
+                            group_chat_id=message.group_chat_id,
+                            sender_id=message.sender_id,
+                            tick=message.tick,
+                            content=message.content,
+                        )
+                        for message in group_chat.messages
+                    ],
+                )
+                for group_chat in record.group_chats
             ],
             treaties=[
                 MatchTreaty(
@@ -336,6 +387,89 @@ class InMemoryMatchRegistry:
             channel=stored_message.channel,
             sender_id=stored_message.sender_id,
             recipient_id=stored_message.recipient_id,
+            tick=stored_message.tick,
+            content=stored_message.content,
+        )
+
+    def create_group_chat(
+        self,
+        *,
+        match_id: str,
+        request: GroupChatCreateRequest,
+        creator_id: str,
+    ) -> GroupChatRecord:
+        record = self._matches[match_id]
+        member_ids = sorted({creator_id, *request.member_ids})
+        stored_group_chat = MatchGroupChat(
+            group_chat_id=self._next_group_chat_id(record.group_chats),
+            name=request.name,
+            member_ids=member_ids,
+            created_by=creator_id,
+            created_tick=request.tick,
+        )
+        record.group_chats.append(stored_group_chat)
+        return self._to_group_chat_record(stored_group_chat)
+
+    def list_visible_group_chats(self, *, match_id: str, player_id: str) -> list[GroupChatRecord]:
+        record = self._matches.get(match_id)
+        if record is None:
+            return []
+
+        visible_group_chats = [
+            self._to_group_chat_record(group_chat)
+            for group_chat in record.group_chats
+            if player_id in group_chat.member_ids
+        ]
+        return sorted(visible_group_chats, key=lambda group_chat: group_chat.group_chat_id)
+
+    def list_group_chat_messages(
+        self,
+        *,
+        match_id: str,
+        group_chat_id: str,
+        player_id: str,
+    ) -> list[GroupChatMessageRecord]:
+        group_chat = self._require_group_chat_member(
+            match_id=match_id,
+            group_chat_id=group_chat_id,
+            player_id=player_id,
+        )
+        return [
+            GroupChatMessageRecord(
+                message_id=message.message_id,
+                group_chat_id=message.group_chat_id,
+                sender_id=message.sender_id,
+                tick=message.tick,
+                content=message.content,
+            )
+            for message in group_chat.messages
+        ]
+
+    def record_group_chat_message(
+        self,
+        *,
+        match_id: str,
+        group_chat_id: str,
+        message: GroupChatMessageCreateRequest,
+        sender_id: str,
+    ) -> GroupChatMessageRecord:
+        group_chat = self._require_group_chat_member(
+            match_id=match_id,
+            group_chat_id=group_chat_id,
+            player_id=sender_id,
+        )
+        stored_message = MatchGroupChatMessage(
+            message_id=len(group_chat.messages),
+            group_chat_id=group_chat.group_chat_id,
+            sender_id=sender_id,
+            tick=message.tick,
+            content=message.content,
+        )
+        group_chat.messages.append(stored_message)
+        return GroupChatMessageRecord(
+            message_id=stored_message.message_id,
+            group_chat_id=stored_message.group_chat_id,
+            sender_id=stored_message.sender_id,
             tick=stored_message.tick,
             content=stored_message.content,
         )
@@ -667,6 +801,13 @@ class InMemoryMatchRegistry:
             next_index += 1
         return f"alliance-{next_index}"
 
+    def _next_group_chat_id(self, group_chats: list[MatchGroupChat]) -> str:
+        next_index = 1
+        existing_group_chat_ids = {group_chat.group_chat_id for group_chat in group_chats}
+        while f"group-chat-{next_index}" in existing_group_chat_ids:
+            next_index += 1
+        return f"group-chat-{next_index}"
+
     def _to_treaty_record(self, treaty: MatchTreaty) -> TreatyRecord:
         return TreatyRecord(
             treaty_id=treaty.treaty_id,
@@ -695,6 +836,38 @@ class InMemoryMatchRegistry:
                 for member in sorted(alliance.members, key=lambda member: member.player_id)
             ],
         )
+
+    def _to_group_chat_record(self, group_chat: MatchGroupChat) -> GroupChatRecord:
+        return GroupChatRecord(
+            group_chat_id=group_chat.group_chat_id,
+            name=group_chat.name,
+            member_ids=list(group_chat.member_ids),
+            created_by=group_chat.created_by,
+            created_tick=group_chat.created_tick,
+        )
+
+    def _require_group_chat_member(
+        self,
+        *,
+        match_id: str,
+        group_chat_id: str,
+        player_id: str,
+    ) -> MatchGroupChat:
+        record = self._matches[match_id]
+        group_chat = next(
+            (
+                group_chat
+                for group_chat in record.group_chats
+                if group_chat.group_chat_id == group_chat_id
+            ),
+            None,
+        )
+        if group_chat is None or player_id not in group_chat.member_ids:
+            raise GroupChatAccessError(
+                code="group_chat_not_visible",
+                message=f"Group chat '{group_chat_id}' is not visible to player '{player_id}'.",
+            )
+        return group_chat
 
     def _derive_alliances_from_state(self, state: MatchState) -> list[MatchAlliance]:
         memberships: dict[str, list[str]] = {}

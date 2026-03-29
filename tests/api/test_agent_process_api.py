@@ -423,3 +423,72 @@ def test_running_app_rejects_stale_and_future_messages_without_mutation(
         "player_id": "player-2",
         "messages": [],
     }
+
+
+def test_running_app_processes_group_chat_visibility_and_member_posting(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        create_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "name": "Alliance Backchannel",
+                "member_ids": ["player-3"],
+            },
+            headers=_headers(),
+        )
+        invited_group_chats = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats",
+            headers=_headers("agent-player-3"),
+        )
+        invited_message_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats/group-chat-1/messages",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "content": "Confirmed.",
+            },
+            headers=_headers("agent-player-3"),
+        )
+
+    assert create_response.status_code == HTTPStatus.ACCEPTED
+    assert create_response.json() == {
+        "status": "accepted",
+        "match_id": running_seeded_app.primary_match_id,
+        "group_chat": {
+            "group_chat_id": "group-chat-1",
+            "name": "Alliance Backchannel",
+            "member_ids": ["player-2", "player-3"],
+            "created_by": "player-2",
+            "created_tick": 142,
+        },
+    }
+    assert invited_group_chats.status_code == HTTPStatus.OK
+    assert invited_group_chats.json() == {
+        "match_id": running_seeded_app.primary_match_id,
+        "player_id": "player-3",
+        "group_chats": [
+            {
+                "group_chat_id": "group-chat-1",
+                "name": "Alliance Backchannel",
+                "member_ids": ["player-2", "player-3"],
+                "created_by": "player-2",
+                "created_tick": 142,
+            }
+        ],
+    }
+    assert invited_message_response.status_code == HTTPStatus.ACCEPTED
+    assert invited_message_response.json() == {
+        "status": "accepted",
+        "match_id": running_seeded_app.primary_match_id,
+        "group_chat_id": "group-chat-1",
+        "message": {
+            "message_id": 0,
+            "group_chat_id": "group-chat-1",
+            "sender_id": "player-3",
+            "tick": 142,
+            "content": "Confirmed.",
+        },
+    }
