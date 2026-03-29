@@ -67,8 +67,8 @@ development_status:
   11-3-add-a-large-batch-simulation-regression-harness-with-invariant-checks: done
   11-4-add-critical-api-end-to-end-tests-for-agent-gameplay-journeys: done
 
-  epic-13: in-progress
+  epic-13: done
   13-1-add-agent-facing-match-message-inbox-and-send-endpoints: done
   13-2-add-public-treaty-status-and-lifecycle-endpoints: done
   13-3-add-alliance-create-join-leave-endpoints-with-deterministic-status-views: done
-  13-4-add-match-join-and-lightweight-agent-profile-scaffolding: backlog
+  13-4-add-match-join-and-lightweight-agent-profile-scaffolding: done
