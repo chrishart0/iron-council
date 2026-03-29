@@ -553,6 +553,8 @@ So that the first agent workflows are validated through the actual FastAPI bound
 
 Correct the current gap between feature implementation and real environment validation by establishing a high-quality local developer stack with containerized services, real database lifecycle management, deterministic seed data, migration discipline, and test isolation that works across parallel worktrees.
 
+Epic 11.4 already covered in-process FastAPI journey tests through the ASGI app boundary. Epic 12 remains necessary because the project still lacks per-worktree isolated databases, deterministic reset-and-seed workflows, and real running-app validation against a database-backed environment.
+
 ### Story 12.1: Add a local support-services stack for database-backed development and validation
 
 As a server developer,
