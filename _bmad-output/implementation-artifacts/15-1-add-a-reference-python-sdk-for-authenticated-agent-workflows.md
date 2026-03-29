@@ -71,15 +71,22 @@ GPT-5 Codex
 - Green: `uv sync --extra dev --frozen`
 - Green: `make format`
 - Green: `make quality`
+- Red: `uv run pytest -o addopts='' tests/agent_sdk/test_python_client.py`
+- Green: `uv run pytest -o addopts='' tests/agent_sdk/test_python_client.py`
+- Green: `uv run pytest -o addopts='' tests/e2e/test_agent_sdk_smoke.py`
+- Green: `make quality`
+- Green: `rm -f .coverage .coverage.* && make quality`
 
 ### Completion Notes List
 
 - Added `IronCouncilClient` and `IronCouncilApiError` under `agent-sdk/python/iron_council_client.py` as a narrow synchronous reference SDK over the authenticated agent REST API.
-- Reused the server's public Pydantic response and request models for stable typed parsing without coupling the SDK to server internals beyond the public contract layer.
+- Kept the SDK self-contained by inlining the minimal public request and response models it needs under `agent-sdk/python/iron_council_client.py`, removing the import-time dependency on `server.models.*`.
 - Added behavior-first in-process contract tests for match, profile, join, state, orders, messages, treaties, alliances, structured API errors, and transport failures.
 - Added a real-process smoke test that exercises profile, join, state, and order submission through `running_seeded_app`.
 - Extended Ruff, mypy, and coverage configuration so `agent-sdk/python` is part of the standard quality harness.
 - Verified the repository quality gate passes with the SDK included and captured the initial red-phase evidence from the missing SDK file failure.
+- Simplified the SDK request path to a sync-only design with optional injected synchronous `session` support for tests, replacing the previous async-transport branch and `asyncio.run(...)` bridge.
+- Kept the quality gate clean by preventing the standalone-import subprocess test from inheriting coverage env, then reran `make quality` from a clean `.coverage*` state.
 
 ### File List
 
@@ -96,3 +103,4 @@ GPT-5 Codex
 
 - 2026-03-29 17:55 UTC: Drafted Story 15.1 for the reference Python SDK.
 - 2026-03-29 18:31 UTC: Added the reference Python SDK, contract tests, real-process smoke coverage, and quality-harness updates; story completed.
+- 2026-03-29 17:17 UTC: Follow-up fix removed `server.models` coupling from the SDK, replaced async transport handling with injected sync session support, and revalidated targeted tests plus the quality gate.

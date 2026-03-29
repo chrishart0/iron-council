@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from copy import deepcopy
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
-from httpx import ASGITransport
+from fastapi.testclient import TestClient
 from server.agent_registry import (
     InMemoryMatchRegistry,
     build_seeded_agent_api_key,
@@ -49,11 +53,47 @@ def sdk_module() -> Any:
 @pytest.fixture
 def client(sdk_module: Any, seeded_registry: InMemoryMatchRegistry) -> Any:
     app = create_app(match_registry=seeded_registry)
-    return sdk_module.IronCouncilClient(
-        base_url="http://testserver",
-        api_key=build_seeded_agent_api_key("agent-player-2"),
-        transport=ASGITransport(app=app),
-    )
+    with TestClient(app, base_url="http://testserver") as session:
+        yield sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=build_seeded_agent_api_key("agent-player-2"),
+            session=session,
+        )
+
+
+def test_sdk_module_is_importable_without_repo_server_package() -> None:
+    sdk_dir = Path(__file__).resolve().parents[2] / "agent-sdk/python"
+    import_script = """
+import builtins
+
+real_import = builtins.__import__
+
+def blocked_import(name, *args, **kwargs):
+    if name == "server" or name.startswith("server."):
+        raise ModuleNotFoundError("server blocked for standalone SDK import")
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = blocked_import
+import iron_council_client
+"""
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        isolated_path = os.pathsep.join([str(sdk_dir)])
+        isolated_env = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith("COVERAGE") and not key.startswith("COV_CORE")
+        }
+        monkeypatch.chdir(Path("/tmp"))
+        result = subprocess.run(
+            [sys.executable, "-c", import_script],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**isolated_env, "PYTHONPATH": isolated_path},
+        )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_sdk_profile_and_match_methods_return_typed_authenticated_contracts(
@@ -137,33 +177,42 @@ def test_sdk_wraps_structured_api_failures_without_leaking_api_key(
 ) -> None:
     app = create_app(match_registry=seeded_registry)
     api_key = build_seeded_agent_api_key("agent-player-2")
-    client = sdk_module.IronCouncilClient(
-        base_url="http://testserver",
-        api_key=api_key,
-        transport=ASGITransport(app=app),
-    )
+    with TestClient(app, base_url="http://testserver") as session:
+        client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=api_key,
+            session=session,
+        )
 
-    with pytest.raises(sdk_module.IronCouncilApiError) as exc_info:
-        client.get_match_state("match-missing")
+        with pytest.raises(sdk_module.IronCouncilApiError) as exc_info:
+            client.get_match_state("match-missing")
 
-    error = exc_info.value
-    assert error.status_code == HTTPStatus.NOT_FOUND
-    assert error.error_code == "match_not_found"
-    assert error.message == "Match 'match-missing' was not found."
-    assert api_key not in repr(client)
-    assert api_key not in str(error)
-    assert api_key not in repr(error)
+        error = exc_info.value
+        assert error.status_code == HTTPStatus.NOT_FOUND
+        assert error.error_code == "match_not_found"
+        assert error.message == "Match 'match-missing' was not found."
+        assert api_key not in repr(client)
+        assert api_key not in str(error)
+        assert api_key not in repr(error)
 
 
 def test_sdk_wraps_transport_failures_in_clear_api_error(sdk_module: Any) -> None:
-    class FailingTransport(httpx.BaseTransport):
-        def handle_request(self, request: httpx.Request) -> httpx.Response:
+    class FailingSession:
+        def request(
+            self,
+            method: str,
+            url: str,
+            *,
+            headers: dict[str, str] | None = None,
+            json: Any = None,
+        ) -> httpx.Response:
+            request = httpx.Request(method, url, headers=headers, json=json)
             raise httpx.ConnectError("boom", request=request)
 
     client = sdk_module.IronCouncilClient(
         base_url="http://testserver",
         api_key=build_seeded_agent_api_key("agent-player-2"),
-        transport=FailingTransport(),
+        session=FailingSession(),
     )
 
     with pytest.raises(sdk_module.IronCouncilApiError) as exc_info:
