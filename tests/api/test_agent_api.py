@@ -58,6 +58,23 @@ def _treaty_payload(
     }
 
 
+def _alliance_payload(
+    *,
+    match_id: str = "match-alpha",
+    player_id: str = "player-3",
+    action: str = "create",
+    alliance_id: str | None = None,
+    name: str | None = "Northern Pact",
+) -> dict[str, Any]:
+    return {
+        "match_id": match_id,
+        "player_id": player_id,
+        "action": action,
+        "alliance_id": alliance_id,
+        "name": name,
+    }
+
+
 @pytest.fixture
 def seeded_registry() -> InMemoryMatchRegistry:
     registry = InMemoryMatchRegistry()
@@ -1200,6 +1217,396 @@ async def test_get_treaties_rejects_unknown_match(
 ) -> None:
     async with app_client as client:
         response = await client.get("/api/v1/matches/match-missing/treaties")
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match 'match-missing' was not found.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_alliance_endpoints_expose_stable_openapi_contracts(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        response = await client.get("/openapi.json")
+
+    assert response.status_code == HTTPStatus.OK
+    paths = response.json()["paths"]
+    assert paths["/api/v1/matches/{match_id}/alliances"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/AllianceListResponse"}
+    assert paths["/api/v1/matches/{match_id}/alliances"]["get"]["responses"]["404"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/matches/{match_id}/alliances"]["post"]["responses"]["202"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/AllianceActionAcceptanceResponse"}
+    assert paths["/api/v1/matches/{match_id}/alliances"]["post"]["responses"]["400"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/matches/{match_id}/alliances"]["post"]["responses"]["404"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/matches/{match_id}/alliances"]["post"]["responses"]["422"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+
+
+@pytest.mark.asyncio
+async def test_alliance_lifecycle_reads_are_deterministic_and_update_canonical_membership(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    create_payload = _alliance_payload(player_id="player-3", action="create", name="Northern Pact")
+    join_payload = _alliance_payload(
+        player_id="player-4",
+        action="join",
+        alliance_id="alliance-1",
+        name=None,
+    )
+    leave_payload = _alliance_payload(
+        player_id="player-4",
+        action="leave",
+        alliance_id=None,
+        name=None,
+    )
+
+    async with app_client as client:
+        initial_read = await client.get("/api/v1/matches/match-alpha/alliances")
+        create_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=create_payload,
+        )
+        after_create_read = await client.get("/api/v1/matches/match-alpha/alliances")
+        after_create_state = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            params={"player_id": "player-3"},
+        )
+        join_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=join_payload,
+        )
+        first_join_read = await client.get("/api/v1/matches/match-alpha/alliances")
+        second_join_read = await client.get("/api/v1/matches/match-alpha/alliances")
+        joined_state = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            params={"player_id": "player-3"},
+        )
+        leave_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=leave_payload,
+        )
+        first_leave_read = await client.get("/api/v1/matches/match-alpha/alliances")
+        second_leave_read = await client.get("/api/v1/matches/match-alpha/alliances")
+        after_leave_state = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            params={"player_id": "player-3"},
+        )
+
+    assert initial_read.status_code == HTTPStatus.OK
+    assert initial_read.json() == {
+        "match_id": "match-alpha",
+        "alliances": [
+            {
+                "alliance_id": "alliance-red",
+                "name": "alliance-red",
+                "leader_id": "player-1",
+                "formed_tick": 142,
+                "members": [
+                    {"player_id": "player-1", "joined_tick": 142},
+                    {"player_id": "player-2", "joined_tick": 142},
+                ],
+            }
+        ],
+    }
+
+    assert create_response.status_code == HTTPStatus.ACCEPTED
+    assert create_response.json() == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "player_id": "player-3",
+        "alliance": {
+            "alliance_id": "alliance-1",
+            "name": "Northern Pact",
+            "leader_id": "player-3",
+            "formed_tick": 142,
+            "members": [{"player_id": "player-3", "joined_tick": 142}],
+        },
+    }
+    assert after_create_read.status_code == HTTPStatus.OK
+    assert after_create_read.json() == {
+        "match_id": "match-alpha",
+        "alliances": [
+            create_response.json()["alliance"],
+            initial_read.json()["alliances"][0],
+        ],
+    }
+    assert after_create_state.status_code == HTTPStatus.OK
+    assert after_create_state.json()["victory"] == {
+        "leading_alliance": "alliance-red",
+        "cities_held": 2,
+        "threshold": 13,
+        "countdown_ticks_remaining": None,
+    }
+
+    assert join_response.status_code == HTTPStatus.ACCEPTED
+    assert join_response.json() == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "player_id": "player-4",
+        "alliance": {
+            "alliance_id": "alliance-1",
+            "name": "Northern Pact",
+            "leader_id": "player-3",
+            "formed_tick": 142,
+            "members": [
+                {"player_id": "player-3", "joined_tick": 142},
+                {"player_id": "player-4", "joined_tick": 142},
+            ],
+        },
+    }
+    assert first_join_read.status_code == HTTPStatus.OK
+    assert first_join_read.json() == {
+        "match_id": "match-alpha",
+        "alliances": [
+            join_response.json()["alliance"],
+            initial_read.json()["alliances"][0],
+        ],
+    }
+    assert second_join_read.json() == first_join_read.json()
+    assert joined_state.status_code == HTTPStatus.OK
+    assert joined_state.json()["alliance_id"] == "alliance-1"
+    assert joined_state.json()["alliance_members"] == ["player-3", "player-4"]
+    assert joined_state.json()["victory"] == {
+        "leading_alliance": None,
+        "cities_held": 2,
+        "threshold": 13,
+        "countdown_ticks_remaining": None,
+    }
+
+    assert leave_response.status_code == HTTPStatus.ACCEPTED
+    assert leave_response.json() == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "player_id": "player-4",
+        "alliance": {
+            "alliance_id": "alliance-1",
+            "name": "Northern Pact",
+            "leader_id": "player-3",
+            "formed_tick": 142,
+            "members": [{"player_id": "player-3", "joined_tick": 142}],
+        },
+    }
+    assert first_leave_read.status_code == HTTPStatus.OK
+    assert first_leave_read.json() == {
+        "match_id": "match-alpha",
+        "alliances": [
+            leave_response.json()["alliance"],
+            initial_read.json()["alliances"][0],
+        ],
+    }
+    assert second_leave_read.json() == first_leave_read.json()
+    assert after_leave_state.status_code == HTTPStatus.OK
+    assert after_leave_state.json()["victory"] == {
+        "leading_alliance": "alliance-red",
+        "cities_held": 2,
+        "threshold": 13,
+        "countdown_ticks_remaining": None,
+    }
+
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+    assert record.state.players["player-3"].alliance_id == "alliance-1"
+    assert record.state.players["player-4"].alliance_id is None
+
+
+@pytest.mark.asyncio
+async def test_alliance_actions_reject_invalid_requests_without_mutating_state(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    before_state = _match_state_dump(seeded_registry)
+
+    async with app_client as client:
+        unknown_match_response = await client.post(
+            "/api/v1/matches/match-missing/alliances",
+            json=_alliance_payload(match_id="match-missing"),
+        )
+        mismatch_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=_alliance_payload(match_id="match-beta"),
+        )
+        unknown_player_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=_alliance_payload(player_id="player-missing"),
+        )
+        already_allied_create_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=_alliance_payload(player_id="player-1", action="create", name="Second Pact"),
+        )
+        unknown_alliance_join_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=_alliance_payload(
+                player_id="player-3",
+                action="join",
+                alliance_id="alliance-missing",
+                name=None,
+            ),
+        )
+        not_allied_leave_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=_alliance_payload(
+                player_id="player-5", action="leave", alliance_id=None, name=None
+            ),
+        )
+
+    assert unknown_match_response.status_code == HTTPStatus.NOT_FOUND
+    assert unknown_match_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match 'match-missing' was not found.",
+        }
+    }
+    assert mismatch_response.status_code == HTTPStatus.BAD_REQUEST
+    assert mismatch_response.json() == {
+        "error": {
+            "code": "match_id_mismatch",
+            "message": (
+                "Alliance payload match_id 'match-beta' does not match route match 'match-alpha'."
+            ),
+        }
+    }
+    assert unknown_player_response.status_code == HTTPStatus.NOT_FOUND
+    assert unknown_player_response.json() == {
+        "error": {
+            "code": "player_not_found",
+            "message": "Player 'player-missing' was not found in match 'match-alpha'.",
+        }
+    }
+    assert already_allied_create_response.status_code == HTTPStatus.BAD_REQUEST
+    assert already_allied_create_response.json() == {
+        "error": {
+            "code": "player_already_in_alliance",
+            "message": "Player 'player-1' is already in alliance 'alliance-red'.",
+        }
+    }
+    assert unknown_alliance_join_response.status_code == HTTPStatus.BAD_REQUEST
+    assert unknown_alliance_join_response.json() == {
+        "error": {
+            "code": "alliance_not_found",
+            "message": "Alliance 'alliance-missing' was not found in match 'match-alpha'.",
+        }
+    }
+    assert not_allied_leave_response.status_code == HTTPStatus.BAD_REQUEST
+    assert not_allied_leave_response.json() == {
+        "error": {
+            "code": "player_not_in_alliance",
+            "message": "Player 'player-5' is not currently in an alliance.",
+        }
+    }
+
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+    assert record.messages == []
+    assert _match_state_dump(seeded_registry) == before_state
+
+
+@pytest.mark.asyncio
+async def test_post_alliances_maps_validation_failures_to_structured_api_errors(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    before_state = _match_state_dump(seeded_registry)
+
+    async with app_client as client:
+        invalid_action_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=_alliance_payload(action="invite"),
+        )
+        missing_fields_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json={},
+        )
+        create_with_alliance_id_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=_alliance_payload(alliance_id="alliance-stray"),
+        )
+        join_missing_alliance_id_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=_alliance_payload(action="join", alliance_id=None, name=None),
+        )
+        join_with_name_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=_alliance_payload(action="join", alliance_id="alliance-red", name="Stray Name"),
+        )
+        leave_with_alliance_id_response = await client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=_alliance_payload(
+                player_id="player-1",
+                action="leave",
+                alliance_id="alliance-red",
+                name=None,
+            ),
+        )
+
+    assert invalid_action_response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert invalid_action_response.json() == {
+        "error": {
+            "code": "invalid_alliance_action",
+            "message": "Alliance action must be one of: create, join, leave.",
+        }
+    }
+    assert missing_fields_response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert missing_fields_response.json() == {
+        "error": {
+            "code": "invalid_alliance_request",
+            "message": "Alliance request is missing required fields.",
+        }
+    }
+    assert create_with_alliance_id_response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert create_with_alliance_id_response.json() == {
+        "error": {
+            "code": "invalid_alliance_request",
+            "message": "Alliance create does not accept alliance_id.",
+        }
+    }
+    assert join_missing_alliance_id_response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert join_missing_alliance_id_response.json() == {
+        "error": {
+            "code": "invalid_alliance_request",
+            "message": "Alliance join requires alliance_id.",
+        }
+    }
+    assert join_with_name_response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert join_with_name_response.json() == {
+        "error": {
+            "code": "invalid_alliance_request",
+            "message": "Alliance join does not accept name.",
+        }
+    }
+    assert leave_with_alliance_id_response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert leave_with_alliance_id_response.json() == {
+        "error": {
+            "code": "invalid_alliance_request",
+            "message": "Alliance leave does not accept alliance_id.",
+        }
+    }
+
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+    assert _match_state_dump(seeded_registry) == before_state
+
+
+@pytest.mark.asyncio
+async def test_get_alliances_rejects_unknown_match(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        response = await client.get("/api/v1/matches/match-missing/alliances")
 
     assert response.status_code == HTTPStatus.NOT_FOUND
     assert response.json() == {

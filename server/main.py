@@ -10,10 +10,17 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from server import __version__
-from server.agent_registry import InMemoryMatchRegistry, TreatyTransitionError
+from server.agent_registry import (
+    AllianceTransitionError,
+    InMemoryMatchRegistry,
+    TreatyTransitionError,
+)
 from server.db.registry import load_match_registry_from_database
 from server.fog import project_agent_state
 from server.models.api import (
+    AllianceActionAcceptanceResponse,
+    AllianceActionRequest,
+    AllianceListResponse,
     ApiErrorDetail,
     ApiErrorResponse,
     MatchListResponse,
@@ -110,6 +117,58 @@ def _treaty_validation_error_response(exc: RequestValidationError) -> JSONRespon
     )
 
 
+def _alliance_validation_error_response(exc: RequestValidationError) -> JSONResponse:
+    for error in exc.errors():
+        location = list(error.get("loc", ()))
+        error_type = error.get("type")
+        error_message = str(error.get("msg", "")).lower()
+        if location and location[0] == "body" and error_type == "missing":
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance request is missing required fields.",
+            )
+        if location == ["body", "action"] and error_type == "literal_error":
+            return _build_validation_error_response(
+                code="invalid_alliance_action",
+                message="Alliance action must be one of: create, join, leave.",
+            )
+        if "alliance create does not accept alliance_id" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance create does not accept alliance_id.",
+            )
+        if "alliance create requires name" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance create requires name.",
+            )
+        if "alliance join requires alliance_id" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance join requires alliance_id.",
+            )
+        if "alliance join does not accept name" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance join does not accept name.",
+            )
+        if "alliance leave does not accept alliance_id" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance leave does not accept alliance_id.",
+            )
+        if "alliance leave does not accept name" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance leave does not accept name.",
+            )
+
+    return _build_validation_error_response(
+        code="invalid_alliance_request",
+        message="Alliance request validation failed.",
+    )
+
+
 def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAPI:
     app = FastAPI(title="iron-counsil-server", version=__version__)
     app.state.match_registry = match_registry or _load_default_match_registry()
@@ -132,6 +191,10 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
             "/treaties"
         ):
             return _treaty_validation_error_response(exc)
+        if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
+            "/alliances"
+        ):
+            return _alliance_validation_error_response(exc)
         return await request_validation_exception_handler(request, exc)
 
     @app.get("/")
@@ -441,6 +504,84 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
             status="accepted",
             match_id=match_id,
             treaty=treaty,
+        )
+
+    @api_router.get(
+        "/matches/{match_id}/alliances",
+        response_model=AllianceListResponse,
+        responses={HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA},
+    )
+    async def get_match_alliances(
+        match_id: str,
+        registry: MatchRegistryDependency,
+    ) -> AllianceListResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+
+        return AllianceListResponse(
+            match_id=match_id,
+            alliances=registry.list_alliances(match_id=match_id),
+        )
+
+    @api_router.post(
+        "/matches/{match_id}/alliances",
+        response_model=AllianceActionAcceptanceResponse,
+        status_code=HTTPStatus.ACCEPTED,
+        responses={
+            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def post_match_alliance(
+        match_id: str,
+        alliance_action: AllianceActionRequest,
+        registry: MatchRegistryDependency,
+    ) -> AllianceActionAcceptanceResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+        if alliance_action.match_id != match_id:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="match_id_mismatch",
+                message=(
+                    f"Alliance payload match_id '{alliance_action.match_id}' does not match route "
+                    f"match '{match_id}'."
+                ),
+            )
+        if alliance_action.player_id not in record.state.players:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="player_not_found",
+                message=(
+                    f"Player '{alliance_action.player_id}' was not found in match '{match_id}'."
+                ),
+            )
+
+        try:
+            alliance = registry.apply_alliance_action(match_id=match_id, action=alliance_action)
+        except AllianceTransitionError as exc:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code=exc.code,
+                message=exc.message,
+            ) from exc
+
+        return AllianceActionAcceptanceResponse(
+            status="accepted",
+            match_id=match_id,
+            player_id=alliance_action.player_id,
+            alliance=alliance,
         )
 
     app.include_router(api_router)

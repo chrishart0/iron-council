@@ -200,6 +200,103 @@ def test_running_app_processes_treaty_reads_and_public_announcements(
     ]
 
 
+def test_running_app_processes_alliance_reads_and_membership_updates(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        create_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/alliances",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "player_id": "player-3",
+                "action": "create",
+                "alliance_id": None,
+                "name": "Northern Pact",
+            },
+        )
+        join_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/alliances",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "player_id": "player-4",
+                "action": "join",
+                "alliance_id": "alliance-1",
+                "name": None,
+            },
+        )
+        alliance_read = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/alliances"
+        )
+        player_three_state = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/state",
+            params={"player_id": "player-3"},
+        )
+
+    assert create_response.status_code == HTTPStatus.ACCEPTED
+    assert join_response.status_code == HTTPStatus.ACCEPTED
+    assert alliance_read.status_code == HTTPStatus.OK
+    assert alliance_read.json() == {
+        "match_id": running_seeded_app.primary_match_id,
+        "alliances": [
+            {
+                "alliance_id": "alliance-1",
+                "name": "Northern Pact",
+                "leader_id": "player-3",
+                "formed_tick": 142,
+                "members": [
+                    {"player_id": "player-3", "joined_tick": 142},
+                    {"player_id": "player-4", "joined_tick": 142},
+                ],
+            },
+            {
+                "alliance_id": "alliance-red",
+                "name": "Western Accord",
+                "leader_id": "player-1",
+                "formed_tick": 120,
+                "members": [
+                    {"player_id": "player-1", "joined_tick": 120},
+                    {"player_id": "player-2", "joined_tick": 120},
+                ],
+            },
+        ],
+    }
+    assert player_three_state.status_code == HTTPStatus.OK
+    assert player_three_state.json()["alliance_id"] == "alliance-1"
+    assert player_three_state.json()["alliance_members"] == ["player-3", "player-4"]
+    assert player_three_state.json()["victory"] == {
+        "leading_alliance": None,
+        "cities_held": 2,
+        "threshold": 13,
+        "countdown_ticks_remaining": None,
+    }
+
+
+def test_running_app_reads_seeded_alliance_metadata_from_db_registry(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        alliance_read = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/alliances"
+        )
+
+    assert alliance_read.status_code == HTTPStatus.OK
+    assert alliance_read.json() == {
+        "match_id": running_seeded_app.primary_match_id,
+        "alliances": [
+            {
+                "alliance_id": "alliance-red",
+                "name": "Western Accord",
+                "leader_id": "player-1",
+                "formed_tick": 120,
+                "members": [
+                    {"player_id": "player-1", "joined_tick": 120},
+                    {"player_id": "player-2", "joined_tick": 120},
+                ],
+            }
+        ],
+    }
+
+
 def test_running_app_rejects_stale_and_future_messages_without_mutation(
     running_seeded_app: RunningApp,
 ) -> None:

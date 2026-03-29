@@ -4,6 +4,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from server.models.api import (
+    AllianceActionRequest,
+    AllianceMemberRecord,
+    AllianceRecord,
     MatchMessageCreateRequest,
     MatchMessageRecord,
     MessageChannel,
@@ -41,7 +44,29 @@ class MatchTreaty:
     withdrawn_tick: int | None = None
 
 
+@dataclass(slots=True)
+class MatchAllianceMember:
+    player_id: str
+    joined_tick: int
+
+
+@dataclass(slots=True)
+class MatchAlliance:
+    alliance_id: str
+    name: str
+    leader_id: str
+    formed_tick: int
+    members: list[MatchAllianceMember] = field(default_factory=list)
+
+
 class TreatyTransitionError(Exception):
+    def __init__(self, *, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
+class AllianceTransitionError(Exception):
     def __init__(self, *, code: str, message: str) -> None:
         self.code = code
         self.message = message
@@ -57,6 +82,7 @@ class MatchRecord:
     order_submissions: list[OrderEnvelope] = field(default_factory=list)
     messages: list[MatchMessage] = field(default_factory=list)
     treaties: list[MatchTreaty] = field(default_factory=list)
+    alliances: list[MatchAlliance] = field(default_factory=list)
 
 
 class InMemoryMatchRegistry:
@@ -64,11 +90,12 @@ class InMemoryMatchRegistry:
         self._matches: dict[str, MatchRecord] = {}
 
     def seed_match(self, record: MatchRecord) -> None:
+        cloned_state = record.state.model_copy(deep=True)
         self._matches[record.match_id] = MatchRecord(
             match_id=record.match_id,
             status=record.status,
             tick_interval_seconds=record.tick_interval_seconds,
-            state=record.state.model_copy(deep=True),
+            state=cloned_state,
             order_submissions=[
                 submission.model_copy(deep=True) for submission in record.order_submissions
             ],
@@ -98,6 +125,26 @@ class InMemoryMatchRegistry:
                 )
                 for treaty in record.treaties
             ],
+            alliances=(
+                [
+                    MatchAlliance(
+                        alliance_id=alliance.alliance_id,
+                        name=alliance.name,
+                        leader_id=alliance.leader_id,
+                        formed_tick=alliance.formed_tick,
+                        members=[
+                            MatchAllianceMember(
+                                player_id=member.player_id,
+                                joined_tick=member.joined_tick,
+                            )
+                            for member in alliance.members
+                        ],
+                    )
+                    for alliance in record.alliances
+                ]
+                if record.alliances
+                else self._derive_alliances_from_state(cloned_state)
+            ),
         )
 
     def reset(self) -> None:
@@ -158,6 +205,129 @@ class InMemoryMatchRegistry:
             ),
         )
         return [self._to_treaty_record(treaty) for treaty in treaties]
+
+    def list_alliances(self, *, match_id: str) -> list[AllianceRecord]:
+        record = self._matches.get(match_id)
+        if record is None:
+            return []
+
+        alliances = sorted(record.alliances, key=lambda alliance: alliance.alliance_id)
+        return [self._to_alliance_record(alliance) for alliance in alliances]
+
+    def apply_alliance_action(
+        self,
+        *,
+        match_id: str,
+        action: AllianceActionRequest,
+    ) -> AllianceRecord | None:
+        record = self._matches[match_id]
+        player_state = record.state.players[action.player_id]
+        current_alliance_id = player_state.alliance_id
+
+        if action.action == "create":
+            if current_alliance_id is not None:
+                raise AllianceTransitionError(
+                    code="player_already_in_alliance",
+                    message=(
+                        f"Player '{action.player_id}' is already in alliance "
+                        f"'{current_alliance_id}'."
+                    ),
+                )
+            if action.name is None:
+                raise AllianceTransitionError(
+                    code="alliance_name_required",
+                    message="Alliance creation requires a non-empty name.",
+                )
+
+            stored_alliance = MatchAlliance(
+                alliance_id=self._next_alliance_id(record.alliances),
+                name=action.name,
+                leader_id=action.player_id,
+                formed_tick=record.state.tick,
+                members=[
+                    MatchAllianceMember(
+                        player_id=action.player_id,
+                        joined_tick=record.state.tick,
+                    )
+                ],
+            )
+            record.alliances.append(stored_alliance)
+            player_state.alliance_id = stored_alliance.alliance_id
+            self._sync_victory_state(record.state)
+            return self._to_alliance_record(stored_alliance)
+
+        if action.action == "join":
+            if current_alliance_id is not None:
+                raise AllianceTransitionError(
+                    code="player_already_in_alliance",
+                    message=(
+                        f"Player '{action.player_id}' is already in alliance "
+                        f"'{current_alliance_id}'."
+                    ),
+                )
+            if action.alliance_id is None:
+                raise AllianceTransitionError(
+                    code="alliance_id_required",
+                    message="Alliance join requires an alliance_id.",
+                )
+
+            join_alliance = self._find_alliance(
+                alliances=record.alliances,
+                alliance_id=action.alliance_id,
+            )
+            if join_alliance is None:
+                raise AllianceTransitionError(
+                    code="alliance_not_found",
+                    message=(
+                        f"Alliance '{action.alliance_id}' was not found in match '{match_id}'."
+                    ),
+                )
+
+            join_alliance.members.append(
+                MatchAllianceMember(
+                    player_id=action.player_id,
+                    joined_tick=record.state.tick,
+                )
+            )
+            player_state.alliance_id = join_alliance.alliance_id
+            self._sync_victory_state(record.state)
+            return self._to_alliance_record(join_alliance)
+
+        if current_alliance_id is None:
+            raise AllianceTransitionError(
+                code="player_not_in_alliance",
+                message=f"Player '{action.player_id}' is not currently in an alliance.",
+            )
+
+        leave_alliance = self._find_alliance(
+            alliances=record.alliances,
+            alliance_id=current_alliance_id,
+        )
+        if leave_alliance is None:
+            raise AllianceTransitionError(
+                code="alliance_not_found",
+                message=f"Alliance '{current_alliance_id}' was not found in match '{match_id}'.",
+            )
+
+        leave_alliance.members = [
+            member for member in leave_alliance.members if member.player_id != action.player_id
+        ]
+        player_state.alliance_id = None
+
+        if not leave_alliance.members:
+            record.alliances = [
+                alliance
+                for alliance in record.alliances
+                if alliance.alliance_id != leave_alliance.alliance_id
+            ]
+            self._sync_victory_state(record.state)
+            return None
+
+        if leave_alliance.leader_id == action.player_id:
+            leave_alliance.leader_id = min(member.player_id for member in leave_alliance.members)
+
+        self._sync_victory_state(record.state)
+        return self._to_alliance_record(leave_alliance)
 
     def apply_treaty_action(
         self,
@@ -327,6 +497,24 @@ class InMemoryMatchRegistry:
                 return treaty
         return None
 
+    def _find_alliance(
+        self,
+        *,
+        alliances: list[MatchAlliance],
+        alliance_id: str,
+    ) -> MatchAlliance | None:
+        for alliance in alliances:
+            if alliance.alliance_id == alliance_id:
+                return alliance
+        return None
+
+    def _next_alliance_id(self, alliances: list[MatchAlliance]) -> str:
+        next_index = 1
+        existing_alliance_ids = {alliance.alliance_id for alliance in alliances}
+        while f"alliance-{next_index}" in existing_alliance_ids:
+            next_index += 1
+        return f"alliance-{next_index}"
+
     def _to_treaty_record(self, treaty: MatchTreaty) -> TreatyRecord:
         return TreatyRecord(
             treaty_id=treaty.treaty_id,
@@ -340,6 +528,87 @@ class InMemoryMatchRegistry:
             withdrawn_by=treaty.withdrawn_by,
             withdrawn_tick=treaty.withdrawn_tick,
         )
+
+    def _to_alliance_record(self, alliance: MatchAlliance) -> AllianceRecord:
+        return AllianceRecord(
+            alliance_id=alliance.alliance_id,
+            name=alliance.name,
+            leader_id=alliance.leader_id,
+            formed_tick=alliance.formed_tick,
+            members=[
+                AllianceMemberRecord(
+                    player_id=member.player_id,
+                    joined_tick=member.joined_tick,
+                )
+                for member in sorted(alliance.members, key=lambda member: member.player_id)
+            ],
+        )
+
+    def _derive_alliances_from_state(self, state: MatchState) -> list[MatchAlliance]:
+        memberships: dict[str, list[str]] = {}
+        for player_id, player_state in state.players.items():
+            if player_state.alliance_id is None:
+                continue
+            memberships.setdefault(player_state.alliance_id, []).append(player_id)
+
+        alliances: list[MatchAlliance] = []
+        for alliance_id in sorted(memberships):
+            member_ids = sorted(memberships[alliance_id])
+            leader_id = member_ids[0]
+            alliances.append(
+                MatchAlliance(
+                    alliance_id=alliance_id,
+                    name=alliance_id,
+                    leader_id=leader_id,
+                    formed_tick=state.tick,
+                    members=[
+                        MatchAllianceMember(player_id=member_id, joined_tick=state.tick)
+                        for member_id in member_ids
+                    ],
+                )
+            )
+        return alliances
+
+    def _sync_victory_state(self, state: MatchState) -> None:
+        coalition_city_counts: dict[str, int] = {}
+        for city_state in state.cities.values():
+            if city_state.owner is None:
+                continue
+
+            player_state = state.players.get(city_state.owner)
+            if player_state is None:
+                continue
+
+            coalition_id = player_state.alliance_id or city_state.owner
+            coalition_city_counts[coalition_id] = coalition_city_counts.get(coalition_id, 0) + 1
+
+        if coalition_city_counts:
+            cities_held = max(coalition_city_counts.values())
+            leaders = [
+                coalition_id
+                for coalition_id, city_count in coalition_city_counts.items()
+                if city_count == cities_held
+            ]
+            leading_alliance = leaders[0] if len(leaders) == 1 else None
+        else:
+            cities_held = 0
+            leading_alliance = None
+
+        previous_leader = state.victory.leading_alliance
+        if leading_alliance is None or cities_held < state.victory.threshold:
+            countdown_ticks_remaining = None
+        elif previous_leader is None:
+            countdown_ticks_remaining = state.victory.threshold
+        elif previous_leader != leading_alliance:
+            countdown_ticks_remaining = None
+        elif state.victory.countdown_ticks_remaining is None:
+            countdown_ticks_remaining = state.victory.threshold
+        else:
+            countdown_ticks_remaining = state.victory.countdown_ticks_remaining
+
+        state.victory.leading_alliance = leading_alliance
+        state.victory.cities_held = cities_held
+        state.victory.countdown_ticks_remaining = countdown_ticks_remaining
 
 
 def build_seeded_match_records(
