@@ -50,12 +50,15 @@ GPT-5 Codex
 
 - `uv run --extra dev pytest --no-cov tests/test_settings.py tests/test_database_migrations.py tests/test_local_dev_docs.py tests/test_db_tooling.py`
 - `make quality`
+- `uv run --extra dev pytest --no-cov tests/test_database_migrations.py -k stable_tick_log_ids_on_postgres_repeated_runs`
+- `uv run --extra dev pytest --no-cov tests/test_database_migrations.py`
 
 ### Completion Notes List
 
 - Added deterministic worktree-scoped Postgres database URL derivation with optional `IRON_COUNCIL_DB_LANE` suffixing so sibling worktrees and parallel workers do not collide.
 - Added `server.db.tooling` plus `make db-setup` and `make db-reset` to provision a database, apply migrations, and load deterministic seed data through one stable workflow.
 - Seeded a realistic integration baseline across matches, api keys, alliances, players, messages, treaties, and tick log rows, and verified reset converges back to the same seeded snapshot.
+- Follow-up fix: seeded `tick_log.id` with a stable explicit value and synchronized the Postgres sequence after reseeding so repeated `db-setup` runs converge to the same dataset without breaking subsequent inserts.
 - Updated README workflow docs and sprint tracking after `make quality` passed.
 
 ### File List
@@ -76,3 +79,4 @@ GPT-5 Codex
 
 - 2026-03-28 14:57 UTC: Drafted Story 12.3 for deterministic seed/reset workflows and per-worktree DB isolation.
 - 2026-03-29 00:00 UTC: Implemented worktree-local deterministic database provisioning, seed/reset tooling, docs, and coverage-backed tests.
+- 2026-03-29 00:00 UTC: Added a regression for Postgres repeated setup runs and fixed `tick_log` seeding to keep deterministic IDs while advancing the backing sequence safely.

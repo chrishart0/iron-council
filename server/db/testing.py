@@ -69,6 +69,7 @@ def ensure_database_exists(database_url: str) -> None:
 
 def seed_database(database_url: str) -> None:
     engine = create_engine(database_url)
+    backend_name = make_url(database_url).get_backend_name()
     seed_timestamp = datetime(2026, 3, 29, 0, 0, tzinfo=UTC)
 
     with engine.begin() as connection:
@@ -266,14 +267,15 @@ def seed_database(database_url: str) -> None:
             text(
                 """
                 INSERT INTO tick_log (
-                    match_id, tick, state_snapshot, orders, events, created_at
+                    id, match_id, tick, state_snapshot, orders, events, created_at
                 ) VALUES (
-                    :match_id, :tick, :state_snapshot, :orders, :events, :created_at
+                    :id, :match_id, :tick, :state_snapshot, :orders, :events, :created_at
                 )
                 """
             ),
             [
                 {
+                    "id": 9001,
                     "match_id": "00000000-0000-0000-0000-000000000101",
                     "tick": 142,
                     "state_snapshot": '{"cities":{"london":{"owner":"Arthur","population":12}}}',
@@ -283,6 +285,18 @@ def seed_database(database_url: str) -> None:
                 }
             ],
         )
+        if backend_name == "postgresql":
+            connection.execute(
+                text(
+                    """
+                    SELECT setval(
+                        pg_get_serial_sequence('tick_log', 'id'),
+                        COALESCE((SELECT MAX(id) FROM tick_log), 1),
+                        true
+                    )
+                    """
+                )
+            )
 
 
 def _require_database_url(database_url: str | None) -> str:

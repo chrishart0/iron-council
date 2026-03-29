@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -157,6 +158,73 @@ def test_provision_seeded_database_converges_to_deterministic_data_after_reset(
     provision_seeded_database(database_url=database_url, reset=True)
 
     assert _seeded_database_snapshot(database_url) == baseline
+
+
+def test_seed_database_reuses_stable_tick_log_ids_on_postgres_repeated_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.tables: dict[str, list[dict[str, object]]] = {"tick_log": []}
+            self.next_tick_log_id = 1
+
+        def __enter__(self) -> FakeConnection:
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        def execute(
+            self,
+            statement: object,
+            parameters: Sequence[dict[str, object]] | dict[str, object] | None = None,
+        ) -> None:
+            sql = str(statement)
+            if sql.startswith("DELETE FROM "):
+                table_name = sql.removeprefix("DELETE FROM ").strip()
+                self.tables.setdefault(table_name, []).clear()
+                return
+
+            if "INSERT INTO tick_log" not in sql:
+                return
+
+            assert isinstance(parameters, list)
+            for row in parameters:
+                seeded_row = dict(row)
+                seeded_row.setdefault("id", self.next_tick_log_id)
+                self.next_tick_log_id += 1
+                self.tables["tick_log"].append(seeded_row)
+
+    class FakeEngine:
+        def __init__(self) -> None:
+            self.connection = FakeConnection()
+
+        def begin(self) -> FakeConnection:
+            return self.connection
+
+    engine = FakeEngine()
+    monkeypatch.setattr("server.db.testing.create_engine", lambda _database_url: engine)
+
+    from server.db.testing import seed_database
+
+    seed_database("postgresql://example/test_db")
+    first_run = tuple(engine.connection.tables["tick_log"])
+
+    seed_database("postgresql://example/test_db")
+    second_run = tuple(engine.connection.tables["tick_log"])
+
+    assert first_run == second_run
+    assert second_run == (
+        {
+            "id": 9001,
+            "match_id": "00000000-0000-0000-0000-000000000101",
+            "tick": 142,
+            "state_snapshot": '{"cities":{"london":{"owner":"Arthur","population":12}}}',
+            "orders": '{"movements":[{"army_id":"army-1","destination":"york"}]}',
+            "events": '{"summary":["Convoy secured","Trade revenue collected"]}',
+            "created_at": datetime(2026, 3, 29, 0, 0, tzinfo=UTC),
+        },
+    )
 
 
 def test_db_backed_test_fixture_applies_migrations_before_test_execution(
