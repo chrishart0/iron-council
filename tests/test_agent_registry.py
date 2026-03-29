@@ -10,6 +10,7 @@ from server.agent_registry import (
 )
 from server.models.api import AllianceActionRequest
 from server.models.domain import MatchStatus
+from server.models.orders import OrderEnvelope
 from server.models.state import MatchState
 
 
@@ -362,3 +363,118 @@ def test_reset_clears_seeded_matches_and_profiles() -> None:
     assert registry.list_matches() == []
     assert registry.get_match("match-alpha") is None
     assert registry.get_agent_profile("agent-player-2") is None
+
+
+def test_advance_match_tick_resolves_current_orders_and_keeps_future_submissions_queued() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-1",
+                "tick": 142,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "london", "troops": 5}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-1",
+                "tick": 143,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "london", "troops": 1}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+
+    registry.advance_match_tick("match-alpha")
+
+    match = registry.get_match("match-alpha")
+    assert match is not None
+    assert match.state.tick == 143
+    assert next(army for army in match.state.armies if army.id == "army-b").troops == 25
+    assert [submission.model_dump(mode="json") for submission in match.order_submissions] == [
+        {
+            "match_id": "match-alpha",
+            "player_id": "player-1",
+            "tick": 143,
+            "orders": {
+                "movements": [],
+                "recruitment": [{"city": "london", "troops": 1}],
+                "upgrades": [],
+                "transfers": [],
+            },
+        }
+    ]
+
+
+def test_advance_match_tick_combines_same_player_submissions_before_validation() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-1",
+                "tick": 142,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "london", "troops": 4}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-1",
+                "tick": 142,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "london", "troops": 4}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+
+    registry.advance_match_tick("match-alpha")
+
+    match = registry.get_match("match-alpha")
+    assert match is not None
+    assert match.state.tick == 143
+    assert match.state.players["player-1"].resources.model_dump(mode="json") == {
+        "food": 83,
+        "production": 47,
+        "money": 213,
+    }
+    assert [
+        (army.id, army.location, army.owner, army.troops)
+        for army in match.state.armies
+        if army.owner == "player-1" and army.location == "london"
+    ] == [("army-b", "london", "player-1", 28)]
+    assert match.order_submissions == []

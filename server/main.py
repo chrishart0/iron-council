@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from http import HTTPStatus
 from typing import Annotated, Any
 
@@ -52,6 +53,7 @@ from server.models.api import (
 )
 from server.models.fog import AgentStateProjection
 from server.models.orders import OrderEnvelope
+from server.runtime import MatchRuntime
 from server.settings import get_settings
 
 MATCH_REGISTRY_BACKEND_VARIABLE = "IRON_COUNCIL_MATCH_REGISTRY_BACKEND"
@@ -364,8 +366,20 @@ def _require_joined_player_id(
 
 
 def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAPI:
-    app = FastAPI(title="iron-counsil-server", version=__version__)
-    app.state.match_registry = match_registry or _load_default_match_registry()
+    registry = match_registry or _load_default_match_registry()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
+        app.state.match_registry = registry
+        app.state.match_runtime = MatchRuntime(registry)
+        await app.state.match_runtime.start()
+        try:
+            yield
+        finally:
+            await app.state.match_runtime.stop()
+
+    app = FastAPI(title="iron-counsil-server", version=__version__, lifespan=lifespan)
+    app.state.match_registry = registry
 
     @app.exception_handler(ApiError)
     async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:

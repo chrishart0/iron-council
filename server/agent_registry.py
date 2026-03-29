@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from server.auth import hash_api_key
+from server.data.maps import load_uk_1900_map
 from server.models.api import (
     AgentBriefingMessageBuckets,
     AgentCommandEnvelopeRequest,
@@ -37,8 +38,10 @@ from server.models.api import (
     TreatyType,
 )
 from server.models.domain import MatchStatus
-from server.models.orders import OrderEnvelope
+from server.models.orders import OrderBatch, OrderEnvelope
 from server.models.state import MatchState
+from server.order_validation import validate_order_envelope
+from server.resolver import resolve_tick
 
 
 @dataclass(slots=True)
@@ -371,6 +374,27 @@ class InMemoryMatchRegistry:
         record = self._matches[match_id]
         record.order_submissions.append(envelope.model_copy(deep=True))
         return len(record.order_submissions) - 1
+
+    def advance_match_tick(self, match_id: str) -> MatchRecord:
+        record = self._matches[match_id]
+        current_tick = record.state.tick
+        queued_for_current_tick = [
+            submission.model_copy(deep=True)
+            for submission in record.order_submissions
+            if submission.tick == current_tick
+        ]
+        record.order_submissions = [
+            submission for submission in record.order_submissions if submission.tick != current_tick
+        ]
+
+        validated_orders = self._validate_queued_orders(
+            state=record.state,
+            submissions=queued_for_current_tick,
+        )
+        resolution = resolve_tick(record.state, validated_orders)
+        record.state = resolution.next_state.model_copy(update={"tick": current_tick + 1})
+        self._sync_victory_state(record.state)
+        return record
 
     def apply_command_envelope(
         self,
@@ -1045,6 +1069,56 @@ class InMemoryMatchRegistry:
                 command.orders.transfers,
             )
         )
+
+    def _validate_queued_orders(
+        self,
+        *,
+        state: MatchState,
+        submissions: list[OrderEnvelope],
+    ) -> OrderBatch:
+        aggregated_orders = OrderBatch()
+        map_definition = load_uk_1900_map()
+        for submission in self._combine_submissions_by_player(submissions):
+            validation = validate_order_envelope(submission, state, map_definition)
+            aggregated_orders.movements.extend(
+                order.model_copy(deep=True) for order in validation.accepted.movements
+            )
+            aggregated_orders.recruitment.extend(
+                order.model_copy(deep=True) for order in validation.accepted.recruitment
+            )
+            aggregated_orders.upgrades.extend(
+                order.model_copy(deep=True) for order in validation.accepted.upgrades
+            )
+            aggregated_orders.transfers.extend(
+                order.model_copy(deep=True) for order in validation.accepted.transfers
+            )
+        return aggregated_orders
+
+    def _combine_submissions_by_player(
+        self,
+        submissions: list[OrderEnvelope],
+    ) -> list[OrderEnvelope]:
+        combined_by_player: dict[str, OrderEnvelope] = {}
+        ordered_player_ids: list[str] = []
+        for submission in submissions:
+            combined_submission = combined_by_player.get(submission.player_id)
+            if combined_submission is None:
+                combined_by_player[submission.player_id] = submission.model_copy(deep=True)
+                ordered_player_ids.append(submission.player_id)
+                continue
+            combined_submission.orders.movements.extend(
+                order.model_copy(deep=True) for order in submission.orders.movements
+            )
+            combined_submission.orders.recruitment.extend(
+                order.model_copy(deep=True) for order in submission.orders.recruitment
+            )
+            combined_submission.orders.upgrades.extend(
+                order.model_copy(deep=True) for order in submission.orders.upgrades
+            )
+            combined_submission.orders.transfers.extend(
+                order.model_copy(deep=True) for order in submission.orders.transfers
+            )
+        return [combined_by_player[player_id] for player_id in ordered_player_ids]
 
     def _validate_command_message(
         self,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
 from http import HTTPStatus
 from typing import Any
@@ -221,6 +222,31 @@ async def test_list_matches_returns_stable_json_summaries(app_client: AsyncClien
             },
         ]
     }
+
+
+@pytest.mark.asyncio
+async def test_app_lifespan_advances_active_match_and_stops_after_shutdown(
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    active_match = seeded_registry.get_match("match-alpha")
+    paused_match = seeded_registry.get_match("match-beta")
+    assert active_match is not None
+    assert paused_match is not None
+    active_match.tick_interval_seconds = 1
+    paused_match.tick_interval_seconds = 1
+
+    app = create_app(match_registry=seeded_registry)
+
+    async with app.router.lifespan_context(app):
+        await asyncio.sleep(1.2)
+
+        assert active_match.state.tick == 143
+        assert paused_match.state.tick == 7
+
+    stopped_tick = active_match.state.tick
+    await asyncio.sleep(1.2)
+
+    assert active_match.state.tick == stopped_tick
 
 
 @pytest.mark.asyncio

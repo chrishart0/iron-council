@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from copy import deepcopy
 from http import HTTPStatus
 from typing import Any
@@ -60,6 +61,50 @@ def test_agent_api_smoke_flow_runs_through_real_process_and_seeded_database(
     }
     assert follow_up_state_response.status_code == HTTPStatus.OK
     assert follow_up_state_response.json() == initial_state_response.json()
+
+
+def test_active_match_ticks_forward_without_manual_advance_endpoint(
+    running_fast_tick_app: RunningApp,
+    representative_order_payload: dict[str, Any],
+) -> None:
+    payload = deepcopy(representative_order_payload)
+    payload["match_id"] = running_fast_tick_app.primary_match_id
+    payload["tick"] = 142
+    payload["orders"] = {
+        "movements": [],
+        "recruitment": [{"city": "manchester", "troops": 5}],
+        "upgrades": [],
+        "transfers": [],
+    }
+    payload.pop("player_id", None)
+
+    with httpx.Client(base_url=running_fast_tick_app.base_url, timeout=5) as client:
+        submit_response = client.post(
+            f"/api/v1/matches/{running_fast_tick_app.primary_match_id}/orders",
+            json=payload,
+            headers=_headers("agent-player-2"),
+        )
+
+        deadline = time.monotonic() + 3
+        latest_state: dict[str, Any] | None = None
+        while time.monotonic() < deadline:
+            state_response = client.get(
+                f"/api/v1/matches/{running_fast_tick_app.primary_match_id}/state",
+                headers=_headers("agent-player-2"),
+            )
+            assert state_response.status_code == HTTPStatus.OK
+            latest_state = state_response.json()
+            if latest_state["tick"] >= 143:
+                break
+            time.sleep(0.1)
+
+    assert submit_response.status_code == HTTPStatus.ACCEPTED
+    assert latest_state is not None
+    assert latest_state["tick"] == 143
+    assert any(
+        army["owner"] == "player-2" and army["location"] == "manchester" and army["troops"] == 5
+        for army in latest_state["visible_armies"]
+    )
 
 
 def test_agent_join_and_profile_smoke_flow_runs_through_real_process(

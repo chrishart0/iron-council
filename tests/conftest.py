@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 import pytest
 from server.db.testing import prepare_test_database, provision_seeded_database
+from sqlalchemy import create_engine, text
 
 from tests.support import RunningApp
 
@@ -93,6 +94,74 @@ def migrated_test_database_url(tmp_path: Path) -> str:
 def running_seeded_app(tmp_path: Path) -> Iterator[RunningApp]:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'process-test.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+
+    host = "127.0.0.1"
+    port = _allocate_tcp_port()
+    process = subprocess.Popen(
+        [
+            "uv",
+            "run",
+            "uvicorn",
+            "server.main:app",
+            "--host",
+            host,
+            "--port",
+            str(port),
+            "--log-level",
+            "warning",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        env={
+            **os.environ,
+            "DATABASE_URL": database_url,
+            "IRON_COUNCIL_MATCH_REGISTRY_BACKEND": "db",
+            "PYTHONUNBUFFERED": "1",
+        },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    base_url = f"http://{host}:{port}"
+    try:
+        _wait_for_running_app(base_url, process)
+        yield RunningApp(
+            base_url=base_url,
+            primary_match_id="00000000-0000-0000-0000-000000000101",
+            secondary_match_id="00000000-0000-0000-0000-000000000102",
+        )
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+
+@pytest.fixture
+def running_fast_tick_app(tmp_path: Path) -> Iterator[RunningApp]:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'process-fast-tick.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE matches
+                SET config = :config
+                WHERE id = :match_id
+                """
+            ),
+            {
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "config": (
+                    '{"map":"britain","max_players":5,"turn_seconds":1,'
+                    '"seed_profile":"agent_api_primary"}'
+                ),
+            },
+        )
 
     host = "127.0.0.1"
     port = _allocate_tcp_port()

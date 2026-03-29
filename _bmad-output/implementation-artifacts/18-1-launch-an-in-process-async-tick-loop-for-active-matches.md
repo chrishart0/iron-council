@@ -1,6 +1,6 @@
 # Story 18.1: Launch an in-process async tick loop for active matches
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -16,11 +16,49 @@ So that the running service behaves like a real tick-based simulation instead of
 
 ## Tasks / Subtasks
 
-- [ ] Add a runtime tick service abstraction that can start and stop per-match background loops from the FastAPI lifespan. (AC: 1)
-- [ ] Teach the match registry how to snapshot, resolve, and commit one active-match tick from queued submissions while keeping future-tick submissions intact. (AC: 1, 2)
-- [ ] Wire startup/shutdown lifecycle management in `server.main` without regressing existing API behavior. (AC: 1)
-- [ ] Add behavior-first unit/API coverage plus one running-process smoke for autonomous tick advancement. (AC: 2, 3)
-- [ ] Run simplification/review and refresh BMAD completion notes when the story ships. (AC: 3)
+- [x] Add a runtime tick service abstraction that can start and stop per-match background loops from the FastAPI lifespan. (AC: 1)
+- [x] Teach the match registry how to snapshot, resolve, and commit one active-match tick from queued submissions while keeping future-tick submissions intact. (AC: 1, 2)
+- [x] Wire startup/shutdown lifecycle management in `server.main` without regressing existing API behavior. (AC: 1)
+- [x] Add behavior-first unit/API coverage plus one running-process smoke for autonomous tick advancement. (AC: 2, 3)
+- [x] Run simplification/review and refresh BMAD completion notes when the story ships. (AC: 3)
+
+## Dev Agent Record
+
+### Agent Model Used
+
+GPT-5 Codex
+
+### Debug Log References
+
+- `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_agent_registry.py tests/api/test_agent_api.py`
+- `uv run pytest --override-ini addopts='' tests/e2e/test_api_smoke.py`
+- `make quality`
+
+### Completion Notes List
+
+- Added `server.runtime.MatchRuntime` as a minimal per-active-match asyncio loop manager started and stopped through the FastAPI lifespan.
+- Added `InMemoryMatchRegistry.advance_match_tick()` so runtime advancement reuses the existing order-validation and pure resolver path, increments the canonical tick, and consumes only current-tick submissions.
+- Combined same-player same-tick submissions before validation so runtime advancement cannot overspend resources by validating envelopes independently against the same starting budget.
+- Added lifecycle/API tests plus a real-process smoke that proves an active match advances automatically without any manual tick endpoint.
+- Kept this story scoped to in-process runtime advancement only; persistence/tick-log work remains deferred to Story 18.2.
+
+### File List
+
+- _bmad-output/implementation-artifacts/18-1-launch-an-in-process-async-tick-loop-for-active-matches.md
+- _bmad-output/implementation-artifacts/sprint-status.yaml
+- server/agent_registry.py
+- server/main.py
+- server/runtime.py
+- tests/api/test_agent_api.py
+- tests/conftest.py
+- tests/e2e/test_api_smoke.py
+- tests/test_agent_registry.py
+
+### Change Log
+
+- 2026-03-29 22:25 UTC: Drafted Epic 18 and Story 18.1 for the live runtime loop.
+- 2026-03-29 22:52 UTC: Implemented the in-process runtime loop, match tick advancement path, lifecycle coverage, and running-app smoke validation.
+- 2026-03-29 23:05 UTC: Fixed duplicate same-player submission validation so runtime tick advancement combines same-tick envelopes before validation.
 
 ## Dev Notes
 
