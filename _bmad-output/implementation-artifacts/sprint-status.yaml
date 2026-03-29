@@ -67,7 +67,7 @@ development_status:
 
   epic-15: in-progress
   15-1-add-a-reference-python-sdk-for-authenticated-agent-workflows: done
-  15-2-add-a-minimal-example-agent-and-sdk-quickstart-guide: drafted
+  15-2-add-a-minimal-example-agent-and-sdk-quickstart-guide: done
 
   epic-11: done
   11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: done

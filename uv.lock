@@ -343,13 +343,14 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "httpx" },
+    { name = "pydantic" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "psycopg", extra = ["binary"] },
@@ -363,10 +364,11 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.16,<2.0" },
     { name = "fastapi", specifier = ">=0.116,<1.0" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28,<1.0" },
+    { name = "httpx", specifier = ">=0.28,<1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.17,<2.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.2,<5.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'dev'", specifier = ">=3.2,<4.0" },
+    { name = "pydantic", specifier = ">=2.11,<3.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4,<9.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.1,<2.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.2,<7.0" },
