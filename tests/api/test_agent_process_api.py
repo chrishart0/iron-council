@@ -188,8 +188,18 @@ def test_running_app_processes_consolidated_command_envelope_without_partial_sid
     running_seeded_app: RunningApp,
 ) -> None:
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        group_chat_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "name": "Process Council",
+                "member_ids": ["player-1"],
+            },
+            headers=_headers(),
+        )
         accepted_response = client.post(
-            f"/api/v1/matches/{running_seeded_app.primary_match_id}/commands",
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/command",
             json={
                 "match_id": running_seeded_app.primary_match_id,
                 "tick": 142,
@@ -206,6 +216,11 @@ def test_running_app_processes_consolidated_command_envelope_without_partial_sid
                         "recipient_id": "player-1",
                         "content": "Bundled process direct update.",
                     },
+                    {
+                        "channel": "group",
+                        "group_chat_id": "group-chat-1",
+                        "content": "Bundled process group update.",
+                    },
                 ],
                 "treaties": [
                     {
@@ -219,7 +234,7 @@ def test_running_app_processes_consolidated_command_envelope_without_partial_sid
             headers=_headers(),
         )
         rejected_response = client.post(
-            f"/api/v1/matches/{running_seeded_app.primary_match_id}/commands",
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/command",
             json={
                 "match_id": running_seeded_app.primary_match_id,
                 "tick": 142,
@@ -229,7 +244,14 @@ def test_running_app_processes_consolidated_command_envelope_without_partial_sid
                     "upgrades": [],
                     "transfers": [],
                 },
-                "messages": [{"channel": "world", "content": "Should not persist."}],
+                "messages": [
+                    {"channel": "world", "content": "Should not persist."},
+                    {
+                        "channel": "group",
+                        "group_chat_id": "group-chat-missing",
+                        "content": "Should not persist in group either.",
+                    },
+                ],
                 "treaties": [
                     {
                         "counterparty_id": "player-4",
@@ -237,9 +259,9 @@ def test_running_app_processes_consolidated_command_envelope_without_partial_sid
                         "treaty_type": "trade",
                     }
                 ],
-                "alliance": {"action": "join", "alliance_id": "alliance-missing", "name": None},
+                "alliance": {"action": "leave", "alliance_id": None, "name": None},
             },
-            headers=_headers("agent-player-3"),
+            headers=_headers(),
         )
         player_two_messages = client.get(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
@@ -257,23 +279,27 @@ def test_running_app_processes_consolidated_command_envelope_without_partial_sid
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
             headers=_headers("agent-player-3"),
         )
+        group_messages = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats/group-chat-1/messages",
+            headers=_headers(),
+        )
 
+    assert group_chat_response.status_code == HTTPStatus.ACCEPTED
     assert accepted_response.status_code == HTTPStatus.ACCEPTED
     assert accepted_response.json()["orders"]["submission_index"] == 0
-    assert [message["content"] for message in accepted_response.json()["messages"]] == [
-        "Bundled process update.",
-        "Bundled process direct update.",
-    ]
+    assert accepted_response.json()["messages"][0]["content"] == "Bundled process update."
+    assert accepted_response.json()["messages"][1]["content"] == "Bundled process direct update."
+    assert (
+        accepted_response.json()["messages"][2]["message"]["content"]
+        == "Bundled process group update."
+    )
     assert accepted_response.json()["treaties"][0]["treaty"]["player_b_id"] == "player-3"
     assert accepted_response.json()["alliance"]["player_id"] == "player-2"
     assert rejected_response.status_code == HTTPStatus.BAD_REQUEST
     assert rejected_response.json() == {
         "error": {
-            "code": "alliance_not_found",
-            "message": (
-                "Alliance 'alliance-missing' was not found in match "
-                f"'{running_seeded_app.primary_match_id}'."
-            ),
+            "code": "group_chat_not_visible",
+            "message": "Group chat 'group-chat-missing' is not visible to player 'player-2'.",
         }
     }
     assert player_two_messages.status_code == HTTPStatus.OK
@@ -295,6 +321,10 @@ def test_running_app_processes_consolidated_command_envelope_without_partial_sid
             "tick": 142,
             "content": "Bundled process update.",
         }
+    ]
+    assert group_messages.status_code == HTTPStatus.OK
+    assert [message["content"] for message in group_messages.json()["messages"]] == [
+        "Bundled process group update."
     ]
 
 

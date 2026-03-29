@@ -201,6 +201,7 @@ class AgentProfileResponse(StrictModel):
 
 
 MessageChannel = Literal["world", "direct"]
+CommandMessageChannel = Literal["world", "direct", "group"]
 TreatyAction = Literal["propose", "accept", "withdraw"]
 TreatyType = Literal["non_aggression", "defensive", "trade"]
 TreatyStatus = Literal["proposed", "active", "withdrawn"]
@@ -382,8 +383,9 @@ class AllianceActionAcceptanceResponse(StrictModel):
 
 
 class AgentCommandMessage(StrictModel):
-    channel: MessageChannel
+    channel: CommandMessageChannel
     recipient_id: str | None = None
+    group_chat_id: str | None = None
     content: str = Field(min_length=1)
 
 
@@ -427,7 +429,9 @@ class AgentCommandEnvelopeResponse(StrictModel):
     player_id: str
     tick: TickDuration
     orders: OrderAcceptanceResponse | None = None
-    messages: list[MessageAcceptanceResponse] = Field(default_factory=list)
+    messages: list[MessageAcceptanceResponse | GroupChatMessageAcceptanceResponse] = Field(
+        default_factory=list
+    )
     treaties: list[TreatyActionAcceptanceResponse] = Field(default_factory=list)
     alliance: AllianceActionAcceptanceResponse | None = None
 
@@ -567,7 +571,7 @@ class IronCouncilClient:
             response_model=OrderAcceptanceResponse,
         )
 
-    def submit_command_envelope(
+    def submit_command(
         self,
         match_id: str,
         *,
@@ -579,7 +583,7 @@ class IronCouncilClient:
     ) -> AgentCommandEnvelopeResponse:
         return self._request_json(
             "POST",
-            f"/api/v1/matches/{match_id}/commands",
+            f"/api/v1/matches/{match_id}/command",
             json_body={
                 "match_id": match_id,
                 "tick": tick,
@@ -599,6 +603,25 @@ class IronCouncilClient:
                 ),
             },
             response_model=AgentCommandEnvelopeResponse,
+        )
+
+    def submit_command_envelope(
+        self,
+        match_id: str,
+        *,
+        tick: int,
+        orders: OrderBatch | Mapping[str, Any] | None = None,
+        messages: list[AgentCommandMessage | Mapping[str, Any]] | None = None,
+        treaties: list[AgentCommandTreaty | Mapping[str, Any]] | None = None,
+        alliance: AgentCommandAllianceAction | Mapping[str, Any] | None = None,
+    ) -> AgentCommandEnvelopeResponse:
+        return self.submit_command(
+            match_id,
+            tick=tick,
+            orders=orders,
+            messages=messages,
+            treaties=treaties,
+            alliance=alliance,
         )
 
     def get_messages(self, match_id: str) -> MatchMessageInboxResponse:

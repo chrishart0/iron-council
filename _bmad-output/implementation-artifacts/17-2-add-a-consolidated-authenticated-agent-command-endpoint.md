@@ -42,11 +42,13 @@ GPT-5 Codex
 
 ### Completion Notes List
 
-- Added `/api/v1/matches/{match_id}/commands` as an authenticated convenience endpoint that validates route match and tick once, then applies queued orders, outgoing messages, treaty actions, and alliance actions through existing request and registry primitives.
-- Implemented all-or-nothing command execution by preflighting the full envelope against a scratch registry before mutating the live match registry.
+- Switched the canonical authenticated convenience endpoint to `/api/v1/matches/{match_id}/command` and kept the plural `/commands` route as a hidden backward-compatible alias.
+- Extended the command envelope to cover world, direct, and group-chat outgoing messages by reusing the existing group-chat message primitives and validating group-chat visibility during the scratch-registry preflight.
+- Preserved all-or-nothing command execution by preflighting the full envelope against a scratch registry before mutating the live match registry, including invalid bundled group-chat messages.
 - Preserved the existing focused mutation endpoints and kept their behavior-first tests passing unchanged.
-- Extended the Python SDK with typed command-envelope request models and a `submit_command_envelope()` helper.
-- Added API-boundary, running-app, smoke, and SDK tests for accepted flows, structured validation errors, and no-partial-mutation failures.
+- Extended the Python SDK with typed command-envelope request models, a canonical `submit_command()` helper, and a backward-compatible `submit_command_envelope()` alias.
+- Improved nested command validation mapping for later message items plus invalid treaty action/type literals, and added explicit `401` OpenAPI metadata for the authenticated routes in this contract surface.
+- Added API-boundary, running-app, smoke, and SDK tests for successful bundled group-chat flows, structured validation errors, and no-partial-mutation failures.
 
 ### File List
 
@@ -65,3 +67,4 @@ GPT-5 Codex
 
 - 2026-03-29 19:25 UTC: Drafted Story 17.2 as the follow-on consolidated command envelope.
 - 2026-03-29 21:17 UTC: Implemented the consolidated authenticated command endpoint, SDK helper, and transactional coverage.
+- 2026-03-29 21:32 UTC: Patched the command contract to cover bundled group-chat messages, restored the singular canonical route, tightened nested validation errors, and refreshed authenticated route metadata.

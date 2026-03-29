@@ -171,7 +171,7 @@ def test_sdk_workflow_methods_cover_orders_messages_treaties_and_alliances(
     assert alliances.alliances[0].alliance_id == "alliance-red"
 
 
-def test_sdk_submit_command_envelope_covers_bundled_authenticated_actions(
+def test_sdk_submit_command_covers_bundled_authenticated_actions(
     client: Any,
     representative_order_payload: dict[str, Any],
 ) -> None:
@@ -180,8 +180,14 @@ def test_sdk_submit_command_envelope_covers_bundled_authenticated_actions(
     order_batch["recruitment"] = []
     order_batch["upgrades"] = []
     order_batch["transfers"] = []
+    group_chat = client.create_group_chat(
+        "match-alpha",
+        tick=142,
+        name="SDK Command Council",
+        member_ids=["player-1"],
+    )
 
-    response = client.submit_command_envelope(
+    response = client.submit_command(
         "match-alpha",
         tick=142,
         orders=order_batch,
@@ -189,7 +195,12 @@ def test_sdk_submit_command_envelope_covers_bundled_authenticated_actions(
             {
                 "channel": "world",
                 "content": "Bundled update.",
-            }
+            },
+            {
+                "channel": "group",
+                "group_chat_id": group_chat.group_chat.group_chat_id,
+                "content": "Bundled group update.",
+            },
         ],
         treaties=[
             {
@@ -211,9 +222,116 @@ def test_sdk_submit_command_envelope_covers_bundled_authenticated_actions(
     assert response.orders is not None
     assert response.orders.submission_index == 0
     assert response.messages[0].content == "Bundled update."
+    assert response.messages[1].message.content == "Bundled group update."
     assert response.treaties[0].treaty.treaty_type == "trade"
     assert response.alliance is not None
     assert response.alliance.player_id == "player-2"
+
+
+def test_sdk_submit_command_envelope_remains_a_backward_compatible_alias(
+    sdk_module: Any,
+) -> None:
+    captured_request: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_request["method"] = request.method
+        captured_request["path"] = request.url.path
+        return httpx.Response(
+            status_code=HTTPStatus.ACCEPTED,
+            json={
+                "status": "accepted",
+                "match_id": "match-alpha",
+                "player_id": "player-2",
+                "tick": 142,
+                "orders": None,
+                "messages": [],
+                "treaties": [],
+                "alliance": None,
+            },
+        )
+
+    session = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="http://testserver",
+    )
+    try:
+        client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key="test-key",
+            session=session,
+        )
+
+        response = client.submit_command_envelope("match-alpha", tick=142)
+    finally:
+        session.close()
+
+    assert captured_request == {"method": "POST", "path": "/api/v1/matches/match-alpha/command"}
+    assert response.status == "accepted"
+
+
+def test_sdk_submit_command_rejects_invalid_group_messages_without_partial_writes(
+    sdk_module: Any,
+    seeded_registry: InMemoryMatchRegistry,
+    representative_order_payload: dict[str, Any],
+) -> None:
+    app = create_app(match_registry=seeded_registry)
+    with TestClient(app, base_url="http://testserver") as session:
+        client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=build_seeded_agent_api_key("agent-player-2"),
+            session=session,
+        )
+
+        group_chat = client.create_group_chat(
+            "match-alpha",
+            tick=142,
+            name="SDK Negative Council",
+            member_ids=["player-1"],
+        )
+
+        with pytest.raises(sdk_module.IronCouncilApiError) as exc_info:
+            client.submit_command(
+                "match-alpha",
+                tick=142,
+                orders={
+                    **deepcopy(representative_order_payload["orders"]),
+                    "movements": [{"army_id": "army-b", "destination": "birmingham"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+                messages=[
+                    {"channel": "world", "content": "Rejected bundled update."},
+                    {
+                        "channel": "group",
+                        "group_chat_id": "group-chat-missing",
+                        "content": "Rejected bundled group update.",
+                    },
+                ],
+                treaties=[
+                    {
+                        "counterparty_id": "player-1",
+                        "action": "propose",
+                        "treaty_type": "trade",
+                    }
+                ],
+                alliance={"action": "leave", "alliance_id": None, "name": None},
+            )
+
+        inbox = client.get_messages("match-alpha")
+        group_messages = client.get_group_chat_messages(
+            "match-alpha",
+            group_chat_id=group_chat.group_chat.group_chat_id,
+        )
+        treaties = client.get_treaties("match-alpha")
+
+    error = exc_info.value
+    assert error.status_code == HTTPStatus.BAD_REQUEST
+    assert error.error_code == "group_chat_not_visible"
+    assert error.message == "Group chat 'group-chat-missing' is not visible to player 'player-2'."
+    assert inbox.messages == []
+    assert group_messages.messages == []
+    assert treaties.treaties == []
 
 
 def test_sdk_get_agent_briefing_propagates_since_tick_and_parses_typed_response(

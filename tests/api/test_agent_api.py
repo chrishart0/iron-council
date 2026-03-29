@@ -125,11 +125,13 @@ def _command_message(
     *,
     channel: str = "world",
     recipient_id: str | None = None,
+    group_chat_id: str | None = None,
     content: str = "Hold position.",
 ) -> dict[str, Any]:
     return {
         "channel": channel,
         "recipient_id": recipient_id,
+        "group_chat_id": group_chat_id,
         "content": content,
     }
 
@@ -439,6 +441,16 @@ async def test_post_command_envelope_accepts_orders_messages_treaties_and_allian
     seeded_registry: InMemoryMatchRegistry,
     representative_order_payload: dict[str, Any],
 ) -> None:
+    seeded_registry.create_group_chat(
+        match_id="match-alpha",
+        request=GroupChatCreateRequest(
+            match_id="match-alpha",
+            tick=142,
+            name="Envelope Council",
+            member_ids=["player-1"],
+        ),
+        creator_id="player-2",
+    )
     payload = _command_envelope_payload(
         orders={
             **deepcopy(representative_order_payload["orders"]),
@@ -454,6 +466,11 @@ async def test_post_command_envelope_accepts_orders_messages_treaties_and_allian
                 recipient_id="player-1",
                 content="Envelope direct update.",
             ),
+            _command_message(
+                channel="group",
+                group_chat_id="group-chat-1",
+                content="Envelope group update.",
+            ),
         ],
         treaties=[_command_treaty(counterparty_id="player-3", action="propose")],
         alliance=_command_alliance(action="leave", alliance_id=None, name=None),
@@ -461,7 +478,7 @@ async def test_post_command_envelope_accepts_orders_messages_treaties_and_allian
 
     async with app_client as client:
         response = await client.post(
-            "/api/v1/matches/match-alpha/commands",
+            "/api/v1/matches/match-alpha/command",
             json=payload,
             headers=_auth_headers_for_player("player-2"),
         )
@@ -499,6 +516,18 @@ async def test_post_command_envelope_accepts_orders_messages_treaties_and_allian
                 "recipient_id": "player-1",
                 "tick": 142,
                 "content": "Envelope direct update.",
+            },
+            {
+                "status": "accepted",
+                "match_id": "match-alpha",
+                "group_chat_id": "group-chat-1",
+                "message": {
+                    "message_id": 0,
+                    "group_chat_id": "group-chat-1",
+                    "sender_id": "player-2",
+                    "tick": 142,
+                    "content": "Envelope group update.",
+                },
             },
         ],
         "treaties": [
@@ -546,6 +575,9 @@ async def test_post_command_envelope_accepts_orders_messages_treaties_and_allian
         "Envelope world update.",
         "Envelope direct update.",
     ]
+    assert [message.content for message in record.group_chats[0].messages] == [
+        "Envelope group update."
+    ]
     assert [treaty.player_b_id for treaty in record.treaties] == ["player-3"]
     assert record.state.players["player-2"].alliance_id is None
 
@@ -565,16 +597,21 @@ async def test_post_command_envelope_rejects_invalid_actions_without_partial_mut
             "transfers": [],
         },
         messages=[
-            _command_message(channel="world", recipient_id=None, content="Should not persist.")
+            _command_message(channel="world", recipient_id=None, content="Should not persist."),
+            _command_message(
+                channel="group",
+                group_chat_id="group-chat-missing",
+                content="Should not persist in group.",
+            ),
         ],
         treaties=[_command_treaty(counterparty_id="player-3", action="propose")],
-        alliance=_command_alliance(action="join", alliance_id="alliance-missing", name=None),
+        alliance=_command_alliance(action="leave", alliance_id=None, name=None),
     )
     before_state = _match_state_dump(seeded_registry)
 
     async with app_client as client:
         response = await client.post(
-            "/api/v1/matches/match-alpha/commands",
+            "/api/v1/matches/match-alpha/command",
             json=payload,
             headers=_auth_headers_for_player("player-2"),
         )
@@ -582,14 +619,15 @@ async def test_post_command_envelope_rejects_invalid_actions_without_partial_mut
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json() == {
         "error": {
-            "code": "player_already_in_alliance",
-            "message": "Player 'player-2' is already in alliance 'alliance-red'.",
+            "code": "group_chat_not_visible",
+            "message": "Group chat 'group-chat-missing' is not visible to player 'player-2'.",
         }
     }
     assert seeded_registry.list_order_submissions("match-alpha") == []
     record = seeded_registry.get_match("match-alpha")
     assert record is not None
     assert record.messages == []
+    assert all(group_chat.messages == [] for group_chat in record.group_chats)
     assert record.treaties == []
     assert _match_state_dump(seeded_registry) == before_state
 
@@ -602,7 +640,10 @@ async def test_post_command_envelope_rejects_invalid_actions_without_partial_mut
             {
                 "match_id": "match-alpha",
                 "tick": 142,
-                "messages": [{"channel": "world", "content": ""}],
+                "messages": [
+                    {"channel": "world", "content": "first ok"},
+                    {"channel": "world", "content": ""},
+                ],
             },
             {
                 "code": "invalid_message_content",
@@ -628,6 +669,32 @@ async def test_post_command_envelope_rejects_invalid_actions_without_partial_mut
             {
                 "code": "invalid_command_request",
                 "message": "Command request validation failed.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "treaties": [
+                    {"counterparty_id": "player-3", "action": "ignore", "treaty_type": "trade"}
+                ],
+            },
+            {
+                "code": "invalid_treaty_action",
+                "message": "Treaty action must be one of: propose, accept, withdraw.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "treaties": [
+                    {"counterparty_id": "player-3", "action": "propose", "treaty_type": "ceasefire"}
+                ],
+            },
+            {
+                "code": "invalid_treaty_type",
+                "message": "Treaty type must be one of: non_aggression, defensive, trade.",
             },
         ),
         (
@@ -705,7 +772,7 @@ async def test_command_envelope_validation_errors_are_structured(
 ) -> None:
     async with app_client as client:
         response = await client.post(
-            "/api/v1/matches/match-alpha/commands",
+            "/api/v1/matches/match-alpha/command",
             json=payload,
             headers=_auth_headers_for_player("player-2"),
         )
@@ -774,6 +841,23 @@ async def test_command_envelope_validation_errors_are_structured(
         ),
         (
             "match-alpha",
+            _command_envelope_payload(
+                messages=[
+                    _command_message(
+                        channel="group",
+                        group_chat_id="group-chat-missing",
+                        content="Secure.",
+                    )
+                ]
+            ),
+            HTTPStatus.BAD_REQUEST,
+            {
+                "code": "group_chat_not_visible",
+                "message": "Group chat 'group-chat-missing' is not visible to player 'player-2'.",
+            },
+        ),
+        (
+            "match-alpha",
             _command_envelope_payload(treaties=[_command_treaty(counterparty_id="player-missing")]),
             HTTPStatus.BAD_REQUEST,
             {
@@ -801,7 +885,7 @@ async def test_command_envelope_rejects_invalid_route_and_action_contracts(
 ) -> None:
     async with app_client as client:
         response = await client.post(
-            f"/api/v1/matches/{route_match_id}/commands",
+            f"/api/v1/matches/{route_match_id}/command",
             json=payload,
             headers=_auth_headers_for_player("player-2"),
         )
@@ -2198,3 +2282,9 @@ async def test_openapi_declares_secured_match_route_contracts(app_client: AsyncC
     assert paths["/api/v1/matches/{match_id}/orders"]["post"]["responses"]["202"]["content"][
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/OrderAcceptanceResponse"}
+    assert paths["/api/v1/matches/{match_id}/command"]["post"]["responses"]["401"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/matches/{match_id}/messages"]["post"]["responses"]["401"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}

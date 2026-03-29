@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from http import HTTPStatus
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
@@ -71,7 +71,19 @@ def get_match_registry(request: Request) -> InMemoryMatchRegistry:
 
 MatchRegistryDependency = Annotated[InMemoryMatchRegistry, Depends(get_match_registry)]
 ApiKeyHeader = Annotated[str | None, Header(alias="X-API-Key")]
-API_ERROR_RESPONSE_SCHEMA = {"model": ApiErrorResponse}
+API_ERROR_RESPONSE_SCHEMA: dict[str, Any] = {"model": ApiErrorResponse}
+AUTHENTICATED_API_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
+}
+
+
+def _authenticated_route_responses(
+    *status_codes: HTTPStatus,
+) -> dict[int | str, dict[str, Any]]:
+    return {
+        int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
+        **{int(status_code): API_ERROR_RESPONSE_SCHEMA for status_code in status_codes},
+    }
 
 
 def _build_validation_error_response(*, code: str, message: str) -> JSONResponse:
@@ -233,10 +245,41 @@ def _command_validation_error_response(exc: RequestValidationError) -> JSONRespo
         location = list(error.get("loc", ()))
         error_type = error.get("type")
         error_message = str(error.get("msg", "")).lower()
-        if location == ["body", "messages", 0, "content"] and error_type == "string_too_short":
+        if (
+            len(location) == 4
+            and location[0] == "body"
+            and location[1] == "messages"
+            and isinstance(location[2], int)
+            and location[3] == "content"
+            and error_type == "string_too_short"
+        ):
             return _build_validation_error_response(
                 code="invalid_message_content",
                 message="Message content must be at least 1 character long.",
+            )
+        if (
+            len(location) == 4
+            and location[0] == "body"
+            and location[1] == "treaties"
+            and isinstance(location[2], int)
+            and location[3] == "action"
+            and error_type == "literal_error"
+        ):
+            return _build_validation_error_response(
+                code="invalid_treaty_action",
+                message="Treaty action must be one of: propose, accept, withdraw.",
+            )
+        if (
+            len(location) == 4
+            and location[0] == "body"
+            and location[1] == "treaties"
+            and isinstance(location[2], int)
+            and location[3] == "treaty_type"
+            and error_type == "literal_error"
+        ):
+            return _build_validation_error_response(
+                code="invalid_treaty_type",
+                message="Treaty type must be one of: non_aggression, defensive, trade.",
             )
         if location and location[0] == "body" and error_type == "missing":
             return _build_validation_error_response(
@@ -335,7 +378,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         exc: RequestValidationError,
     ) -> JSONResponse:
         if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
-            "/commands"
+            ("/command", "/commands")
         ):
             return _command_validation_error_response(exc)
         if request.url.path.startswith("/api/v1/matches/") and "/group-chats" in request.url.path:
@@ -389,7 +432,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     @api_router.get(
         "/agent/profile",
         response_model=AgentProfileResponse,
-        responses={HTTPStatus.UNAUTHORIZED: API_ERROR_RESPONSE_SCHEMA},
+        responses=AUTHENTICATED_API_ERROR_RESPONSES,
     )
     async def get_authenticated_agent_profile(
         authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
@@ -425,7 +468,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     @api_router.get(
         "/matches/{match_id}/state",
         response_model=AgentStateProjection,
-        responses={HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA},
+        responses=_authenticated_route_responses(HTTPStatus.NOT_FOUND),
     )
     async def get_match_state(
         match_id: str,
@@ -450,10 +493,10 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     @api_router.get(
         "/matches/{match_id}/agent-briefing",
         response_model=AgentBriefingResponse,
-        responses={
-            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-        },
+        responses=_authenticated_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.NOT_FOUND,
+        ),
     )
     async def get_agent_briefing(
         match_id: str,
@@ -497,11 +540,11 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         "/matches/{match_id}/join",
         response_model=MatchJoinResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses={
-            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
-        },
+        responses=_authenticated_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        ),
     )
     async def join_match(
         match_id: str,
@@ -539,10 +582,10 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         "/matches/{match_id}/orders",
         response_model=OrderAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses={
-            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-        },
+        responses=_authenticated_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.NOT_FOUND,
+        ),
     )
     async def submit_orders(
         match_id: str,
@@ -597,16 +640,27 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         )
 
     @api_router.post(
+        "/matches/{match_id}/command",
+        response_model=AgentCommandEnvelopeResponse,
+        status_code=HTTPStatus.ACCEPTED,
+        responses=_authenticated_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        ),
+    )
+    @api_router.post(
         "/matches/{match_id}/commands",
         response_model=AgentCommandEnvelopeResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses={
-            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
-        },
+        responses=_authenticated_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        ),
+        include_in_schema=False,
     )
-    async def post_match_commands(
+    async def post_match_command(
         match_id: str,
         command: AgentCommandEnvelopeRequest,
         registry: MatchRegistryDependency,
@@ -649,7 +703,12 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                 command=command,
                 player_id=resolved_player_id,
             )
-        except (MatchAccessError, TreatyTransitionError, AllianceTransitionError) as exc:
+        except (
+            MatchAccessError,
+            GroupChatAccessError,
+            TreatyTransitionError,
+            AllianceTransitionError,
+        ) as exc:
             raise ApiError(
                 status_code=HTTPStatus.BAD_REQUEST,
                 code=exc.code,
@@ -659,10 +718,10 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     @api_router.get(
         "/matches/{match_id}/messages",
         response_model=MatchMessageInboxResponse,
-        responses={
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
-        },
+        responses=_authenticated_route_responses(
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        ),
     )
     async def get_match_messages(
         match_id: str,
@@ -693,7 +752,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     @api_router.get(
         "/matches/{match_id}/group-chats",
         response_model=GroupChatListResponse,
-        responses={HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA},
+        responses=_authenticated_route_responses(HTTPStatus.NOT_FOUND),
     )
     async def get_match_group_chats(
         match_id: str,
@@ -726,11 +785,11 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         "/matches/{match_id}/group-chats",
         response_model=GroupChatCreateAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses={
-            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
-        },
+        responses=_authenticated_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        ),
     )
     async def post_match_group_chat(
         match_id: str,
@@ -790,10 +849,10 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     @api_router.get(
         "/matches/{match_id}/group-chats/{group_chat_id}/messages",
         response_model=GroupChatMessageListResponse,
-        responses={
-            HTTPStatus.FORBIDDEN: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-        },
+        responses=_authenticated_route_responses(
+            HTTPStatus.FORBIDDEN,
+            HTTPStatus.NOT_FOUND,
+        ),
     )
     async def get_match_group_chat_messages(
         match_id: str,
@@ -838,12 +897,12 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         "/matches/{match_id}/group-chats/{group_chat_id}/messages",
         response_model=GroupChatMessageAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses={
-            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.FORBIDDEN: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
-        },
+        responses=_authenticated_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.FORBIDDEN,
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        ),
     )
     async def post_match_group_chat_message(
         match_id: str,
@@ -908,11 +967,11 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         "/matches/{match_id}/messages",
         response_model=MessageAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses={
-            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
-        },
+        responses=_authenticated_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        ),
     )
     async def post_match_message(
         match_id: str,
@@ -985,7 +1044,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     @api_router.get(
         "/matches/{match_id}/treaties",
         response_model=TreatyListResponse,
-        responses={HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA},
+        responses=_authenticated_route_responses(HTTPStatus.NOT_FOUND),
     )
     async def get_match_treaties(
         match_id: str,
@@ -1014,11 +1073,11 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         "/matches/{match_id}/treaties",
         response_model=TreatyActionAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses={
-            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
-        },
+        responses=_authenticated_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        ),
     )
     async def post_match_treaty(
         match_id: str,
@@ -1084,7 +1143,7 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     @api_router.get(
         "/matches/{match_id}/alliances",
         response_model=AllianceListResponse,
-        responses={HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA},
+        responses=_authenticated_route_responses(HTTPStatus.NOT_FOUND),
     )
     async def get_match_alliances(
         match_id: str,
@@ -1113,11 +1172,11 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         "/matches/{match_id}/alliances",
         response_model=AllianceActionAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses={
-            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
-        },
+        responses=_authenticated_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        ),
     )
     async def post_match_alliance(
         match_id: str,

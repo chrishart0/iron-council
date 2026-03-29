@@ -318,8 +318,18 @@ def test_agent_command_envelope_smoke_flow_runs_through_real_process(
     running_seeded_app: RunningApp,
 ) -> None:
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        group_chat_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "name": "Smoke Command Council",
+                "member_ids": ["player-1"],
+            },
+            headers=_headers(),
+        )
         command_response = client.post(
-            f"/api/v1/matches/{running_seeded_app.primary_match_id}/commands",
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/command",
             json={
                 "match_id": running_seeded_app.primary_match_id,
                 "tick": 142,
@@ -335,6 +345,41 @@ def test_agent_command_envelope_smoke_flow_runs_through_real_process(
                         "channel": "direct",
                         "recipient_id": "player-1",
                         "content": "Smoke bundled direct briefing.",
+                    },
+                    {
+                        "channel": "group",
+                        "group_chat_id": "group-chat-1",
+                        "content": "Smoke bundled group briefing.",
+                    },
+                ],
+                "treaties": [
+                    {
+                        "counterparty_id": "player-3",
+                        "action": "propose",
+                        "treaty_type": "trade",
+                    }
+                ],
+                "alliance": {"action": "leave", "alliance_id": None, "name": None},
+            },
+            headers=_headers(),
+        )
+        rejected_command_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/command",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "birmingham"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+                "messages": [
+                    {"channel": "world", "content": "Smoke rejected world briefing."},
+                    {
+                        "channel": "group",
+                        "group_chat_id": "group-chat-missing",
+                        "content": "Smoke rejected group briefing.",
                     },
                 ],
                 "treaties": [
@@ -354,12 +399,23 @@ def test_agent_command_envelope_smoke_flow_runs_through_real_process(
             headers=_headers(),
         )
 
+    assert group_chat_response.status_code == HTTPStatus.ACCEPTED
     assert command_response.status_code == HTTPStatus.ACCEPTED
+    assert rejected_command_response.status_code == HTTPStatus.BAD_REQUEST
+    assert rejected_command_response.json() == {
+        "error": {
+            "code": "group_chat_not_visible",
+            "message": "Group chat 'group-chat-missing' is not visible to player 'player-2'.",
+        }
+    }
     assert command_response.json()["orders"]["submission_index"] == 0
     assert command_response.json()["alliance"]["player_id"] == "player-2"
     assert briefing_response.status_code == HTTPStatus.OK
     assert [message["content"] for message in briefing_response.json()["messages"]["direct"]] == [
         "Smoke bundled direct briefing."
+    ]
+    assert [message["content"] for message in briefing_response.json()["messages"]["group"]] == [
+        "Smoke bundled group briefing."
     ]
     assert [message["content"] for message in briefing_response.json()["messages"]["world"]] == [
         "Smoke bundled world briefing."

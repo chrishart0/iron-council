@@ -20,6 +20,7 @@ from server.models.api import (
     AllianceRecord,
     AuthenticatedAgentContext,
     GroupChatCreateRequest,
+    GroupChatMessageAcceptanceResponse,
     GroupChatMessageCreateRequest,
     GroupChatMessageRecord,
     GroupChatRecord,
@@ -855,7 +856,7 @@ class InMemoryMatchRegistry:
         player_id: str,
     ) -> AgentCommandEnvelopeResponse:
         order_response: OrderAcceptanceResponse | None = None
-        message_responses: list[MessageAcceptanceResponse] = []
+        message_responses: list[MessageAcceptanceResponse | GroupChatMessageAcceptanceResponse] = []
         treaty_responses: list[TreatyActionAcceptanceResponse] = []
         alliance_response: AllianceActionAcceptanceResponse | None = None
 
@@ -876,7 +877,28 @@ class InMemoryMatchRegistry:
             )
 
         for message in command.messages:
-            self._validate_command_message(match_id=match_id, message=message)
+            self._validate_command_message(match_id=match_id, message=message, player_id=player_id)
+            if message.channel == "group":
+                accepted_group_message = self.record_group_chat_message(
+                    match_id=match_id,
+                    group_chat_id=message.group_chat_id or "",
+                    message=GroupChatMessageCreateRequest(
+                        match_id=match_id,
+                        tick=command.tick,
+                        content=message.content,
+                    ),
+                    sender_id=player_id,
+                )
+                message_responses.append(
+                    GroupChatMessageAcceptanceResponse(
+                        status="accepted",
+                        match_id=match_id,
+                        group_chat_id=accepted_group_message.group_chat_id,
+                        message=accepted_group_message,
+                    )
+                )
+                continue
+
             accepted_message = self.record_message(
                 match_id=match_id,
                 message=MatchMessageCreateRequest(
@@ -1024,8 +1046,32 @@ class InMemoryMatchRegistry:
             )
         )
 
-    def _validate_command_message(self, *, match_id: str, message: AgentCommandMessage) -> None:
+    def _validate_command_message(
+        self,
+        *,
+        match_id: str,
+        message: AgentCommandMessage,
+        player_id: str,
+    ) -> None:
         record = self._matches[match_id]
+        if message.channel == "group":
+            if message.recipient_id is not None:
+                raise MatchAccessError(
+                    code="unsupported_recipient",
+                    message="Group chat messages do not support recipient_id.",
+                )
+            if message.group_chat_id is None:
+                raise MatchAccessError(
+                    code="unsupported_recipient",
+                    message="Group chat messages require group_chat_id.",
+                )
+            self._require_group_chat_member(
+                match_id=match_id,
+                group_chat_id=message.group_chat_id,
+                player_id=player_id,
+            )
+            return
+
         if message.channel == "world":
             if message.recipient_id is not None:
                 raise MatchAccessError(
@@ -1033,6 +1079,12 @@ class InMemoryMatchRegistry:
                     message="World messages do not support recipient_id.",
                 )
             return
+
+        if message.group_chat_id is not None:
+            raise MatchAccessError(
+                code="unsupported_recipient",
+                message="Direct messages do not support group_chat_id.",
+            )
 
         if message.recipient_id not in record.state.players:
             raise MatchAccessError(

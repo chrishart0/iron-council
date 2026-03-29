@@ -81,6 +81,7 @@ class AuthenticatedAgentContext(StrictModel):
 
 
 MessageChannel = Literal["world", "direct"]
+CommandMessageChannel = Literal["world", "direct", "group"]
 TreatyAction = Literal["propose", "accept", "withdraw"]
 TreatyType = Literal["non_aggression", "defensive", "trade"]
 TreatyStatus = Literal["proposed", "active", "withdrawn"]
@@ -262,8 +263,9 @@ class AllianceActionAcceptanceResponse(StrictModel):
 
 
 class AgentCommandMessage(StrictModel):
-    channel: MessageChannel
+    channel: CommandMessageChannel
     recipient_id: str | None = None
+    group_chat_id: str | None = None
     content: str = Field(min_length=1)
 
 
@@ -316,7 +318,9 @@ class AgentCommandEnvelopeResponse(StrictModel):
     player_id: str
     tick: TickDuration
     orders: OrderAcceptanceResponse | None = None
-    messages: list[MessageAcceptanceResponse] = Field(default_factory=list)
+    messages: list[MessageAcceptanceResponse | GroupChatMessageAcceptanceResponse] = Field(
+        default_factory=list
+    )
     treaties: list[TreatyActionAcceptanceResponse] = Field(default_factory=list)
     alliance: AllianceActionAcceptanceResponse | None = None
 
