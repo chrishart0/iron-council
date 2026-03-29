@@ -12,7 +12,7 @@ def test_local_postgres_defaults_stay_in_sync_across_settings_and_docs() -> None
 
     assert (
         DEFAULT_DATABASE_URL
-        == "postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil"
+        == "postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil"
     )
     assert f"DATABASE_URL={DEFAULT_DATABASE_URL}" in env_example
     assert DEFAULT_DATABASE_URL in readme

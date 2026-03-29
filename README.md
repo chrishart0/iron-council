@@ -36,7 +36,7 @@ make db-reset
 
 That boots Postgres on `127.0.0.1:54321` with the same runnable credentials used by
 `compose.support-services.yaml` and `env.local.example`:
-`DATABASE_URL=postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil`.
+`DATABASE_URL=postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil`.
 The support service owns the cluster-level credentials; the app and DB tooling then derive
 a worktree-local database name from the current worktree path so sibling worktrees do not
 collide. Set `IRON_COUNCIL_DB_LANE` to add a deterministic suffix for parallel Codex
@@ -44,7 +44,9 @@ workers or multiple lanes inside one worktree.
 
 The server loads `.env.local` automatically by default, derives the worktree-local
 database URL from that base Postgres URL, and can use a different env file via
-`IRON_COUNCIL_ENV_FILE=/path/to/file`.
+`IRON_COUNCIL_ENV_FILE=/path/to/file`. If an older local env file still uses the bare
+`postgresql://` scheme, the settings layer normalizes it to the installed `psycopg`
+driver automatically.
 
 Run the FastAPI app normally outside containers:
 

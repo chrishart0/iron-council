@@ -52,6 +52,11 @@ GPT-5 Codex
 - `make quality`
 - `uv run --extra dev pytest --no-cov tests/test_database_migrations.py -k stable_tick_log_ids_on_postgres_repeated_runs`
 - `uv run --extra dev pytest --no-cov tests/test_database_migrations.py`
+- `uv run --extra dev pytest --no-cov tests/test_settings.py`
+- `uv run --extra dev pytest --no-cov tests/test_local_dev_docs.py`
+- `uv run --extra dev pytest --no-cov tests/test_settings.py tests/test_local_dev_docs.py tests/test_database_migrations.py tests/test_db_tooling.py`
+- `make format`
+- `make quality`
 
 ### Completion Notes List
 
@@ -60,6 +65,8 @@ GPT-5 Codex
 - Seeded a realistic integration baseline across matches, api keys, alliances, players, messages, treaties, and tick log rows, and verified reset converges back to the same seeded snapshot.
 - Follow-up fix: seeded `tick_log.id` with a stable explicit value and synchronized the Postgres sequence after reseeding so repeated `db-setup` runs converge to the same dataset without breaking subsequent inserts.
 - Updated README workflow docs and sprint tracking after `make quality` passed.
+- Follow-up fix: switched the default support-services Postgres URL to `postgresql+psycopg://` and normalized legacy bare `postgresql://` env values in settings so `make db-setup` resolves through the installed driver at real runtime.
+- Added regression coverage that keeps settings, docs, and env examples synchronized on the explicit psycopg driver path while preserving non-Postgres URL behavior.
 
 ### File List
 
@@ -74,9 +81,11 @@ GPT-5 Codex
 - `tests/test_settings.py`
 - `_bmad-output/implementation-artifacts/12-3-add-deterministic-seed-reset-tooling-and-per-worktree-isolated-test-databases.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `env.local.example`
 
 ### Change Log
 
 - 2026-03-28 14:57 UTC: Drafted Story 12.3 for deterministic seed/reset workflows and per-worktree DB isolation.
 - 2026-03-29 00:00 UTC: Implemented worktree-local deterministic database provisioning, seed/reset tooling, docs, and coverage-backed tests.
 - 2026-03-29 00:00 UTC: Added a regression for Postgres repeated setup runs and fixed `tick_log` seeding to keep deterministic IDs while advancing the backing sequence safely.
+- 2026-03-29 00:00 UTC: Fixed the support-services default Postgres driver wiring by standardizing on `postgresql+psycopg://`, normalizing legacy bare Postgres URLs in settings, and updating sync-guard coverage plus local setup docs.

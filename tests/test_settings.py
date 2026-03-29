@@ -17,7 +17,7 @@ def test_get_settings_loads_database_url_from_local_env_file(tmp_path: Path) -> 
     settings = get_settings(env={}, env_file=env_file, worktree_path=Path("/tmp/iron-12-3"))
 
     assert settings.database_url.startswith(
-        "postgresql://file-user:file-password@127.0.0.1:54321/file_db_iron_12_3_"
+        "postgresql+psycopg://file-user:file-password@127.0.0.1:54321/file_db_iron_12_3_"
     )
 
 
@@ -34,7 +34,7 @@ def test_get_settings_prefers_explicit_environment_over_local_env_file(tmp_path:
     )
 
     assert settings.database_url.startswith(
-        "postgresql://env-user:env-password@127.0.0.1:54321/env_db_iron_12_3_"
+        "postgresql+psycopg://env-user:env-password@127.0.0.1:54321/env_db_iron_12_3_"
     )
 
 
@@ -43,11 +43,11 @@ def test_get_settings_falls_back_to_default_database_url_when_no_env_source_exis
 
     assert (
         DEFAULT_DATABASE_URL
-        == "postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil"
+        == "postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil"
     )
     assert settings.database_url != DEFAULT_DATABASE_URL
     assert settings.database_url.startswith(
-        "postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil_iron_12_3_"
+        "postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil_iron_12_3_"
     )
 
 
@@ -63,7 +63,7 @@ def test_get_settings_uses_configured_env_file_override(tmp_path: Path) -> None:
     )
 
     assert settings.database_url.startswith(
-        "postgresql://override-user:override-password@127.0.0.1:54321/override_db_iron_12_3_"
+        "postgresql+psycopg://override-user:override-password@127.0.0.1:54321/override_db_iron_12_3_"
     )
 
 
@@ -74,10 +74,10 @@ def test_derive_worktree_database_url_is_deterministic_for_same_inputs() -> None
     second = derive_worktree_database_url(DEFAULT_DATABASE_URL, worktree_path=worktree)
 
     assert first == second
-    assert first.startswith("postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/")
-    assert first.removeprefix("postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/").startswith(
-        "iron_counsil_iron_12_3_"
-    )
+    assert first.startswith("postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/")
+    assert first.removeprefix(
+        "postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/"
+    ).startswith("iron_counsil_iron_12_3_")
 
 
 def test_derive_worktree_database_url_isolates_parallel_lanes() -> None:
@@ -122,3 +122,16 @@ def test_derive_worktree_database_url_ignores_empty_lane_slug() -> None:
     )
 
     assert derived.endswith("iron_counsil_iron_12_3_89b0fbd6")
+
+
+def test_get_settings_normalizes_legacy_postgresql_scheme_to_psycopg(tmp_path: Path) -> None:
+    env_file = tmp_path / "env.local"
+    env_file.write_text(
+        "DATABASE_URL=postgresql://legacy-user:legacy-password@127.0.0.1:54321/legacy_db\n"
+    )
+
+    settings = get_settings(env={}, env_file=env_file, worktree_path=Path("/tmp/iron-12-3"))
+
+    assert settings.database_url.startswith(
+        "postgresql+psycopg://legacy-user:legacy-password@127.0.0.1:54321/legacy_db_iron_12_3_"
+    )

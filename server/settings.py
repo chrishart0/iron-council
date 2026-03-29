@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy.engine import make_url
 
-DEFAULT_DATABASE_URL = "postgresql://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil"
+DEFAULT_DATABASE_URL = "postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil"
 DEFAULT_ENV_FILE = Path(".env.local")
 ENV_FILE_VARIABLE = "IRON_COUNCIL_ENV_FILE"
 DB_LANE_VARIABLE = "IRON_COUNCIL_DB_LANE"
@@ -48,14 +48,22 @@ def derive_worktree_database_url(
     worktree_path: Path,
     lane: str | None = None,
 ) -> str:
-    url = make_url(database_url)
+    normalized_database_url = normalize_database_url(database_url)
+    url = make_url(normalized_database_url)
     if url.get_backend_name() != "postgresql" or url.database is None:
-        return database_url
+        return normalized_database_url
 
     identity = _build_worktree_identity(worktree_path=worktree_path, lane=lane)
     base_database_name = _slugify_identifier(url.database) or "iron_counsil"
     database_name = _limit_identifier_length(f"{base_database_name}_{identity}")
     return url.set(database=database_name).render_as_string(hide_password=False)
+
+
+def normalize_database_url(database_url: str) -> str:
+    url = make_url(database_url)
+    if url.get_backend_name() != "postgresql" or url.drivername != "postgresql":
+        return database_url
+    return url.set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
 
 
 def _load_env_file(env_file: Path) -> dict[str, str]:
