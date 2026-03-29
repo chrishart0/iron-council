@@ -4,7 +4,7 @@ import os
 from http import HTTPStatus
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -25,6 +25,7 @@ from server.models.api import (
     AllianceListResponse,
     ApiErrorDetail,
     ApiErrorResponse,
+    AuthenticatedAgentContext,
     MatchJoinRequest,
     MatchJoinResponse,
     MatchListResponse,
@@ -57,6 +58,7 @@ def get_match_registry(request: Request) -> InMemoryMatchRegistry:
 
 
 MatchRegistryDependency = Annotated[InMemoryMatchRegistry, Depends(get_match_registry)]
+ApiKeyHeader = Annotated[str | None, Header(alias="X-API-Key")]
 PlayerIdQuery = Annotated[str, Query(...)]
 API_ERROR_RESPONSE_SCHEMA = {"model": ApiErrorResponse}
 
@@ -194,6 +196,27 @@ def _join_validation_error_response(exc: RequestValidationError) -> JSONResponse
     )
 
 
+def get_authenticated_agent(
+    registry: MatchRegistryDependency,
+    api_key: ApiKeyHeader = None,
+) -> AuthenticatedAgentContext:
+    if api_key is None:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code="invalid_api_key",
+            message="A valid active X-API-Key header is required.",
+        )
+
+    authenticated_agent = registry.resolve_authenticated_agent(api_key)
+    if authenticated_agent is None:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code="invalid_api_key",
+            message="A valid active X-API-Key header is required.",
+        )
+    return authenticated_agent
+
+
 def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAPI:
     app = FastAPI(title="iron-counsil-server", version=__version__)
     app.state.match_registry = match_registry or _load_default_match_registry()
@@ -253,6 +276,24 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
                 for record in registry.list_matches()
             ]
         )
+
+    @api_router.get(
+        "/agent/profile",
+        response_model=AgentProfileResponse,
+        responses={HTTPStatus.UNAUTHORIZED: API_ERROR_RESPONSE_SCHEMA},
+    )
+    async def get_authenticated_agent_profile(
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+        registry: MatchRegistryDependency,
+    ) -> AgentProfileResponse:
+        profile = registry.get_agent_profile(authenticated_agent.agent_id)
+        if profile is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="agent_not_found",
+                message=f"Agent '{authenticated_agent.agent_id}' was not found.",
+            )
+        return profile
 
     @api_router.get(
         "/agents/{agent_id}/profile",

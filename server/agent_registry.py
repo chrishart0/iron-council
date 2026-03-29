@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from server.auth import hash_api_key
 from server.models.api import (
     AgentProfileHistory,
     AgentProfileRating,
@@ -10,6 +11,7 @@ from server.models.api import (
     AllianceActionRequest,
     AllianceMemberRecord,
     AllianceRecord,
+    AuthenticatedAgentContext,
     MatchJoinResponse,
     MatchMessageCreateRequest,
     MatchMessageRecord,
@@ -97,17 +99,40 @@ class MatchRecord:
     messages: list[MatchMessage] = field(default_factory=list)
     treaties: list[MatchTreaty] = field(default_factory=list)
     alliances: list[MatchAlliance] = field(default_factory=list)
+    authenticated_agent_keys: list[AuthenticatedAgentKeyRecord] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class AuthenticatedAgentKeyRecord:
+    agent_id: str
+    key_hash: str
+    is_active: bool = True
 
 
 class InMemoryMatchRegistry:
     def __init__(self) -> None:
         self._matches: dict[str, MatchRecord] = {}
         self._agent_profiles: dict[str, AgentProfileResponse] = {}
+        self._authenticated_agents_by_key_hash: dict[str, AuthenticatedAgentContext] = {}
+        self._agent_api_key_hashes_by_agent_id: dict[str, set[str]] = {}
 
     def seed_match(self, record: MatchRecord) -> None:
         cloned_state = record.state.model_copy(deep=True)
         for profile in record.agent_profiles:
             self.seed_agent_profile(profile)
+        for authenticated_key in record.authenticated_agent_keys:
+            authenticated_profile = self.get_agent_profile(authenticated_key.agent_id)
+            if authenticated_profile is None:
+                continue
+            self.seed_authenticated_agent_key(
+                AuthenticatedAgentContext(
+                    agent_id=authenticated_profile.agent_id,
+                    display_name=authenticated_profile.display_name,
+                    is_seeded=authenticated_profile.is_seeded,
+                ),
+                key_hash=authenticated_key.key_hash,
+                is_active=authenticated_key.is_active,
+            )
         self._matches[record.match_id] = MatchRecord(
             match_id=record.match_id,
             status=record.status,
@@ -165,11 +190,21 @@ class InMemoryMatchRegistry:
                 if record.alliances
                 else self._derive_alliances_from_state(cloned_state)
             ),
+            authenticated_agent_keys=[
+                AuthenticatedAgentKeyRecord(
+                    agent_id=authenticated_key.agent_id,
+                    key_hash=authenticated_key.key_hash,
+                    is_active=authenticated_key.is_active,
+                )
+                for authenticated_key in record.authenticated_agent_keys
+            ],
         )
 
     def reset(self) -> None:
         self._matches.clear()
         self._agent_profiles.clear()
+        self._authenticated_agents_by_key_hash.clear()
+        self._agent_api_key_hashes_by_agent_id.clear()
 
     def list_matches(self) -> list[MatchRecord]:
         return [self._matches[match_id] for match_id in sorted(self._matches)]
@@ -185,6 +220,27 @@ class InMemoryMatchRegistry:
         if profile is None:
             return None
         return profile.model_copy(deep=True)
+
+    def seed_authenticated_agent_key(
+        self,
+        agent: AuthenticatedAgentContext,
+        *,
+        key_hash: str,
+        is_active: bool = True,
+    ) -> None:
+        self._agent_api_key_hashes_by_agent_id.setdefault(agent.agent_id, set()).add(key_hash)
+        if is_active:
+            self._authenticated_agents_by_key_hash[key_hash] = agent.model_copy(deep=True)
+
+    def resolve_authenticated_agent(self, api_key: str) -> AuthenticatedAgentContext | None:
+        authenticated_agent = self._authenticated_agents_by_key_hash.get(hash_api_key(api_key))
+        if authenticated_agent is None:
+            return None
+        return authenticated_agent.model_copy(deep=True)
+
+    def deactivate_agent_api_key(self, agent_id: str) -> None:
+        for key_hash in self._agent_api_key_hashes_by_agent_id.get(agent_id, set()):
+            self._authenticated_agents_by_key_hash.pop(key_hash, None)
 
     def join_match(self, *, match_id: str, agent_id: str) -> MatchJoinResponse:
         record = self._matches[match_id]
@@ -687,6 +743,7 @@ def build_seeded_match_records(
     secondary_match_id: str = "match-beta",
 ) -> list[MatchRecord]:
     seeded_profiles = build_seeded_agent_profiles()
+    seeded_authenticated_keys = build_seeded_authenticated_agent_keys()
     return [
         MatchRecord(
             match_id=primary_match_id,
@@ -694,6 +751,7 @@ def build_seeded_match_records(
             tick_interval_seconds=30,
             state=MatchState.model_validate(_seeded_match_state_payload()),
             agent_profiles=seeded_profiles,
+            authenticated_agent_keys=seeded_authenticated_keys,
         ),
         MatchRecord(
             match_id=secondary_match_id,
@@ -707,6 +765,7 @@ def build_seeded_match_records(
                 }
             ),
             agent_profiles=seeded_profiles,
+            authenticated_agent_keys=seeded_authenticated_keys,
         ),
     ]
 
@@ -733,6 +792,21 @@ def build_seeded_agent_profiles() -> list[AgentProfileResponse]:
             ),
         )
         for player_id, display_name, elo_rating in seeded_profile_specs
+    ]
+
+
+def build_seeded_agent_api_key(agent_id: str) -> str:
+    return f"seed-api-key-for-{agent_id}"
+
+
+def build_seeded_authenticated_agent_keys() -> list[AuthenticatedAgentKeyRecord]:
+    return [
+        AuthenticatedAgentKeyRecord(
+            agent_id=profile.agent_id,
+            key_hash=hash_api_key(build_seeded_agent_api_key(profile.agent_id)),
+            is_active=True,
+        )
+        for profile in build_seeded_agent_profiles()
     ]
 
 

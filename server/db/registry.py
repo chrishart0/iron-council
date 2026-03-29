@@ -7,13 +7,14 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from server.agent_registry import (
+    AuthenticatedAgentKeyRecord,
     InMemoryMatchRegistry,
     MatchAlliance,
     MatchAllianceMember,
     MatchRecord,
     build_seeded_agent_profiles,
 )
-from server.db.models import Alliance, Match, Player
+from server.db.models import Alliance, ApiKey, Match, Player
 from server.models.api import AgentProfileHistory, AgentProfileRating, AgentProfileResponse
 from server.models.domain import MatchStatus
 from server.models.state import MatchState
@@ -30,6 +31,7 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
             .order_by(Alliance.formed_tick, Alliance.id)
         ).all()
         player_rows = session.scalars(select(Player).order_by(Player.match_id, Player.id)).all()
+        api_key_rows = session.scalars(select(ApiKey).order_by(ApiKey.id)).all()
 
         alliances_by_match = _load_persisted_alliances_by_match(
             matches=matches,
@@ -39,6 +41,11 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
         agent_profiles_by_match = _load_agent_profiles_by_match(
             matches=matches,
             player_rows=player_rows,
+        )
+        authenticated_keys_by_match = _load_authenticated_agent_keys_by_match(
+            matches=matches,
+            player_rows=player_rows,
+            api_key_rows=api_key_rows,
         )
 
         for match in matches:
@@ -55,6 +62,7 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
                 ),
                 agent_profiles=agent_profiles_by_match.get(match_id, build_seeded_agent_profiles()),
                 alliances=persisted_alliances,
+                authenticated_agent_keys=authenticated_keys_by_match.get(match_id, []),
             )
             registry.seed_match(record)
 
@@ -169,6 +177,46 @@ def _load_agent_profiles_by_match(
         ]
 
     return profiles_by_match
+
+
+def _load_authenticated_agent_keys_by_match(
+    *,
+    matches: Sequence[Match],
+    player_rows: Sequence[Player],
+    api_key_rows: Sequence[ApiKey],
+) -> dict[str, list[AuthenticatedAgentKeyRecord]]:
+    players_by_match: dict[str, list[Player]] = defaultdict(list)
+    api_keys_by_id = {str(api_key.id): api_key for api_key in api_key_rows}
+    for player in player_rows:
+        players_by_match[str(player.match_id)].append(player)
+
+    authenticated_keys_by_match: dict[str, list[AuthenticatedAgentKeyRecord]] = {}
+    for match in matches:
+        match_id = str(match.id)
+        state = MatchState.model_validate(match.state)
+        persisted_player_mapping = _build_persisted_player_mapping(
+            canonical_player_ids=sorted(state.players),
+            persisted_players=players_by_match.get(match_id, []),
+        )
+        authenticated_keys = [
+            AuthenticatedAgentKeyRecord(
+                agent_id=f"agent-{canonical_player_id}",
+                key_hash=api_key.key_hash,
+                is_active=bool(api_key.is_active),
+            )
+            for player in sorted(
+                players_by_match.get(match_id, []),
+                key=lambda persisted: str(persisted.id),
+            )
+            if player.is_agent
+            and player.api_key_id is not None
+            and (api_key := api_keys_by_id.get(str(player.api_key_id))) is not None
+            and (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None
+        ]
+        if authenticated_keys:
+            authenticated_keys_by_match[match_id] = authenticated_keys
+
+    return authenticated_keys_by_match
 
 
 def _build_persisted_player_mapping(

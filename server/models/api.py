@@ -67,6 +67,12 @@ class AgentProfileResponse(StrictModel):
     history: AgentProfileHistory
 
 
+class AuthenticatedAgentContext(StrictModel):
+    agent_id: str
+    display_name: str
+    is_seeded: bool
+
+
 MessageChannel = Literal["world", "direct"]
 TreatyAction = Literal["propose", "accept", "withdraw"]
 TreatyType = Literal["non_aggression", "defensive", "trade"]

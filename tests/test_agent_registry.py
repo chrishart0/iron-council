@@ -4,6 +4,7 @@ from server.agent_registry import (
     InMemoryMatchRegistry,
     MatchJoinError,
     MatchRecord,
+    build_seeded_agent_api_key,
     build_seeded_match_records,
 )
 from server.models.api import AllianceActionRequest
@@ -240,6 +241,35 @@ def test_get_agent_profile_returns_stable_seeded_placeholder_shape() -> None:
         "rating": {"elo": 1190, "provisional": True},
         "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
     }
+
+
+def test_resolve_authenticated_agent_returns_seeded_identity_without_raw_key_material() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    authenticated_agent = registry.resolve_authenticated_agent(
+        build_seeded_agent_api_key("agent-player-2")
+    )
+
+    assert authenticated_agent is not None
+    assert authenticated_agent.model_dump(mode="json") == {
+        "agent_id": "agent-player-2",
+        "display_name": "Morgana",
+        "is_seeded": True,
+    }
+
+
+def test_resolve_authenticated_agent_rejects_unknown_and_inactive_keys() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+    registry.deactivate_agent_api_key("agent-player-3")
+
+    assert registry.resolve_authenticated_agent("missing-key") is None
+    assert (
+        registry.resolve_authenticated_agent(build_seeded_agent_api_key("agent-player-3")) is None
+    )
 
 
 def test_join_rejects_non_joinable_and_full_matches_without_side_effects() -> None:

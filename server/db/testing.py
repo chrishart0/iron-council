@@ -8,7 +8,8 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
-from server.agent_registry import build_seeded_match_records
+from server.agent_registry import build_seeded_agent_api_key, build_seeded_match_records
+from server.auth import hash_api_key
 from server.db.config import configure_alembic_database_url
 from server.db.migrations import reset_database, upgrade_database
 
@@ -144,7 +145,7 @@ def seed_database(database_url: str) -> None:
                 {
                     "id": "00000000-0000-0000-0000-000000000201",
                     "user_id": "00000000-0000-0000-0000-000000000301",
-                    "key_hash": "seed-key-hash-arthur",
+                    "key_hash": hash_api_key(build_seeded_agent_api_key("agent-player-1")),
                     "elo_rating": 1210,
                     "is_active": True,
                     "created_at": seed_timestamp,
@@ -152,7 +153,7 @@ def seed_database(database_url: str) -> None:
                 {
                     "id": "00000000-0000-0000-0000-000000000202",
                     "user_id": "00000000-0000-0000-0000-000000000302",
-                    "key_hash": "seed-key-hash-morgana",
+                    "key_hash": hash_api_key(build_seeded_agent_api_key("agent-player-2")),
                     "elo_rating": 1190,
                     "is_active": True,
                     "created_at": seed_timestamp,

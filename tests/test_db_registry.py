@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from server.agent_registry import build_seeded_agent_api_key
 from server.db.registry import load_match_registry_from_database
 from server.db.testing import provision_seeded_database
 from sqlalchemy import create_engine, text
@@ -301,3 +302,49 @@ def test_load_match_registry_from_database_falls_back_when_membership_sets_do_no
         "player-3",
         "player-1",
     ]
+
+
+def test_load_match_registry_from_database_resolves_db_backed_agent_api_keys(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-auth.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    registry = load_match_registry_from_database(database_url)
+
+    authenticated_agent = registry.resolve_authenticated_agent(
+        build_seeded_agent_api_key("agent-player-2")
+    )
+
+    assert authenticated_agent is not None
+    assert authenticated_agent.model_dump(mode="json") == {
+        "agent_id": "agent-player-2",
+        "display_name": "Morgana",
+        "is_seeded": True,
+    }
+
+
+def test_load_match_registry_from_database_rejects_inactive_agent_api_keys(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-inactive-auth.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE api_keys
+                SET is_active = 0
+                WHERE id = :api_key_id
+                """
+            ),
+            {"api_key_id": "00000000-0000-0000-0000-000000000202"},
+        )
+
+    registry = load_match_registry_from_database(database_url)
+
+    assert (
+        registry.resolve_authenticated_agent(build_seeded_agent_api_key("agent-player-2")) is None
+    )

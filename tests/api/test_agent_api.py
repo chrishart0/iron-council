@@ -6,7 +6,11 @@ from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from server.agent_registry import InMemoryMatchRegistry, build_seeded_match_records
+from server.agent_registry import (
+    InMemoryMatchRegistry,
+    build_seeded_agent_api_key,
+    build_seeded_match_records,
+)
 from server.main import create_app
 
 
@@ -1726,6 +1730,71 @@ async def test_get_agent_profile_returns_stable_profile_shape_and_404_for_unknow
 
 
 @pytest.mark.asyncio
+async def test_authenticated_agent_profile_requires_valid_active_api_key(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        missing_key_response = await client.get("/api/v1/agent/profile")
+        invalid_key_response = await client.get(
+            "/api/v1/agent/profile",
+            headers={"X-API-Key": "invalid-key"},
+        )
+
+    assert missing_key_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_key_response.json() == {
+        "error": {
+            "code": "invalid_api_key",
+            "message": "A valid active X-API-Key header is required.",
+        }
+    }
+    assert invalid_key_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert invalid_key_response.json() == missing_key_response.json()
+
+
+@pytest.mark.asyncio
+async def test_authenticated_agent_profile_rejects_inactive_seeded_api_keys(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    seeded_registry.deactivate_agent_api_key("agent-player-2")
+
+    async with app_client as client:
+        response = await client.get(
+            "/api/v1/agent/profile",
+            headers={"X-API-Key": build_seeded_agent_api_key("agent-player-2")},
+        )
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.json() == {
+        "error": {
+            "code": "invalid_api_key",
+            "message": "A valid active X-API-Key header is required.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_authenticated_agent_profile_returns_current_agent_without_exposing_api_key(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        response = await client.get(
+            "/api/v1/agent/profile",
+            headers={"X-API-Key": build_seeded_agent_api_key("agent-player-2")},
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        "agent_id": "agent-player-2",
+        "display_name": "Morgana",
+        "is_seeded": True,
+        "rating": {"elo": 1190, "provisional": True},
+        "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
+    }
+    assert "api_key" not in response.text.lower()
+
+
+@pytest.mark.asyncio
 async def test_join_and_profile_endpoints_expose_stable_openapi_contracts(
     app_client: AsyncClient,
 ) -> None:
@@ -1752,6 +1821,12 @@ async def test_join_and_profile_endpoints_expose_stable_openapi_contracts(
     assert paths["/api/v1/agents/{agent_id}/profile"]["get"]["responses"]["404"]["content"][
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/agent/profile"]["get"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/AgentProfileResponse"}
+    assert paths["/api/v1/agent/profile"]["get"]["responses"]["401"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/ApiErrorResponse"}
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ from http import HTTPStatus
 from typing import Any
 
 import httpx
+from server.agent_registry import build_seeded_agent_api_key
 from tests.support import RunningApp
 
 
@@ -93,3 +94,30 @@ def test_agent_join_and_profile_smoke_flow_runs_through_real_process(
     }
     assert repeat_join_response.status_code == HTTPStatus.ACCEPTED
     assert repeat_join_response.json() == join_response.json()
+
+
+def test_authenticated_current_agent_profile_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        unauthenticated_response = client.get("/api/v1/agent/profile")
+        authenticated_response = client.get(
+            "/api/v1/agent/profile",
+            headers={"X-API-Key": build_seeded_agent_api_key("agent-player-2")},
+        )
+
+    assert unauthenticated_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert unauthenticated_response.json() == {
+        "error": {
+            "code": "invalid_api_key",
+            "message": "A valid active X-API-Key header is required.",
+        }
+    }
+    assert authenticated_response.status_code == HTTPStatus.OK
+    assert authenticated_response.json() == {
+        "agent_id": "agent-player-2",
+        "display_name": "Morgana",
+        "is_seeded": True,
+        "rating": {"elo": 1190, "provisional": True},
+        "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
+    }

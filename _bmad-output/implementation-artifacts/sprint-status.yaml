@@ -62,7 +62,7 @@ development_status:
   12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: done
 
   epic-14: in-progress
-  14-1-add-x-api-key-authentication-and-an-authenticated-current-agent-profile-endpoint: drafted
+  14-1-add-x-api-key-authentication-and-an-authenticated-current-agent-profile-endpoint: done
   14-2-bind-match-joins-and-match-scoped-reads-writes-to-the-authenticated-agent-identity: backlog
 
   epic-11: done

@@ -4,6 +4,7 @@ from http import HTTPStatus
 from typing import Any
 
 import httpx
+from server.agent_registry import build_seeded_agent_api_key
 from tests.support import RunningApp
 
 
@@ -71,6 +72,46 @@ def test_running_app_rejects_non_agent_profile_and_join_requests(
             "message": "Agent 'agent-player-1' was not found.",
         }
     }
+
+
+def test_running_app_serves_authenticated_current_agent_profile_from_db_registry(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        response = client.get(
+            "/api/v1/agent/profile",
+            headers={"X-API-Key": build_seeded_agent_api_key("agent-player-2")},
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        "agent_id": "agent-player-2",
+        "display_name": "Morgana",
+        "is_seeded": True,
+        "rating": {"elo": 1190, "provisional": True},
+        "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
+    }
+
+
+def test_running_app_rejects_missing_or_invalid_agent_api_keys_for_current_profile(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        missing_key_response = client.get("/api/v1/agent/profile")
+        invalid_key_response = client.get(
+            "/api/v1/agent/profile",
+            headers={"X-API-Key": "invalid-key"},
+        )
+
+    assert missing_key_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_key_response.json() == {
+        "error": {
+            "code": "invalid_api_key",
+            "message": "A valid active X-API-Key header is required.",
+        }
+    }
+    assert invalid_key_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert invalid_key_response.json() == missing_key_response.json()
 
 
 def test_running_app_rejects_stale_orders_against_db_seeded_match_state(
