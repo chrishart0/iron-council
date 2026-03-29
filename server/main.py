@@ -4,7 +4,7 @@ import os
 from http import HTTPStatus
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, Header, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -21,6 +21,7 @@ from server.agent_registry import (
 from server.db.registry import load_match_registry_from_database
 from server.fog import project_agent_state
 from server.models.api import (
+    AgentBriefingResponse,
     AgentProfileResponse,
     AllianceActionAcceptanceResponse,
     AllianceActionRequest,
@@ -387,6 +388,52 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         )
 
         return project_agent_state(record.state, player_id=resolved_player_id, match_id=match_id)
+
+    @api_router.get(
+        "/matches/{match_id}/agent-briefing",
+        response_model=AgentBriefingResponse,
+        responses={
+            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def get_agent_briefing(
+        match_id: str,
+        registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+        since_tick: Annotated[int | None, Query(ge=0)] = None,
+    ) -> AgentBriefingResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
+
+        return AgentBriefingResponse(
+            match_id=match_id,
+            player_id=resolved_player_id,
+            state=project_agent_state(
+                record.state, player_id=resolved_player_id, match_id=match_id
+            ),
+            alliances=registry.list_alliances(match_id=match_id),
+            treaties=registry.list_treaties(match_id=match_id, since_tick=since_tick),
+            group_chats=registry.list_visible_group_chats(
+                match_id=match_id,
+                player_id=resolved_player_id,
+            ),
+            messages=registry.list_briefing_messages(
+                match_id=match_id,
+                player_id=resolved_player_id,
+                since_tick=since_tick,
+            ),
+        )
 
     @api_router.post(
         "/matches/{match_id}/join",

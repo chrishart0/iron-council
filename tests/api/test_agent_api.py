@@ -13,7 +13,13 @@ from server.agent_registry import (
 )
 from server.auth import hash_api_key
 from server.main import create_app
-from server.models.api import AuthenticatedAgentContext
+from server.models.api import (
+    AuthenticatedAgentContext,
+    GroupChatCreateRequest,
+    GroupChatMessageCreateRequest,
+    MatchMessageCreateRequest,
+    TreatyActionRequest,
+)
 
 
 def _army_by_id(payload: dict[str, Any], army_id: str) -> dict[str, Any]:
@@ -92,6 +98,10 @@ def _alliance_payload(
 
 def _join_payload(*, match_id: str = "match-beta") -> dict[str, Any]:
     return {"match_id": match_id}
+
+
+def _briefing_message_contents(payload: dict[str, Any], bucket: str) -> list[str]:
+    return [message["content"] for message in payload["messages"][bucket]]
 
 
 def _agent_id_for_player(player_id: str) -> str:
@@ -1105,6 +1115,173 @@ async def test_alliance_lifecycle_reads_are_deterministic_and_update_membership(
 
 
 @pytest.mark.asyncio
+async def test_agent_briefing_returns_current_state_and_incremental_message_and_treaty_buckets(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+
+    seeded_registry.record_message(
+        match_id="match-alpha",
+        message=MatchMessageCreateRequest.model_validate(
+            _message_payload(tick=140, content="Old world intel.")
+        ),
+        sender_id="player-1",
+    )
+    seeded_registry.record_message(
+        match_id="match-alpha",
+        message=MatchMessageCreateRequest.model_validate(
+            _message_payload(
+                tick=142,
+                channel="direct",
+                recipient_id="player-2",
+                content="Fresh direct ping.",
+            ),
+        ),
+        sender_id="player-1",
+    )
+    seeded_registry.record_message(
+        match_id="match-alpha",
+        message=MatchMessageCreateRequest.model_validate(
+            _message_payload(tick=142, content="Fresh world intel.")
+        ),
+        sender_id="player-3",
+    )
+
+    created_group_chat = seeded_registry.create_group_chat(
+        match_id="match-alpha",
+        request=GroupChatCreateRequest.model_validate(
+            _group_chat_create_payload(tick=140, name="Northern Channel", member_ids=["player-1"])
+        ),
+        creator_id="player-2",
+    )
+    seeded_registry.record_group_chat_message(
+        match_id="match-alpha",
+        group_chat_id=created_group_chat.group_chat_id,
+        message=GroupChatMessageCreateRequest(
+            match_id="match-alpha",
+            tick=140,
+            content="Old group note.",
+        ),
+        sender_id="player-1",
+    )
+    seeded_registry.record_group_chat_message(
+        match_id="match-alpha",
+        group_chat_id=created_group_chat.group_chat_id,
+        message=GroupChatMessageCreateRequest(
+            match_id="match-alpha",
+            tick=142,
+            content="Fresh group note.",
+        ),
+        sender_id="player-2",
+    )
+
+    original_tick = record.state.tick
+    record.state.tick = 140
+    seeded_registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest.model_validate(_treaty_payload(counterparty_id="player-3")),
+        player_id="player-2",
+    )
+    record.state.tick = 142
+    seeded_registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest.model_validate(
+            _treaty_payload(action="accept", counterparty_id="player-2")
+        ),
+        player_id="player-3",
+    )
+    record.state.tick = original_tick
+
+    async with app_client as client:
+        response = await client.get(
+            "/api/v1/matches/match-alpha/agent-briefing?since_tick=142",
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    assert payload["match_id"] == "match-alpha"
+    assert payload["player_id"] == "player-2"
+    assert payload["state"]["match_id"] == "match-alpha"
+    assert payload["state"]["tick"] == 142
+    assert payload["state"]["player_id"] == "player-2"
+    assert payload["alliances"] == [
+        {
+            "alliance_id": "alliance-red",
+            "name": "alliance-red",
+            "leader_id": "player-1",
+            "formed_tick": 142,
+            "members": [
+                {"player_id": "player-1", "joined_tick": 142},
+                {"player_id": "player-2", "joined_tick": 142},
+            ],
+        }
+    ]
+    assert payload["group_chats"] == [
+        {
+            "group_chat_id": "group-chat-1",
+            "name": "Northern Channel",
+            "member_ids": ["player-1", "player-2"],
+            "created_by": "player-2",
+            "created_tick": 140,
+        }
+    ]
+    assert payload["treaties"] == [
+        {
+            "treaty_id": 0,
+            "player_a_id": "player-2",
+            "player_b_id": "player-3",
+            "treaty_type": "trade",
+            "status": "active",
+            "proposed_by": "player-2",
+            "proposed_tick": 140,
+            "signed_tick": 142,
+            "withdrawn_by": None,
+            "withdrawn_tick": None,
+        }
+    ]
+    assert payload["messages"]["direct"][0]["recipient_id"] == "player-2"
+    assert _briefing_message_contents(payload, "direct") == ["Fresh direct ping."]
+    assert _briefing_message_contents(payload, "group") == ["Fresh group note."]
+    assert _briefing_message_contents(payload, "world") == [
+        "Fresh world intel.",
+        "Treaty signed: player-2 and player-3 entered a trade treaty.",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_agent_briefing_matches_missing_and_unjoined_error_contracts(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        missing_match_response = await client.get(
+            "/api/v1/matches/match-missing/agent-briefing",
+            headers=_auth_headers_for_player("player-1"),
+        )
+        unjoined_response = await client.get(
+            "/api/v1/matches/match-beta/agent-briefing",
+            headers=_auth_headers_for_agent("agent-player-3"),
+        )
+
+    assert missing_match_response.status_code == HTTPStatus.NOT_FOUND
+    assert missing_match_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match 'match-missing' was not found.",
+        }
+    }
+    assert unjoined_response.status_code == HTTPStatus.BAD_REQUEST
+    assert unjoined_response.json() == {
+        "error": {
+            "code": "agent_not_joined",
+            "message": "Agent 'agent-player-3' has not joined match 'match-beta' as a player.",
+        }
+    }
+
+
+@pytest.mark.asyncio
 async def test_alliance_actions_reject_invalid_authenticated_requests(
     app_client: AsyncClient,
     seeded_registry: InMemoryMatchRegistry,
@@ -1574,6 +1751,9 @@ async def test_openapi_declares_secured_match_route_contracts(app_client: AsyncC
     assert paths["/api/v1/matches/{match_id}/state"]["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/AgentStateProjection"}
+    assert paths["/api/v1/matches/{match_id}/agent-briefing"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/AgentBriefingResponse"}
     assert paths["/api/v1/matches/{match_id}/orders"]["post"]["responses"]["202"]["content"][
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/OrderAcceptanceResponse"}

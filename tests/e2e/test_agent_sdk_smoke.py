@@ -73,3 +73,35 @@ def test_agent_sdk_group_chat_smoke_flow_runs_through_real_process(
     assert sent_message.message.content == "SDK smoke ready."
     assert messages.messages[0].sender_id == "player-3"
     assert messages.messages[0].content == "SDK smoke ready."
+
+
+def test_agent_sdk_briefing_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    sdk_module = load_python_agent_sdk_module()
+    viewer_client = sdk_module.IronCouncilClient(
+        base_url=running_seeded_app.base_url,
+        api_key=build_seeded_agent_api_key("agent-player-2"),
+    )
+    sender_client = sdk_module.IronCouncilClient(
+        base_url=running_seeded_app.base_url,
+        api_key=build_seeded_agent_api_key("agent-player-3"),
+    )
+
+    sender_client.send_message(
+        running_seeded_app.primary_match_id,
+        tick=142,
+        channel="direct",
+        recipient_id="player-2",
+        content="SDK briefing direct.",
+    )
+    briefing = viewer_client.get_agent_briefing(
+        running_seeded_app.primary_match_id,
+        since_tick=142,
+    )
+
+    assert briefing.match_id == running_seeded_app.primary_match_id
+    assert briefing.player_id == "player-2"
+    assert briefing.state.player_id == "player-2"
+    assert briefing.alliances[0].alliance_id == "alliance-red"
+    assert briefing.messages.direct[0].content == "SDK briefing direct."

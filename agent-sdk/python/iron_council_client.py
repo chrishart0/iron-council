@@ -381,6 +381,22 @@ class AllianceActionAcceptanceResponse(StrictModel):
     alliance: AllianceRecord | None = None
 
 
+class AgentBriefingMessageBuckets(StrictModel):
+    direct: list[MatchMessageRecord] = Field(default_factory=list)
+    group: list[GroupChatMessageRecord] = Field(default_factory=list)
+    world: list[MatchMessageRecord] = Field(default_factory=list)
+
+
+class AgentBriefingResponse(StrictModel):
+    match_id: str
+    player_id: str
+    state: AgentStateProjection
+    alliances: list[AllianceRecord] = Field(default_factory=list)
+    treaties: list[TreatyRecord] = Field(default_factory=list)
+    group_chats: list[GroupChatRecord] = Field(default_factory=list)
+    messages: AgentBriefingMessageBuckets
+
+
 class SyncRequestSession(Protocol):
     def request(
         self,
@@ -389,6 +405,7 @@ class SyncRequestSession(Protocol):
         *,
         headers: Mapping[str, str] | None = None,
         json: Any = None,
+        params: Mapping[str, str | int] | None = None,
     ) -> httpx.Response: ...
 
 
@@ -465,6 +482,20 @@ class IronCouncilClient:
             "GET",
             f"/api/v1/matches/{match_id}/state",
             response_model=AgentStateProjection,
+        )
+
+    def get_agent_briefing(
+        self,
+        match_id: str,
+        *,
+        since_tick: int | None = None,
+    ) -> AgentBriefingResponse:
+        params = None if since_tick is None else {"since_tick": since_tick}
+        return self._request_json(
+            "GET",
+            f"/api/v1/matches/{match_id}/agent-briefing",
+            params=params,
+            response_model=AgentBriefingResponse,
         )
 
     def submit_orders(
@@ -633,12 +664,14 @@ class IronCouncilClient:
         *,
         response_model: type[ResponseModelT],
         json_body: BaseModel | Mapping[str, Any] | None = None,
+        params: Mapping[str, str | int] | None = None,
     ) -> ResponseModelT:
         try:
             response = self._send_request(
                 method,
                 path,
                 json_body=None if json_body is None else self._model_dump(json_body),
+                params=params,
             )
         except httpx.HTTPError as exc:
             raise IronCouncilApiError(
@@ -675,25 +708,22 @@ class IronCouncilClient:
         path: str,
         *,
         json_body: dict[str, Any] | None,
+        params: Mapping[str, str | int] | None,
     ) -> httpx.Response:
         request_url = f"{self._base_url}{path}"
         request_headers = {"X-API-Key": self._api_key}
+        request_kwargs: dict[str, Any] = {
+            "headers": request_headers,
+            "json": json_body,
+        }
+        if params is not None:
+            request_kwargs["params"] = params
 
         if self._session is not None:
-            return self._session.request(
-                method,
-                request_url,
-                headers=request_headers,
-                json=json_body,
-            )
+            return self._session.request(method, request_url, **request_kwargs)
 
         with httpx.Client(timeout=self._timeout) as session:
-            return session.request(
-                method,
-                request_url,
-                headers=request_headers,
-                json=json_body,
-            )
+            return session.request(method, request_url, **request_kwargs)
 
     @staticmethod
     def _model_dump(value: BaseModel | Mapping[str, Any]) -> dict[str, Any]:

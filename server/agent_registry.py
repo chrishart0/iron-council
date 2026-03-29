@@ -5,6 +5,7 @@ from typing import Any
 
 from server.auth import hash_api_key
 from server.models.api import (
+    AgentBriefingMessageBuckets,
     AgentProfileHistory,
     AgentProfileRating,
     AgentProfileResponse,
@@ -428,6 +429,7 @@ class InMemoryMatchRegistry:
         match_id: str,
         group_chat_id: str,
         player_id: str,
+        since_tick: int | None = None,
     ) -> list[GroupChatMessageRecord]:
         group_chat = self._require_group_chat_member(
             match_id=match_id,
@@ -443,6 +445,7 @@ class InMemoryMatchRegistry:
                 content=message.content,
             )
             for message in group_chat.messages
+            if since_tick is None or message.tick >= since_tick
         ]
 
     def record_group_chat_message(
@@ -474,13 +477,17 @@ class InMemoryMatchRegistry:
             content=stored_message.content,
         )
 
-    def list_treaties(self, *, match_id: str) -> list[TreatyRecord]:
+    def list_treaties(self, *, match_id: str, since_tick: int | None = None) -> list[TreatyRecord]:
         record = self._matches.get(match_id)
         if record is None:
             return []
 
         treaties = sorted(
-            record.treaties,
+            (
+                treaty
+                for treaty in record.treaties
+                if since_tick is None or self._treaty_latest_tick(treaty) >= since_tick
+            ),
             key=lambda treaty: (
                 treaty.player_a_id,
                 treaty.player_b_id,
@@ -734,6 +741,62 @@ class InMemoryMatchRegistry:
                 )
         return visible_messages
 
+    def list_briefing_messages(
+        self,
+        *,
+        match_id: str,
+        player_id: str,
+        since_tick: int | None = None,
+    ) -> AgentBriefingMessageBuckets:
+        visible_messages = self.list_visible_messages(
+            match_id=match_id,
+            player_id=player_id,
+        )
+        filtered_messages = [
+            message
+            for message in visible_messages
+            if since_tick is None or message.tick >= since_tick
+        ]
+        group_messages = self.list_visible_group_chat_messages(
+            match_id=match_id,
+            player_id=player_id,
+            since_tick=since_tick,
+        )
+        return AgentBriefingMessageBuckets(
+            direct=[message for message in filtered_messages if message.channel == "direct"],
+            group=group_messages,
+            world=[message for message in filtered_messages if message.channel == "world"],
+        )
+
+    def list_visible_group_chat_messages(
+        self,
+        *,
+        match_id: str,
+        player_id: str,
+        since_tick: int | None = None,
+    ) -> list[GroupChatMessageRecord]:
+        record = self._matches.get(match_id)
+        if record is None:
+            return []
+
+        visible_messages = [
+            GroupChatMessageRecord(
+                message_id=message.message_id,
+                group_chat_id=group_chat.group_chat_id,
+                sender_id=message.sender_id,
+                tick=message.tick,
+                content=message.content,
+            )
+            for group_chat in record.group_chats
+            if player_id in group_chat.member_ids
+            for message in group_chat.messages
+            if since_tick is None or message.tick >= since_tick
+        ]
+        return sorted(
+            visible_messages,
+            key=lambda message: (message.tick, message.group_chat_id, message.message_id),
+        )
+
     def _append_message(
         self,
         *,
@@ -782,6 +845,13 @@ class InMemoryMatchRegistry:
             ):
                 return treaty
         return None
+
+    def _treaty_latest_tick(self, treaty: MatchTreaty) -> int:
+        return max(
+            treaty.proposed_tick,
+            treaty.signed_tick if treaty.signed_tick is not None else treaty.proposed_tick,
+            treaty.withdrawn_tick if treaty.withdrawn_tick is not None else treaty.proposed_tick,
+        )
 
     def _find_alliance(
         self,

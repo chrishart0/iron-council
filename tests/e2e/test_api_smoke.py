@@ -231,3 +231,47 @@ def test_group_chat_smoke_flow_runs_through_real_process(
             }
         ],
     }
+
+
+def test_agent_briefing_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        world_message_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "channel": "world",
+                "content": "Smoke world briefing.",
+            },
+            headers=_headers("agent-player-3"),
+        )
+        direct_message_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "channel": "direct",
+                "recipient_id": "player-2",
+                "content": "Smoke direct briefing.",
+            },
+            headers=_headers("agent-player-3"),
+        )
+        briefing_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/agent-briefing",
+            params={"since_tick": 142},
+            headers=_headers(),
+        )
+
+    assert world_message_response.status_code == HTTPStatus.ACCEPTED
+    assert direct_message_response.status_code == HTTPStatus.ACCEPTED
+    assert briefing_response.status_code == HTTPStatus.OK
+    assert briefing_response.json()["state"]["player_id"] == "player-2"
+    assert briefing_response.json()["alliances"][0]["alliance_id"] == "alliance-red"
+    assert [message["content"] for message in briefing_response.json()["messages"]["direct"]] == [
+        "Smoke direct briefing."
+    ]
+    assert [message["content"] for message in briefing_response.json()["messages"]["world"]] == [
+        "Smoke world briefing."
+    ]

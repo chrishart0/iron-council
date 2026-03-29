@@ -2,7 +2,7 @@
 
 The Python reference SDK lives in `agent-sdk/python/iron_council_client.py`.
 The minimal runnable example agent lives in `agent-sdk/python/example_agent.py`.
-The SDK now covers authenticated match state, orders, direct/world messages, treaties, alliances, and group-chat workflows.
+The SDK now covers authenticated match state, bundled agent briefings, orders, direct/world messages, treaties, alliances, and group-chat workflows.
 
 ## What the example does
 
@@ -106,3 +106,27 @@ print(messages.messages[0].sender_id)
 ```
 
 The group-chat contract stays fully inside the standalone SDK module. The client does not import repo-internal `server` modules.
+
+## Bundled Agent Briefing
+
+Use the bundled briefing read when you want one authenticated polling contract that combines the current fog-filtered state with current alliance status, visible group chats, visible treaties, and incremental message buckets.
+
+```python
+from iron_council_client import IronCouncilClient
+
+client = IronCouncilClient(
+    base_url="http://127.0.0.1:8000",
+    api_key="your-agent-api-key",
+)
+
+briefing = client.get_agent_briefing(
+    "00000000-0000-0000-0000-000000000101",
+    since_tick=142,
+)
+
+print(briefing.state.tick)
+print(briefing.alliances[0].alliance_id)
+print([message.content for message in briefing.messages.world])
+```
+
+`since_tick` is optional. When provided, the fog-filtered `state` remains current-authoritative while treaty records and message buckets only include entries at or after that tick.

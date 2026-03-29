@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from server.models.domain import MatchStatus, StrictModel, TickDuration
+from server.models.fog import AgentStateProjection
 from server.models.orders import OrderBatch
 
 
@@ -258,3 +259,19 @@ class AllianceActionAcceptanceResponse(StrictModel):
     match_id: str
     player_id: str
     alliance: AllianceRecord | None = None
+
+
+class AgentBriefingMessageBuckets(StrictModel):
+    direct: list[MatchMessageRecord] = Field(default_factory=list)
+    group: list[GroupChatMessageRecord] = Field(default_factory=list)
+    world: list[MatchMessageRecord] = Field(default_factory=list)
+
+
+class AgentBriefingResponse(StrictModel):
+    match_id: str
+    player_id: str
+    state: AgentStateProjection
+    alliances: list[AllianceRecord] = Field(default_factory=list)
+    treaties: list[TreatyRecord] = Field(default_factory=list)
+    group_chats: list[GroupChatRecord] = Field(default_factory=list)
+    messages: AgentBriefingMessageBuckets
