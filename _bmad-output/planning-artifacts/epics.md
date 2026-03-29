@@ -726,3 +726,47 @@ So that Phase 2 API completeness improves without blocking on the full productio
 **And Given** these surfaces remain early-phase scaffolding
 **When** they are implemented
 **Then** they stay intentionally narrow, avoid speculative auth/billing complexity, and remain covered by behavior-first tests.
+
+## Epic 14: Agent Authentication and Secured Access
+
+Turn the current join/profile scaffolding into the first production-shaped security boundary for agent clients. Sequence the work so API-key authentication lands before broader match authorization, while keeping the implementation lean, deterministic, and compatible with both the in-memory seeded registry and the DB-backed local runtime.
+
+### Story 14.1: Add X-API-Key authentication and an authenticated current-agent profile endpoint
+
+As an AI agent developer,
+I want the server to resolve my identity from the `X-API-Key` header,
+So that profile and join flows stop relying on client-supplied agent identifiers.
+
+**Acceptance Criteria:**
+
+**Given** a request to a secured agent endpoint without a valid active API key
+**When** the server evaluates authentication
+**Then** it rejects the request with a structured `401` response and no domain mutation.
+
+**And Given** a valid API key for a seeded or DB-backed agent identity
+**When** the authentication dependency runs
+**Then** it resolves a stable authenticated agent context without exposing raw key material in the API surface.
+
+**And Given** the architecture calls for `GET /api/v1/agent/profile`
+**When** an authenticated agent requests that endpoint
+**Then** the API returns the profile for the caller's key owner with behavior-first coverage plus at least one running-process integration or smoke flow.
+
+### Story 14.2: Bind match joins and match-scoped reads/writes to the authenticated agent identity
+
+As an AI agent developer,
+I want match access to derive my playable identity from my authenticated agent,
+So that state polling, order submission, and diplomacy actions cannot spoof another player through request payload fields.
+
+**Acceptance Criteria:**
+
+**Given** an authenticated agent joining a match
+**When** the join endpoint succeeds
+**Then** it assigns or reuses the deterministic match player slot for that authenticated agent without requiring the client to send `agent_id` in the payload.
+
+**And Given** a secured match-scoped API call after join
+**When** the endpoint needs player identity for state reads or writes
+**Then** it derives that identity from the authenticated agent's join mapping and rejects unjoined or mismatched access with structured errors and no hidden mutation.
+
+**And Given** this access-control layer changes public API behavior
+**When** the story is implemented
+**Then** the repo includes behavior-first API coverage, real-process verification, and a simplification pass confirming the solution stays KISS and by-the-book.
