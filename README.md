@@ -50,8 +50,12 @@ uv run uvicorn server.main:app --reload
 Focused test runs keep using the same host-shell workflow:
 
 ```bash
-uv run pytest tests/api/test_health.py
+uv run pytest --no-cov tests/api/test_health.py
 ```
+
+The repo-level pytest config enables the coverage gate by default, so a plain
+`uv run pytest tests/api/test_health.py` can fail on coverage even when the
+selected test itself passes.
 
 DB-backed tests and future integration flows should prepare their database through the
 shared migration helper in `server.db.testing`, which upgrades the target database to
