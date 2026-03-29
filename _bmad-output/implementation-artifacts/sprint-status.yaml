@@ -62,7 +62,7 @@ development_status:
   12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: drafted
 
   epic-11: in-progress
-  11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: in-progress
+  11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: done
   11-2-add-realistic-scenario-based-smoke-tests-for-deterministic-gameplay-flows: drafted
   11-3-add-a-large-batch-simulation-regression-harness-with-invariant-checks: drafted
   11-4-add-critical-api-end-to-end-tests-for-agent-gameplay-journeys: done

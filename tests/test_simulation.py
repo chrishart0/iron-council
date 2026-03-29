@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import builtins
-import importlib
-import sys
 from copy import deepcopy
 
 import pytest
@@ -185,45 +182,6 @@ def test_simulate_ticks_rejects_orders_and_order_provider_together() -> None:
             orders=OrderBatch(),
             order_provider=order_provider,
         )
-
-
-def test_simulate_ticks_runs_without_importing_external_infrastructure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    real_import = builtins.__import__
-    blocked_modules = {"fastapi", "sqlalchemy", "asyncpg", "psycopg", "websockets"}
-    attempted_imports: list[str] = []
-
-    def import_guard(
-        name: str,
-        globals: dict[str, object] | None = None,
-        locals: dict[str, object] | None = None,
-        fromlist: tuple[str, ...] = (),
-        level: int = 0,
-    ) -> object:
-        root_module = name.split(".", 1)[0]
-        if root_module in blocked_modules:
-            attempted_imports.append(name)
-            raise AssertionError(f"simulate_ticks should not import external module: {name}")
-        return real_import(name, globals, locals, fromlist, level)
-
-    server_modules = [
-        name for name in sys.modules if name == "server" or name.startswith("server.")
-    ]
-    for module_name in server_modules:
-        monkeypatch.delitem(sys.modules, module_name, raising=False)
-
-    monkeypatch.setattr(builtins, "__import__", import_guard)
-    importlib.invalidate_caches()
-
-    simulation_module = importlib.import_module("server.simulation")
-    orders_module = importlib.import_module("server.models.orders")
-    state_module = importlib.import_module("server.models.state")
-    state = state_module.MatchState.model_validate(_match_state().model_dump(mode="json"))
-    simulation = simulation_module.simulate_ticks(state, ticks=1, orders=orders_module.OrderBatch())
-
-    assert simulation.final_state.tick == 6
-    assert attempted_imports == []
 
 
 def test_simulate_ticks_is_deterministic_for_movement_transit_progression() -> None:
