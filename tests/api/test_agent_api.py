@@ -96,6 +96,70 @@ def _alliance_payload(
     }
 
 
+def _command_envelope_payload(
+    *,
+    match_id: str = "match-alpha",
+    tick: int = 142,
+    orders: dict[str, Any] | None = None,
+    messages: list[dict[str, Any]] | None = None,
+    treaties: list[dict[str, Any]] | None = None,
+    alliance: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "match_id": match_id,
+        "tick": tick,
+        "orders": orders
+        or {
+            "movements": [],
+            "recruitment": [],
+            "upgrades": [],
+            "transfers": [],
+        },
+        "messages": messages or [],
+        "treaties": treaties or [],
+        "alliance": alliance,
+    }
+
+
+def _command_message(
+    *,
+    channel: str = "world",
+    recipient_id: str | None = None,
+    content: str = "Hold position.",
+) -> dict[str, Any]:
+    return {
+        "channel": channel,
+        "recipient_id": recipient_id,
+        "content": content,
+    }
+
+
+def _command_treaty(
+    *,
+    counterparty_id: str = "player-1",
+    action: str = "propose",
+    treaty_type: str = "trade",
+) -> dict[str, Any]:
+    return {
+        "counterparty_id": counterparty_id,
+        "action": action,
+        "treaty_type": treaty_type,
+    }
+
+
+def _command_alliance(
+    *,
+    action: str = "create",
+    alliance_id: str | None = None,
+    name: str | None = "Northern Pact",
+) -> dict[str, Any]:
+    return {
+        "action": action,
+        "alliance_id": alliance_id,
+        "name": name,
+    }
+
+
 def _join_payload(*, match_id: str = "match-beta") -> dict[str, Any]:
     return {"match_id": match_id}
 
@@ -367,6 +431,383 @@ async def test_submit_orders_rejects_invalid_authenticated_requests_without_muta
     ]
     assert seeded_registry.list_order_submissions("match-alpha") == []
     assert _match_state_dump(seeded_registry) == before_state
+
+
+@pytest.mark.asyncio
+async def test_post_command_envelope_accepts_orders_messages_treaties_and_alliance_in_one_request(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+    representative_order_payload: dict[str, Any],
+) -> None:
+    payload = _command_envelope_payload(
+        orders={
+            **deepcopy(representative_order_payload["orders"]),
+            "movements": [{"army_id": "army-b", "destination": "birmingham"}],
+            "recruitment": [],
+            "upgrades": [],
+            "transfers": [],
+        },
+        messages=[
+            _command_message(channel="world", recipient_id=None, content="Envelope world update."),
+            _command_message(
+                channel="direct",
+                recipient_id="player-1",
+                content="Envelope direct update.",
+            ),
+        ],
+        treaties=[_command_treaty(counterparty_id="player-3", action="propose")],
+        alliance=_command_alliance(action="leave", alliance_id=None, name=None),
+    )
+
+    async with app_client as client:
+        response = await client.post(
+            "/api/v1/matches/match-alpha/commands",
+            json=payload,
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+    assert response.status_code == HTTPStatus.ACCEPTED
+    assert response.json() == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "player_id": "player-2",
+        "tick": 142,
+        "orders": {
+            "status": "accepted",
+            "match_id": "match-alpha",
+            "player_id": "player-2",
+            "tick": 142,
+            "submission_index": 0,
+        },
+        "messages": [
+            {
+                "status": "accepted",
+                "match_id": "match-alpha",
+                "message_id": 0,
+                "channel": "world",
+                "sender_id": "player-2",
+                "recipient_id": None,
+                "tick": 142,
+                "content": "Envelope world update.",
+            },
+            {
+                "status": "accepted",
+                "match_id": "match-alpha",
+                "message_id": 1,
+                "channel": "direct",
+                "sender_id": "player-2",
+                "recipient_id": "player-1",
+                "tick": 142,
+                "content": "Envelope direct update.",
+            },
+        ],
+        "treaties": [
+            {
+                "status": "accepted",
+                "match_id": "match-alpha",
+                "treaty": {
+                    "treaty_id": 0,
+                    "player_a_id": "player-2",
+                    "player_b_id": "player-3",
+                    "treaty_type": "trade",
+                    "status": "proposed",
+                    "proposed_by": "player-2",
+                    "proposed_tick": 142,
+                    "signed_tick": None,
+                    "withdrawn_by": None,
+                    "withdrawn_tick": None,
+                },
+            }
+        ],
+        "alliance": {
+            "status": "accepted",
+            "match_id": "match-alpha",
+            "player_id": "player-2",
+            "alliance": {
+                "alliance_id": "alliance-red",
+                "name": "alliance-red",
+                "leader_id": "player-1",
+                "formed_tick": 142,
+                "members": [{"player_id": "player-1", "joined_tick": 142}],
+            },
+        },
+    }
+    assert seeded_registry.list_order_submissions("match-alpha") == [
+        {
+            "match_id": "match-alpha",
+            "player_id": "player-2",
+            "tick": 142,
+            "orders": payload["orders"],
+        }
+    ]
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+    assert [message.content for message in record.messages] == [
+        "Envelope world update.",
+        "Envelope direct update.",
+    ]
+    assert [treaty.player_b_id for treaty in record.treaties] == ["player-3"]
+    assert record.state.players["player-2"].alliance_id is None
+
+
+@pytest.mark.asyncio
+async def test_post_command_envelope_rejects_invalid_actions_without_partial_mutation(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+    representative_order_payload: dict[str, Any],
+) -> None:
+    payload = _command_envelope_payload(
+        orders={
+            **deepcopy(representative_order_payload["orders"]),
+            "movements": [{"army_id": "army-b", "destination": "birmingham"}],
+            "recruitment": [],
+            "upgrades": [],
+            "transfers": [],
+        },
+        messages=[
+            _command_message(channel="world", recipient_id=None, content="Should not persist.")
+        ],
+        treaties=[_command_treaty(counterparty_id="player-3", action="propose")],
+        alliance=_command_alliance(action="join", alliance_id="alliance-missing", name=None),
+    )
+    before_state = _match_state_dump(seeded_registry)
+
+    async with app_client as client:
+        response = await client.post(
+            "/api/v1/matches/match-alpha/commands",
+            json=payload,
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json() == {
+        "error": {
+            "code": "player_already_in_alliance",
+            "message": "Player 'player-2' is already in alliance 'alliance-red'.",
+        }
+    }
+    assert seeded_registry.list_order_submissions("match-alpha") == []
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+    assert record.messages == []
+    assert record.treaties == []
+    assert _match_state_dump(seeded_registry) == before_state
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("payload", "expected_error"),
+    [
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "messages": [{"channel": "world", "content": ""}],
+            },
+            {
+                "code": "invalid_message_content",
+                "message": "Message content must be at least 1 character long.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "messages": [],
+            },
+            {
+                "code": "invalid_command_request",
+                "message": "Command request is missing required fields.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": "stale",
+                "messages": [],
+            },
+            {
+                "code": "invalid_command_request",
+                "message": "Command request validation failed.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "alliance": {"action": "create", "alliance_id": "alliance-1", "name": "North"},
+            },
+            {
+                "code": "invalid_alliance_request",
+                "message": "Alliance create does not accept alliance_id.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "alliance": {"action": "create", "alliance_id": None, "name": None},
+            },
+            {
+                "code": "invalid_alliance_request",
+                "message": "Alliance create requires name.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "alliance": {"action": "join", "alliance_id": None, "name": None},
+            },
+            {
+                "code": "invalid_alliance_request",
+                "message": "Alliance join requires alliance_id.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "alliance": {"action": "join", "alliance_id": "alliance-1", "name": "North"},
+            },
+            {
+                "code": "invalid_alliance_request",
+                "message": "Alliance join does not accept name.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "alliance": {"action": "leave", "alliance_id": "alliance-1", "name": None},
+            },
+            {
+                "code": "invalid_alliance_request",
+                "message": "Alliance leave does not accept alliance_id.",
+            },
+        ),
+        (
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "alliance": {"action": "leave", "alliance_id": None, "name": "North"},
+            },
+            {
+                "code": "invalid_alliance_request",
+                "message": "Alliance leave does not accept name.",
+            },
+        ),
+    ],
+)
+async def test_command_envelope_validation_errors_are_structured(
+    app_client: AsyncClient,
+    payload: dict[str, Any],
+    expected_error: dict[str, str],
+) -> None:
+    async with app_client as client:
+        response = await client.post(
+            "/api/v1/matches/match-alpha/commands",
+            json=payload,
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert response.json() == {"error": expected_error}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("route_match_id", "payload", "expected_status", "expected_error"),
+    [
+        (
+            "match-missing",
+            _command_envelope_payload(match_id="match-missing"),
+            HTTPStatus.NOT_FOUND,
+            {
+                "code": "match_not_found",
+                "message": "Match 'match-missing' was not found.",
+            },
+        ),
+        (
+            "match-alpha",
+            _command_envelope_payload(match_id="match-beta"),
+            HTTPStatus.BAD_REQUEST,
+            {
+                "code": "match_id_mismatch",
+                "message": (
+                    "Command payload match_id 'match-beta' does not match route match "
+                    "'match-alpha'."
+                ),
+            },
+        ),
+        (
+            "match-alpha",
+            _command_envelope_payload(tick=141),
+            HTTPStatus.BAD_REQUEST,
+            {
+                "code": "tick_mismatch",
+                "message": "Command payload tick '141' does not match current match tick '142'.",
+            },
+        ),
+        (
+            "match-alpha",
+            _command_envelope_payload(
+                messages=[_command_message(channel="world", recipient_id="player-1")]
+            ),
+            HTTPStatus.BAD_REQUEST,
+            {
+                "code": "unsupported_recipient",
+                "message": "World messages do not support recipient_id.",
+            },
+        ),
+        (
+            "match-alpha",
+            _command_envelope_payload(
+                messages=[_command_message(channel="direct", recipient_id=None)]
+            ),
+            HTTPStatus.BAD_REQUEST,
+            {
+                "code": "unsupported_recipient",
+                "message": (
+                    "Direct messages require a recipient_id for a player in match 'match-alpha'."
+                ),
+            },
+        ),
+        (
+            "match-alpha",
+            _command_envelope_payload(treaties=[_command_treaty(counterparty_id="player-missing")]),
+            HTTPStatus.BAD_REQUEST,
+            {
+                "code": "player_not_found",
+                "message": "Player 'player-missing' was not found in match 'match-alpha'.",
+            },
+        ),
+        (
+            "match-alpha",
+            _command_envelope_payload(treaties=[_command_treaty(counterparty_id="player-2")]),
+            HTTPStatus.BAD_REQUEST,
+            {
+                "code": "self_targeted_treaty",
+                "message": "Treaty actions require two different players.",
+            },
+        ),
+    ],
+)
+async def test_command_envelope_rejects_invalid_route_and_action_contracts(
+    app_client: AsyncClient,
+    payload: dict[str, Any],
+    route_match_id: str,
+    expected_status: HTTPStatus,
+    expected_error: dict[str, str],
+) -> None:
+    async with app_client as client:
+        response = await client.post(
+            f"/api/v1/matches/{route_match_id}/commands",
+            json=payload,
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+    assert response.status_code == expected_status
+    assert response.json() == {"error": expected_error}
 
 
 @pytest.mark.asyncio

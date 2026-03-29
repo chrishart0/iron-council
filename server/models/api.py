@@ -261,6 +261,66 @@ class AllianceActionAcceptanceResponse(StrictModel):
     alliance: AllianceRecord | None = None
 
 
+class AgentCommandMessage(StrictModel):
+    channel: MessageChannel
+    recipient_id: str | None = None
+    content: str = Field(min_length=1)
+
+
+class AgentCommandTreaty(StrictModel):
+    counterparty_id: str
+    action: TreatyAction
+    treaty_type: TreatyType
+
+
+class AgentCommandAllianceAction(StrictModel):
+    action: AllianceAction
+    alliance_id: str | None = None
+    name: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_action_fields(self) -> AgentCommandAllianceAction:
+        if self.action == "create":
+            if self.alliance_id is not None:
+                raise ValueError("alliance create does not accept alliance_id")
+            if self.name is None:
+                raise ValueError("alliance create requires name")
+            return self
+
+        if self.action == "join":
+            if self.alliance_id is None:
+                raise ValueError("alliance join requires alliance_id")
+            if self.name is not None:
+                raise ValueError("alliance join does not accept name")
+            return self
+
+        if self.alliance_id is not None:
+            raise ValueError("alliance leave does not accept alliance_id")
+        if self.name is not None:
+            raise ValueError("alliance leave does not accept name")
+        return self
+
+
+class AgentCommandEnvelopeRequest(StrictModel):
+    match_id: str
+    tick: TickDuration
+    orders: OrderBatch = Field(default_factory=OrderBatch)
+    messages: list[AgentCommandMessage] = Field(default_factory=list)
+    treaties: list[AgentCommandTreaty] = Field(default_factory=list)
+    alliance: AgentCommandAllianceAction | None = None
+
+
+class AgentCommandEnvelopeResponse(StrictModel):
+    status: Literal["accepted"]
+    match_id: str
+    player_id: str
+    tick: TickDuration
+    orders: OrderAcceptanceResponse | None = None
+    messages: list[MessageAcceptanceResponse] = Field(default_factory=list)
+    treaties: list[TreatyActionAcceptanceResponse] = Field(default_factory=list)
+    alliance: AllianceActionAcceptanceResponse | None = None
+
+
 class AgentBriefingMessageBuckets(StrictModel):
     direct: list[MatchMessageRecord] = Field(default_factory=list)
     group: list[GroupChatMessageRecord] = Field(default_factory=list)

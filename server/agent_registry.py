@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
 from server.auth import hash_api_key
 from server.models.api import (
     AgentBriefingMessageBuckets,
+    AgentCommandEnvelopeRequest,
+    AgentCommandEnvelopeResponse,
+    AgentCommandMessage,
+    AgentCommandTreaty,
     AgentProfileHistory,
     AgentProfileRating,
     AgentProfileResponse,
+    AllianceActionAcceptanceResponse,
     AllianceActionRequest,
     AllianceMemberRecord,
     AllianceRecord,
@@ -20,7 +26,10 @@ from server.models.api import (
     MatchJoinResponse,
     MatchMessageCreateRequest,
     MatchMessageRecord,
+    MessageAcceptanceResponse,
     MessageChannel,
+    OrderAcceptanceResponse,
+    TreatyActionAcceptanceResponse,
     TreatyActionRequest,
     TreatyRecord,
     TreatyStatus,
@@ -361,6 +370,25 @@ class InMemoryMatchRegistry:
         record = self._matches[match_id]
         record.order_submissions.append(envelope.model_copy(deep=True))
         return len(record.order_submissions) - 1
+
+    def apply_command_envelope(
+        self,
+        *,
+        match_id: str,
+        command: AgentCommandEnvelopeRequest,
+        player_id: str,
+    ) -> AgentCommandEnvelopeResponse:
+        scratch_registry = self._build_scratch_registry(match_id)
+        scratch_registry._apply_command_envelope_mutations(
+            match_id=match_id,
+            command=command,
+            player_id=player_id,
+        )
+        return self._apply_command_envelope_mutations(
+            match_id=match_id,
+            command=command,
+            player_id=player_id,
+        )
 
     def list_order_submissions(self, match_id: str) -> list[dict[str, Any]]:
         record = self._matches.get(match_id)
@@ -819,6 +847,109 @@ class InMemoryMatchRegistry:
         record.messages.append(stored_message)
         return stored_message
 
+    def _apply_command_envelope_mutations(
+        self,
+        *,
+        match_id: str,
+        command: AgentCommandEnvelopeRequest,
+        player_id: str,
+    ) -> AgentCommandEnvelopeResponse:
+        order_response: OrderAcceptanceResponse | None = None
+        message_responses: list[MessageAcceptanceResponse] = []
+        treaty_responses: list[TreatyActionAcceptanceResponse] = []
+        alliance_response: AllianceActionAcceptanceResponse | None = None
+
+        if self._command_has_orders(command):
+            envelope = OrderEnvelope(
+                match_id=match_id,
+                player_id=player_id,
+                tick=command.tick,
+                orders=command.orders,
+            )
+            submission_index = self.record_submission(match_id=match_id, envelope=envelope)
+            order_response = OrderAcceptanceResponse(
+                status="accepted",
+                match_id=match_id,
+                player_id=player_id,
+                tick=command.tick,
+                submission_index=submission_index,
+            )
+
+        for message in command.messages:
+            self._validate_command_message(match_id=match_id, message=message)
+            accepted_message = self.record_message(
+                match_id=match_id,
+                message=MatchMessageCreateRequest(
+                    match_id=match_id,
+                    tick=command.tick,
+                    channel=message.channel,
+                    recipient_id=message.recipient_id,
+                    content=message.content,
+                ),
+                sender_id=player_id,
+            )
+            message_responses.append(
+                MessageAcceptanceResponse(
+                    status="accepted",
+                    match_id=match_id,
+                    message_id=accepted_message.message_id,
+                    channel=accepted_message.channel,
+                    sender_id=accepted_message.sender_id,
+                    recipient_id=accepted_message.recipient_id,
+                    tick=accepted_message.tick,
+                    content=accepted_message.content,
+                )
+            )
+
+        for treaty in command.treaties:
+            self._validate_command_treaty(match_id=match_id, treaty=treaty, player_id=player_id)
+            accepted_treaty = self.apply_treaty_action(
+                match_id=match_id,
+                action=TreatyActionRequest(
+                    match_id=match_id,
+                    counterparty_id=treaty.counterparty_id,
+                    action=treaty.action,
+                    treaty_type=treaty.treaty_type,
+                ),
+                player_id=player_id,
+            )
+            treaty_responses.append(
+                TreatyActionAcceptanceResponse(
+                    status="accepted",
+                    match_id=match_id,
+                    treaty=accepted_treaty,
+                )
+            )
+
+        if command.alliance is not None:
+            accepted_alliance = self.apply_alliance_action(
+                match_id=match_id,
+                action=AllianceActionRequest(
+                    match_id=match_id,
+                    action=command.alliance.action,
+                    alliance_id=command.alliance.alliance_id,
+                    name=command.alliance.name,
+                ),
+                player_id=player_id,
+            )
+            alliance_response = AllianceActionAcceptanceResponse(
+                status="accepted",
+                match_id=match_id,
+                player_id=player_id,
+                alliance=accepted_alliance,
+            )
+
+        return AgentCommandEnvelopeResponse(
+            status="accepted",
+            match_id=match_id,
+            player_id=player_id,
+            tick=command.tick,
+            orders=order_response,
+            messages=message_responses,
+            treaties=treaty_responses,
+            alliance=alliance_response,
+        )
+
     def _record_world_treaty_message(self, *, match_id: str, tick: int, content: str) -> None:
         self._append_message(
             match_id=match_id,
@@ -877,6 +1008,58 @@ class InMemoryMatchRegistry:
         while f"group-chat-{next_index}" in existing_group_chat_ids:
             next_index += 1
         return f"group-chat-{next_index}"
+
+    def _build_scratch_registry(self, match_id: str) -> InMemoryMatchRegistry:
+        scratch_registry = InMemoryMatchRegistry()
+        scratch_registry._matches[match_id] = deepcopy(self._matches[match_id])
+        return scratch_registry
+
+    def _command_has_orders(self, command: AgentCommandEnvelopeRequest) -> bool:
+        return any(
+            (
+                command.orders.movements,
+                command.orders.recruitment,
+                command.orders.upgrades,
+                command.orders.transfers,
+            )
+        )
+
+    def _validate_command_message(self, *, match_id: str, message: AgentCommandMessage) -> None:
+        record = self._matches[match_id]
+        if message.channel == "world":
+            if message.recipient_id is not None:
+                raise MatchAccessError(
+                    code="unsupported_recipient",
+                    message="World messages do not support recipient_id.",
+                )
+            return
+
+        if message.recipient_id not in record.state.players:
+            raise MatchAccessError(
+                code="unsupported_recipient",
+                message=(
+                    f"Direct messages require a recipient_id for a player in match '{match_id}'."
+                ),
+            )
+
+    def _validate_command_treaty(
+        self,
+        *,
+        match_id: str,
+        treaty: AgentCommandTreaty,
+        player_id: str,
+    ) -> None:
+        record = self._matches[match_id]
+        if treaty.counterparty_id not in record.state.players:
+            raise MatchAccessError(
+                code="player_not_found",
+                message=(f"Player '{treaty.counterparty_id}' was not found in match '{match_id}'."),
+            )
+        if player_id == treaty.counterparty_id:
+            raise MatchAccessError(
+                code="self_targeted_treaty",
+                message="Treaty actions require two different players.",
+            )
 
     def _to_treaty_record(self, treaty: MatchTreaty) -> TreatyRecord:
         return TreatyRecord(

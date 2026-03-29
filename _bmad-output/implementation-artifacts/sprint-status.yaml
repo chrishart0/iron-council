@@ -85,6 +85,6 @@ development_status:
   13-3-add-alliance-create-join-leave-endpoints-with-deterministic-status-views: done
   13-4-add-match-join-and-lightweight-agent-profile-scaffolding: done
 
-  epic-17: in-progress
+  epic-17: done
   17-1-add-an-authenticated-bundled-agent-briefing-endpoint: done
-  17-2-add-a-consolidated-authenticated-agent-command-endpoint: backlog
+  17-2-add-a-consolidated-authenticated-agent-command-endpoint: done

@@ -22,6 +22,8 @@ from server.db.registry import load_match_registry_from_database
 from server.fog import project_agent_state
 from server.models.api import (
     AgentBriefingResponse,
+    AgentCommandEnvelopeRequest,
+    AgentCommandEnvelopeResponse,
     AgentProfileResponse,
     AllianceActionAcceptanceResponse,
     AllianceActionRequest,
@@ -226,6 +228,58 @@ def _join_validation_error_response(exc: RequestValidationError) -> JSONResponse
     )
 
 
+def _command_validation_error_response(exc: RequestValidationError) -> JSONResponse:
+    for error in exc.errors():
+        location = list(error.get("loc", ()))
+        error_type = error.get("type")
+        error_message = str(error.get("msg", "")).lower()
+        if location == ["body", "messages", 0, "content"] and error_type == "string_too_short":
+            return _build_validation_error_response(
+                code="invalid_message_content",
+                message="Message content must be at least 1 character long.",
+            )
+        if location and location[0] == "body" and error_type == "missing":
+            return _build_validation_error_response(
+                code="invalid_command_request",
+                message="Command request is missing required fields.",
+            )
+        if "alliance create does not accept alliance_id" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance create does not accept alliance_id.",
+            )
+        if "alliance create requires name" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance create requires name.",
+            )
+        if "alliance join requires alliance_id" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance join requires alliance_id.",
+            )
+        if "alliance join does not accept name" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance join does not accept name.",
+            )
+        if "alliance leave does not accept alliance_id" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance leave does not accept alliance_id.",
+            )
+        if "alliance leave does not accept name" in error_message:
+            return _build_validation_error_response(
+                code="invalid_alliance_request",
+                message="Alliance leave does not accept name.",
+            )
+
+    return _build_validation_error_response(
+        code="invalid_command_request",
+        message="Command request validation failed.",
+    )
+
+
 def get_authenticated_agent(
     registry: MatchRegistryDependency,
     api_key: ApiKeyHeader = None,
@@ -280,6 +334,10 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
         request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
+        if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
+            "/commands"
+        ):
+            return _command_validation_error_response(exc)
         if request.url.path.startswith("/api/v1/matches/") and "/group-chats" in request.url.path:
             return _group_chat_validation_error_response(exc)
         if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
@@ -537,6 +595,66 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
             tick=envelope.tick,
             submission_index=submission_index,
         )
+
+    @api_router.post(
+        "/matches/{match_id}/commands",
+        response_model=AgentCommandEnvelopeResponse,
+        status_code=HTTPStatus.ACCEPTED,
+        responses={
+            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def post_match_commands(
+        match_id: str,
+        command: AgentCommandEnvelopeRequest,
+        registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+    ) -> AgentCommandEnvelopeResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+        if command.match_id != match_id:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="match_id_mismatch",
+                message=(
+                    f"Command payload match_id '{command.match_id}' does not match route match "
+                    f"'{match_id}'."
+                ),
+            )
+        resolved_player_id = _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
+        if command.tick != record.state.tick:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="tick_mismatch",
+                message=(
+                    f"Command payload tick '{command.tick}' does not match current match tick "
+                    f"'{record.state.tick}'."
+                ),
+            )
+
+        try:
+            return registry.apply_command_envelope(
+                match_id=match_id,
+                command=command,
+                player_id=resolved_player_id,
+            )
+        except (MatchAccessError, TreatyTransitionError, AllianceTransitionError) as exc:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code=exc.code,
+                message=exc.message,
+            ) from exc
 
     @api_router.get(
         "/matches/{match_id}/messages",

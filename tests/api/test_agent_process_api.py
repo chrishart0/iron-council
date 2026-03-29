@@ -184,6 +184,120 @@ def test_running_app_rejects_stale_orders_against_db_seeded_match_state(
     }
 
 
+def test_running_app_processes_consolidated_command_envelope_without_partial_side_effects(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        accepted_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/commands",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "birmingham"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+                "messages": [
+                    {"channel": "world", "content": "Bundled process update."},
+                    {
+                        "channel": "direct",
+                        "recipient_id": "player-1",
+                        "content": "Bundled process direct update.",
+                    },
+                ],
+                "treaties": [
+                    {
+                        "counterparty_id": "player-3",
+                        "action": "propose",
+                        "treaty_type": "trade",
+                    }
+                ],
+                "alliance": {"action": "leave", "alliance_id": None, "name": None},
+            },
+            headers=_headers(),
+        )
+        rejected_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/commands",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "birmingham"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+                "messages": [{"channel": "world", "content": "Should not persist."}],
+                "treaties": [
+                    {
+                        "counterparty_id": "player-4",
+                        "action": "propose",
+                        "treaty_type": "trade",
+                    }
+                ],
+                "alliance": {"action": "join", "alliance_id": "alliance-missing", "name": None},
+            },
+            headers=_headers("agent-player-3"),
+        )
+        player_two_messages = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            headers=_headers(),
+        )
+        treaties = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/treaties",
+            headers=_headers(),
+        )
+        player_two_state = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/state",
+            headers=_headers(),
+        )
+        player_three_messages = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            headers=_headers("agent-player-3"),
+        )
+
+    assert accepted_response.status_code == HTTPStatus.ACCEPTED
+    assert accepted_response.json()["orders"]["submission_index"] == 0
+    assert [message["content"] for message in accepted_response.json()["messages"]] == [
+        "Bundled process update.",
+        "Bundled process direct update.",
+    ]
+    assert accepted_response.json()["treaties"][0]["treaty"]["player_b_id"] == "player-3"
+    assert accepted_response.json()["alliance"]["player_id"] == "player-2"
+    assert rejected_response.status_code == HTTPStatus.BAD_REQUEST
+    assert rejected_response.json() == {
+        "error": {
+            "code": "alliance_not_found",
+            "message": (
+                "Alliance 'alliance-missing' was not found in match "
+                f"'{running_seeded_app.primary_match_id}'."
+            ),
+        }
+    }
+    assert player_two_messages.status_code == HTTPStatus.OK
+    assert [message["content"] for message in player_two_messages.json()["messages"]] == [
+        "Bundled process update.",
+        "Bundled process direct update.",
+    ]
+    assert treaties.status_code == HTTPStatus.OK
+    assert [treaty["player_b_id"] for treaty in treaties.json()["treaties"]] == ["player-3"]
+    assert player_two_state.status_code == HTTPStatus.OK
+    assert player_two_state.json()["alliance_id"] is None
+    assert player_three_messages.status_code == HTTPStatus.OK
+    assert player_three_messages.json()["messages"] == [
+        {
+            "message_id": 0,
+            "channel": "world",
+            "sender_id": "player-2",
+            "recipient_id": None,
+            "tick": 142,
+            "content": "Bundled process update.",
+        }
+    ]
+
+
 def test_running_app_posts_and_filters_visible_messages_for_authenticated_player(
     running_seeded_app: RunningApp,
 ) -> None:

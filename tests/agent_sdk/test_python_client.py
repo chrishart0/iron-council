@@ -171,6 +171,51 @@ def test_sdk_workflow_methods_cover_orders_messages_treaties_and_alliances(
     assert alliances.alliances[0].alliance_id == "alliance-red"
 
 
+def test_sdk_submit_command_envelope_covers_bundled_authenticated_actions(
+    client: Any,
+    representative_order_payload: dict[str, Any],
+) -> None:
+    order_batch = deepcopy(representative_order_payload["orders"])
+    order_batch["movements"] = [{"army_id": "army-b", "destination": "birmingham"}]
+    order_batch["recruitment"] = []
+    order_batch["upgrades"] = []
+    order_batch["transfers"] = []
+
+    response = client.submit_command_envelope(
+        "match-alpha",
+        tick=142,
+        orders=order_batch,
+        messages=[
+            {
+                "channel": "world",
+                "content": "Bundled update.",
+            }
+        ],
+        treaties=[
+            {
+                "counterparty_id": "player-1",
+                "action": "propose",
+                "treaty_type": "trade",
+            }
+        ],
+        alliance={
+            "action": "leave",
+            "alliance_id": None,
+            "name": None,
+        },
+    )
+
+    assert response.status == "accepted"
+    assert response.match_id == "match-alpha"
+    assert response.player_id == "player-2"
+    assert response.orders is not None
+    assert response.orders.submission_index == 0
+    assert response.messages[0].content == "Bundled update."
+    assert response.treaties[0].treaty.treaty_type == "trade"
+    assert response.alliance is not None
+    assert response.alliance.player_id == "player-2"
+
+
 def test_sdk_get_agent_briefing_propagates_since_tick_and_parses_typed_response(
     sdk_module: Any,
 ) -> None:
@@ -391,6 +436,38 @@ def test_sdk_group_chat_methods_wrap_structured_visibility_errors(
     assert error.message == "Group chat 'group-chat-1' is not visible to player 'player-3'."
 
 
+@pytest.mark.parametrize(
+    ("payload", "expected_message"),
+    [
+        ({"action": "create", "alliance_id": "alliance-1", "name": "North"}, "alliance create"),
+        ({"action": "create", "alliance_id": None, "name": None}, "alliance create requires name"),
+        (
+            {"action": "join", "alliance_id": None, "name": None},
+            "alliance join requires alliance_id",
+        ),
+        (
+            {"action": "join", "alliance_id": "alliance-1", "name": "North"},
+            "alliance join does not accept name",
+        ),
+        (
+            {"action": "leave", "alliance_id": "alliance-1", "name": None},
+            "alliance leave does not accept alliance_id",
+        ),
+        (
+            {"action": "leave", "alliance_id": None, "name": "North"},
+            "alliance leave does not accept name",
+        ),
+    ],
+)
+def test_sdk_command_alliance_model_rejects_invalid_variants(
+    sdk_module: Any,
+    payload: dict[str, Any],
+    expected_message: str,
+) -> None:
+    with pytest.raises(ValueError, match=expected_message):
+        sdk_module.AgentCommandAllianceAction.model_validate(payload)
+
+
 def test_sdk_wraps_structured_api_failures_without_leaking_api_key(
     sdk_module: Any,
     seeded_registry: InMemoryMatchRegistry,
@@ -414,6 +491,32 @@ def test_sdk_wraps_structured_api_failures_without_leaking_api_key(
         assert api_key not in repr(client)
         assert api_key not in str(error)
         assert api_key not in repr(error)
+
+
+def test_sdk_wraps_unstructured_http_errors_with_generic_metadata(sdk_module: Any) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=HTTPStatus.BAD_GATEWAY, text="upstream unavailable")
+
+    session = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="http://testserver",
+    )
+    try:
+        client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key="test-key",
+            session=session,
+        )
+
+        with pytest.raises(sdk_module.IronCouncilApiError) as exc_info:
+            client.get_messages("match-alpha")
+    finally:
+        session.close()
+
+    error = exc_info.value
+    assert error.status_code == HTTPStatus.BAD_GATEWAY
+    assert error.error_code == "http_error"
+    assert error.message == "Iron Council API request failed with status 502."
 
 
 def test_sdk_wraps_transport_failures_in_clear_api_error(sdk_module: Any) -> None:

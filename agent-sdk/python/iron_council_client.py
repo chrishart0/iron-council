@@ -381,6 +381,57 @@ class AllianceActionAcceptanceResponse(StrictModel):
     alliance: AllianceRecord | None = None
 
 
+class AgentCommandMessage(StrictModel):
+    channel: MessageChannel
+    recipient_id: str | None = None
+    content: str = Field(min_length=1)
+
+
+class AgentCommandTreaty(StrictModel):
+    counterparty_id: str
+    action: TreatyAction
+    treaty_type: TreatyType
+
+
+class AgentCommandAllianceAction(StrictModel):
+    action: AllianceAction
+    alliance_id: str | None = None
+    name: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_action_fields(self) -> Self:
+        if self.action == "create":
+            if self.alliance_id is not None:
+                raise ValueError("alliance create does not accept alliance_id")
+            if self.name is None:
+                raise ValueError("alliance create requires name")
+            return self
+
+        if self.action == "join":
+            if self.alliance_id is None:
+                raise ValueError("alliance join requires alliance_id")
+            if self.name is not None:
+                raise ValueError("alliance join does not accept name")
+            return self
+
+        if self.alliance_id is not None:
+            raise ValueError("alliance leave does not accept alliance_id")
+        if self.name is not None:
+            raise ValueError("alliance leave does not accept name")
+        return self
+
+
+class AgentCommandEnvelopeResponse(StrictModel):
+    status: Literal["accepted"]
+    match_id: str
+    player_id: str
+    tick: TickDuration
+    orders: OrderAcceptanceResponse | None = None
+    messages: list[MessageAcceptanceResponse] = Field(default_factory=list)
+    treaties: list[TreatyActionAcceptanceResponse] = Field(default_factory=list)
+    alliance: AllianceActionAcceptanceResponse | None = None
+
+
 class AgentBriefingMessageBuckets(StrictModel):
     direct: list[MatchMessageRecord] = Field(default_factory=list)
     group: list[GroupChatMessageRecord] = Field(default_factory=list)
@@ -514,6 +565,40 @@ class IronCouncilClient:
                 "orders": self._model_dump(orders),
             },
             response_model=OrderAcceptanceResponse,
+        )
+
+    def submit_command_envelope(
+        self,
+        match_id: str,
+        *,
+        tick: int,
+        orders: OrderBatch | Mapping[str, Any] | None = None,
+        messages: list[AgentCommandMessage | Mapping[str, Any]] | None = None,
+        treaties: list[AgentCommandTreaty | Mapping[str, Any]] | None = None,
+        alliance: AgentCommandAllianceAction | Mapping[str, Any] | None = None,
+    ) -> AgentCommandEnvelopeResponse:
+        return self._request_json(
+            "POST",
+            f"/api/v1/matches/{match_id}/commands",
+            json_body={
+                "match_id": match_id,
+                "tick": tick,
+                "orders": self._model_dump(OrderBatch.model_validate(orders or {})),
+                "messages": [
+                    self._model_dump(AgentCommandMessage.model_validate(message))
+                    for message in (messages or [])
+                ],
+                "treaties": [
+                    self._model_dump(AgentCommandTreaty.model_validate(treaty))
+                    for treaty in (treaties or [])
+                ],
+                "alliance": (
+                    None
+                    if alliance is None
+                    else self._model_dump(AgentCommandAllianceAction.model_validate(alliance))
+                ),
+            },
+            response_model=AgentCommandEnvelopeResponse,
         )
 
     def get_messages(self, match_id: str) -> MatchMessageInboxResponse:

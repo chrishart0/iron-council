@@ -312,3 +312,56 @@ def test_agent_briefing_smoke_flow_runs_through_real_process(
     assert [message["content"] for message in briefing_response.json()["messages"]["world"]] == [
         "Smoke world briefing."
     ]
+
+
+def test_agent_command_envelope_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        command_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/commands",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "birmingham"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+                "messages": [
+                    {"channel": "world", "content": "Smoke bundled world briefing."},
+                    {
+                        "channel": "direct",
+                        "recipient_id": "player-1",
+                        "content": "Smoke bundled direct briefing.",
+                    },
+                ],
+                "treaties": [
+                    {
+                        "counterparty_id": "player-3",
+                        "action": "propose",
+                        "treaty_type": "trade",
+                    }
+                ],
+                "alliance": {"action": "leave", "alliance_id": None, "name": None},
+            },
+            headers=_headers(),
+        )
+        briefing_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/agent-briefing",
+            params={"since_tick": 142},
+            headers=_headers(),
+        )
+
+    assert command_response.status_code == HTTPStatus.ACCEPTED
+    assert command_response.json()["orders"]["submission_index"] == 0
+    assert command_response.json()["alliance"]["player_id"] == "player-2"
+    assert briefing_response.status_code == HTTPStatus.OK
+    assert [message["content"] for message in briefing_response.json()["messages"]["direct"]] == [
+        "Smoke bundled direct briefing."
+    ]
+    assert [message["content"] for message in briefing_response.json()["messages"]["world"]] == [
+        "Smoke bundled world briefing."
+    ]
+    assert briefing_response.json()["treaties"][0]["player_b_id"] == "player-3"
