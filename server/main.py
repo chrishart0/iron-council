@@ -5,6 +5,8 @@ from http import HTTPStatus
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Query, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from server import __version__
@@ -15,7 +17,10 @@ from server.models.api import (
     ApiErrorDetail,
     ApiErrorResponse,
     MatchListResponse,
+    MatchMessageCreateRequest,
+    MatchMessageInboxResponse,
     MatchSummary,
+    MessageAcceptanceResponse,
     OrderAcceptanceResponse,
 )
 from server.models.fog import AgentStateProjection
@@ -42,6 +47,40 @@ PlayerIdQuery = Annotated[str, Query(...)]
 API_ERROR_RESPONSE_SCHEMA = {"model": ApiErrorResponse}
 
 
+def _build_validation_error_response(*, code: str, message: str) -> JSONResponse:
+    payload = ApiErrorResponse(error=ApiErrorDetail(code=code, message=message))
+    return JSONResponse(
+        status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        content=payload.model_dump(mode="json"),
+    )
+
+
+def _message_validation_error_response(exc: RequestValidationError) -> JSONResponse:
+    for error in exc.errors():
+        location = list(error.get("loc", ()))
+        error_type = error.get("type")
+        if location == ["query", "player_id"] and error_type == "missing":
+            return _build_validation_error_response(
+                code="missing_player_id",
+                message="Query parameter 'player_id' is required.",
+            )
+        if location == ["body", "content"] and error_type == "string_too_short":
+            return _build_validation_error_response(
+                code="invalid_message_content",
+                message="Message content must be at least 1 character long.",
+            )
+        if location and location[0] == "body" and error_type == "missing":
+            return _build_validation_error_response(
+                code="invalid_message_request",
+                message="Message request is missing required fields.",
+            )
+
+    return _build_validation_error_response(
+        code="invalid_message_request",
+        message="Message request validation failed.",
+    )
+
+
 def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAPI:
     app = FastAPI(title="iron-counsil-server", version=__version__)
     app.state.match_registry = match_registry or _load_default_match_registry()
@@ -50,6 +89,17 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
     async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:
         payload = ApiErrorResponse(error=ApiErrorDetail(code=exc.code, message=exc.message))
         return JSONResponse(status_code=exc.status_code, content=payload.model_dump(mode="json"))
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_request_validation_error(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
+            "/messages"
+        ):
+            return _message_validation_error_response(exc)
+        return await request_validation_exception_handler(request, exc)
 
     @app.get("/")
     async def root() -> dict[str, str]:
@@ -160,6 +210,104 @@ def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAP
             player_id=envelope.player_id,
             tick=envelope.tick,
             submission_index=submission_index,
+        )
+
+    @api_router.get(
+        "/matches/{match_id}/messages",
+        response_model=MatchMessageInboxResponse,
+        responses={
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def get_match_messages(
+        match_id: str,
+        registry: MatchRegistryDependency,
+        player_id: PlayerIdQuery,
+    ) -> MatchMessageInboxResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+        if player_id not in record.state.players:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="player_not_found",
+                message=f"Player '{player_id}' was not found in match '{match_id}'.",
+            )
+
+        return MatchMessageInboxResponse(
+            match_id=match_id,
+            player_id=player_id,
+            messages=registry.list_visible_messages(match_id=match_id, player_id=player_id),
+        )
+
+    @api_router.post(
+        "/matches/{match_id}/messages",
+        response_model=MessageAcceptanceResponse,
+        status_code=HTTPStatus.ACCEPTED,
+        responses={
+            HTTPStatus.BAD_REQUEST: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.UNPROCESSABLE_ENTITY: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def post_match_message(
+        match_id: str,
+        message: MatchMessageCreateRequest,
+        registry: MatchRegistryDependency,
+    ) -> MessageAcceptanceResponse:
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+        if message.match_id != match_id:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="match_id_mismatch",
+                message=(
+                    f"Message payload match_id '{message.match_id}' does not match route match "
+                    f"'{match_id}'."
+                ),
+            )
+        if message.sender_id not in record.state.players:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="player_not_found",
+                message=f"Player '{message.sender_id}' was not found in match '{match_id}'.",
+            )
+        if message.channel == "world":
+            if message.recipient_id is not None:
+                raise ApiError(
+                    status_code=HTTPStatus.BAD_REQUEST,
+                    code="unsupported_recipient",
+                    message="World messages do not support recipient_id.",
+                )
+        elif message.recipient_id not in record.state.players:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="unsupported_recipient",
+                message=(
+                    f"Direct messages require a recipient_id for a player in match '{match_id}'."
+                ),
+            )
+
+        accepted_message = registry.record_message(match_id=match_id, message=message)
+        return MessageAcceptanceResponse(
+            status="accepted",
+            match_id=match_id,
+            message_id=accepted_message.message_id,
+            channel=accepted_message.channel,
+            sender_id=accepted_message.sender_id,
+            recipient_id=accepted_message.recipient_id,
+            tick=accepted_message.tick,
+            content=accepted_message.content,
         )
 
     app.include_router(api_router)

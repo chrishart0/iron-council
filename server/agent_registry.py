@@ -3,9 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from server.models.api import MatchMessageCreateRequest, MatchMessageRecord, MessageChannel
 from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
 from server.models.state import MatchState
+
+
+@dataclass(slots=True)
+class MatchMessage:
+    message_id: int
+    channel: MessageChannel
+    sender_id: str
+    recipient_id: str | None
+    tick: int
+    content: str
 
 
 @dataclass(slots=True)
@@ -15,6 +26,7 @@ class MatchRecord:
     tick_interval_seconds: int
     state: MatchState
     order_submissions: list[OrderEnvelope] = field(default_factory=list)
+    messages: list[MatchMessage] = field(default_factory=list)
 
 
 class InMemoryMatchRegistry:
@@ -29,6 +41,17 @@ class InMemoryMatchRegistry:
             state=record.state.model_copy(deep=True),
             order_submissions=[
                 submission.model_copy(deep=True) for submission in record.order_submissions
+            ],
+            messages=[
+                MatchMessage(
+                    message_id=message.message_id,
+                    channel=message.channel,
+                    sender_id=message.sender_id,
+                    recipient_id=message.recipient_id,
+                    tick=message.tick,
+                    content=message.content,
+                )
+                for message in record.messages
             ],
         )
 
@@ -51,6 +74,54 @@ class InMemoryMatchRegistry:
         if record is None:
             return []
         return [submission.model_dump(mode="json") for submission in record.order_submissions]
+
+    def record_message(
+        self,
+        *,
+        match_id: str,
+        message: MatchMessageCreateRequest,
+    ) -> MatchMessageRecord:
+        record = self._matches[match_id]
+        stored_message = MatchMessage(
+            message_id=len(record.messages),
+            channel=message.channel,
+            sender_id=message.sender_id,
+            recipient_id=message.recipient_id,
+            tick=message.tick,
+            content=message.content,
+        )
+        record.messages.append(stored_message)
+        return MatchMessageRecord(
+            message_id=stored_message.message_id,
+            channel=stored_message.channel,
+            sender_id=stored_message.sender_id,
+            recipient_id=stored_message.recipient_id,
+            tick=stored_message.tick,
+            content=stored_message.content,
+        )
+
+    def list_visible_messages(self, *, match_id: str, player_id: str) -> list[MatchMessageRecord]:
+        record = self._matches.get(match_id)
+        if record is None:
+            return []
+
+        visible_messages: list[MatchMessageRecord] = []
+        for message in record.messages:
+            is_visible_direct_message = message.channel == "direct" and (
+                message.sender_id == player_id or message.recipient_id == player_id
+            )
+            if message.channel == "world" or is_visible_direct_message:
+                visible_messages.append(
+                    MatchMessageRecord(
+                        message_id=message.message_id,
+                        channel=message.channel,
+                        sender_id=message.sender_id,
+                        recipient_id=message.recipient_id,
+                        tick=message.tick,
+                        content=message.content,
+                    )
+                )
+        return visible_messages
 
 
 def build_seeded_match_records(

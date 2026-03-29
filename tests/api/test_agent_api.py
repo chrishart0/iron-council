@@ -22,6 +22,25 @@ def _match_state_dump(
     return record.state.model_dump(mode="json")
 
 
+def _message_payload(
+    *,
+    match_id: str = "match-alpha",
+    sender_id: str = "player-1",
+    tick: int = 142,
+    channel: str = "world",
+    recipient_id: str | None = None,
+    content: str = "Hold position.",
+) -> dict[str, Any]:
+    return {
+        "match_id": match_id,
+        "sender_id": sender_id,
+        "tick": tick,
+        "channel": channel,
+        "recipient_id": recipient_id,
+        "content": content,
+    }
+
+
 @pytest.fixture
 def seeded_registry() -> InMemoryMatchRegistry:
     registry = InMemoryMatchRegistry()
@@ -207,6 +226,38 @@ async def test_agent_endpoint_openapi_declares_structured_api_error_schemas(
 
 
 @pytest.mark.asyncio
+async def test_message_endpoints_expose_stable_openapi_contracts(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        response = await client.get("/openapi.json")
+
+    assert response.status_code == HTTPStatus.OK
+    paths = response.json()["paths"]
+    assert paths["/api/v1/matches/{match_id}/messages"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/MatchMessageInboxResponse"}
+    assert paths["/api/v1/matches/{match_id}/messages"]["get"]["responses"]["404"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/matches/{match_id}/messages"]["get"]["responses"]["422"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/matches/{match_id}/messages"]["post"]["responses"]["202"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/MessageAcceptanceResponse"}
+    assert paths["/api/v1/matches/{match_id}/messages"]["post"]["responses"]["400"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/matches/{match_id}/messages"]["post"]["responses"]["404"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert paths["/api/v1/matches/{match_id}/messages"]["post"]["responses"]["422"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+
+
+@pytest.mark.asyncio
 async def test_submit_orders_accepts_valid_envelopes_and_records_them_deterministically(
     app_client: AsyncClient,
     seeded_registry: InMemoryMatchRegistry,
@@ -387,6 +438,294 @@ async def test_submit_orders_rejects_malformed_payloads_with_validation_errors(
     assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
     assert response.json()["detail"][0]["loc"] == ["body", "orders", "recruitment", 0, "troops"]
     assert seeded_registry.list_order_submissions("match-alpha") == []
+    assert _match_state_dump(seeded_registry) == before_state
+
+
+@pytest.mark.asyncio
+async def test_post_messages_accepts_world_and_direct_messages_and_lists_visible_history(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    world_payload = _message_payload(
+        sender_id="player-1",
+        channel="world",
+        content="World update.",
+    )
+    direct_payload = _message_payload(
+        sender_id="player-2",
+        channel="direct",
+        recipient_id="player-1",
+        content="Private coordination.",
+    )
+
+    async with app_client as client:
+        world_response = await client.post(
+            "/api/v1/matches/match-alpha/messages", json=world_payload
+        )
+        direct_response = await client.post(
+            "/api/v1/matches/match-alpha/messages",
+            json=direct_payload,
+        )
+        inbox_for_player_one = await client.get(
+            "/api/v1/matches/match-alpha/messages",
+            params={"player_id": "player-1"},
+        )
+        inbox_for_player_three = await client.get(
+            "/api/v1/matches/match-alpha/messages",
+            params={"player_id": "player-3"},
+        )
+
+    assert world_response.status_code == HTTPStatus.ACCEPTED
+    assert world_response.json() == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "message_id": 0,
+        "channel": "world",
+        "sender_id": "player-1",
+        "recipient_id": None,
+        "tick": 142,
+        "content": "World update.",
+    }
+    assert direct_response.status_code == HTTPStatus.ACCEPTED
+    assert direct_response.json() == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "message_id": 1,
+        "channel": "direct",
+        "sender_id": "player-2",
+        "recipient_id": "player-1",
+        "tick": 142,
+        "content": "Private coordination.",
+    }
+    assert inbox_for_player_one.status_code == HTTPStatus.OK
+    assert inbox_for_player_one.json() == {
+        "match_id": "match-alpha",
+        "player_id": "player-1",
+        "messages": [
+            {
+                "message_id": 0,
+                "channel": "world",
+                "sender_id": "player-1",
+                "recipient_id": None,
+                "tick": 142,
+                "content": "World update.",
+            },
+            {
+                "message_id": 1,
+                "channel": "direct",
+                "sender_id": "player-2",
+                "recipient_id": "player-1",
+                "tick": 142,
+                "content": "Private coordination.",
+            },
+        ],
+    }
+    assert inbox_for_player_three.status_code == HTTPStatus.OK
+    assert inbox_for_player_three.json() == {
+        "match_id": "match-alpha",
+        "player_id": "player-3",
+        "messages": [
+            {
+                "message_id": 0,
+                "channel": "world",
+                "sender_id": "player-1",
+                "recipient_id": None,
+                "tick": 142,
+                "content": "World update.",
+            }
+        ],
+    }
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+    assert len(record.messages) == 2
+
+
+@pytest.mark.asyncio
+async def test_post_messages_rejects_invalid_requests_without_mutating_message_history(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    before_state = _match_state_dump(seeded_registry)
+
+    async with app_client as client:
+        unknown_match_response = await client.post(
+            "/api/v1/matches/match-missing/messages",
+            json=_message_payload(match_id="match-missing"),
+        )
+        mismatch_response = await client.post(
+            "/api/v1/matches/match-alpha/messages",
+            json=_message_payload(match_id="match-beta"),
+        )
+        unknown_sender_response = await client.post(
+            "/api/v1/matches/match-alpha/messages",
+            json=_message_payload(sender_id="player-missing"),
+        )
+        unsupported_recipient_response = await client.post(
+            "/api/v1/matches/match-alpha/messages",
+            json=_message_payload(channel="direct", recipient_id="player-missing"),
+        )
+        missing_recipient_response = await client.post(
+            "/api/v1/matches/match-alpha/messages",
+            json=_message_payload(channel="direct", recipient_id=None),
+        )
+        world_recipient_response = await client.post(
+            "/api/v1/matches/match-alpha/messages",
+            json=_message_payload(channel="world", recipient_id="player-2"),
+        )
+
+    assert unknown_match_response.status_code == HTTPStatus.NOT_FOUND
+    assert unknown_match_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match 'match-missing' was not found.",
+        }
+    }
+    assert mismatch_response.status_code == HTTPStatus.BAD_REQUEST
+    assert mismatch_response.json() == {
+        "error": {
+            "code": "match_id_mismatch",
+            "message": (
+                "Message payload match_id 'match-beta' does not match route match 'match-alpha'."
+            ),
+        }
+    }
+    assert unknown_sender_response.status_code == HTTPStatus.NOT_FOUND
+    assert unknown_sender_response.json() == {
+        "error": {
+            "code": "player_not_found",
+            "message": "Player 'player-missing' was not found in match 'match-alpha'.",
+        }
+    }
+    assert unsupported_recipient_response.status_code == HTTPStatus.BAD_REQUEST
+    assert unsupported_recipient_response.json() == {
+        "error": {
+            "code": "unsupported_recipient",
+            "message": (
+                "Direct messages require a recipient_id for a player in match 'match-alpha'."
+            ),
+        }
+    }
+    assert missing_recipient_response.status_code == HTTPStatus.BAD_REQUEST
+    assert missing_recipient_response.json() == {
+        "error": {
+            "code": "unsupported_recipient",
+            "message": (
+                "Direct messages require a recipient_id for a player in match 'match-alpha'."
+            ),
+        }
+    }
+    assert world_recipient_response.status_code == HTTPStatus.BAD_REQUEST
+    assert world_recipient_response.json() == {
+        "error": {
+            "code": "unsupported_recipient",
+            "message": "World messages do not support recipient_id.",
+        }
+    }
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+    assert record.messages == []
+    assert _match_state_dump(seeded_registry) == before_state
+
+
+@pytest.mark.asyncio
+async def test_get_messages_rejects_unknown_match_and_unknown_player(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        unknown_match_response = await client.get(
+            "/api/v1/matches/match-missing/messages",
+            params={"player_id": "player-1"},
+        )
+        unknown_player_response = await client.get(
+            "/api/v1/matches/match-alpha/messages",
+            params={"player_id": "player-missing"},
+        )
+
+    assert unknown_match_response.status_code == HTTPStatus.NOT_FOUND
+    assert unknown_match_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match 'match-missing' was not found.",
+        }
+    }
+    assert unknown_player_response.status_code == HTTPStatus.NOT_FOUND
+    assert unknown_player_response.json() == {
+        "error": {
+            "code": "player_not_found",
+            "message": "Player 'player-missing' was not found in match 'match-alpha'.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_messages_requires_player_id_with_structured_api_error(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    before_state = _match_state_dump(seeded_registry)
+
+    async with app_client as client:
+        response = await client.get("/api/v1/matches/match-alpha/messages")
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert response.json() == {
+        "error": {
+            "code": "missing_player_id",
+            "message": "Query parameter 'player_id' is required.",
+        }
+    }
+    assert _match_state_dump(seeded_registry) == before_state
+
+
+@pytest.mark.asyncio
+async def test_post_messages_rejects_empty_content_with_structured_api_error(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    before_state = _match_state_dump(seeded_registry)
+
+    async with app_client as client:
+        response = await client.post(
+            "/api/v1/matches/match-alpha/messages",
+            json=_message_payload(content=""),
+        )
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert response.json() == {
+        "error": {
+            "code": "invalid_message_content",
+            "message": "Message content must be at least 1 character long.",
+        }
+    }
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+    assert record.messages == []
+    assert _match_state_dump(seeded_registry) == before_state
+
+
+@pytest.mark.asyncio
+async def test_post_messages_rejects_missing_required_fields_with_structured_api_error(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    before_state = _match_state_dump(seeded_registry)
+
+    async with app_client as client:
+        response = await client.post(
+            "/api/v1/matches/match-alpha/messages",
+            json={},
+        )
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert response.json() == {
+        "error": {
+            "code": "invalid_message_request",
+            "message": "Message request is missing required fields.",
+        }
+    }
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+    assert record.messages == []
     assert _match_state_dump(seeded_registry) == before_state
 
 

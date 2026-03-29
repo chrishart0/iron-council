@@ -66,3 +66,72 @@ def test_running_app_rejects_stale_orders_against_db_seeded_match_state(
             "message": "Order payload tick '141' does not match current match tick '142'.",
         }
     }
+
+
+def test_running_app_posts_and_filters_visible_messages(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        world_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "sender_id": "player-1",
+                "tick": 142,
+                "channel": "world",
+                "recipient_id": None,
+                "content": "Open briefing.",
+            },
+        )
+        direct_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "sender_id": "player-2",
+                "tick": 142,
+                "channel": "direct",
+                "recipient_id": "player-1",
+                "content": "Private briefing.",
+            },
+        )
+        visible_to_player_one = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            params={"player_id": "player-1"},
+        )
+        visible_to_player_three = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            params={"player_id": "player-3"},
+        )
+
+    assert world_response.status_code == HTTPStatus.ACCEPTED
+    assert direct_response.status_code == HTTPStatus.ACCEPTED
+    assert visible_to_player_one.status_code == HTTPStatus.OK
+    assert visible_to_player_one.json()["messages"] == [
+        {
+            "message_id": 0,
+            "channel": "world",
+            "sender_id": "player-1",
+            "recipient_id": None,
+            "tick": 142,
+            "content": "Open briefing.",
+        },
+        {
+            "message_id": 1,
+            "channel": "direct",
+            "sender_id": "player-2",
+            "recipient_id": "player-1",
+            "tick": 142,
+            "content": "Private briefing.",
+        },
+    ]
+    assert visible_to_player_three.status_code == HTTPStatus.OK
+    assert visible_to_player_three.json()["messages"] == [
+        {
+            "message_id": 0,
+            "channel": "world",
+            "sender_id": "player-1",
+            "recipient_id": None,
+            "tick": 142,
+            "content": "Open briefing.",
+        }
+    ]

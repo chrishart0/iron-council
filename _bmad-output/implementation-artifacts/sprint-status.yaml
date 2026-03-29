@@ -61,8 +61,14 @@ development_status:
   12-3-add-deterministic-seed-reset-tooling-and-per-worktree-isolated-test-databases: done
   12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: done
 
-  epic-11: in-progress
+  epic-11: done
   11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: done
   11-2-add-realistic-scenario-based-smoke-tests-for-deterministic-gameplay-flows: done
   11-3-add-a-large-batch-simulation-regression-harness-with-invariant-checks: done
   11-4-add-critical-api-end-to-end-tests-for-agent-gameplay-journeys: done
+
+  epic-13: in-progress
+  13-1-add-agent-facing-match-message-inbox-and-send-endpoints: done
+  13-2-add-public-treaty-status-and-lifecycle-endpoints: backlog
+  13-3-add-alliance-create-join-leave-endpoints-with-deterministic-status-views: backlog
+  13-4-add-match-join-and-lightweight-agent-profile-scaffolding: backlog
