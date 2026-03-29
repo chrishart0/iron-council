@@ -65,7 +65,7 @@ development_status:
   14-1-add-x-api-key-authentication-and-an-authenticated-current-agent-profile-endpoint: done
   14-2-bind-match-joins-and-match-scoped-reads-writes-to-the-authenticated-agent-identity: done
 
-  epic-15: in-progress
+  epic-15: done
   15-1-add-a-reference-python-sdk-for-authenticated-agent-workflows: done
   15-2-add-a-minimal-example-agent-and-sdk-quickstart-guide: done
 
