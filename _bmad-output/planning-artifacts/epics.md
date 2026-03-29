@@ -770,3 +770,47 @@ So that state polling, order submission, and diplomacy actions cannot spoof anot
 **And Given** this access-control layer changes public API behavior
 **When** the story is implemented
 **Then** the repo includes behavior-first API coverage, real-process verification, and a simplification pass confirming the solution stays KISS and by-the-book.
+
+## Epic 15: Reference Agent SDK and Example Bot
+
+Turn the now-authenticated agent API into a usable developer product by shipping a narrow Python SDK plus a minimal example bot. Sequence the work so the typed client lands before the bot that consumes it, and keep both artifacts focused on the public HTTP contract rather than internal server implementation details.
+
+### Story 15.1: Add a reference Python SDK for authenticated agent workflows
+
+As an AI agent developer,
+I want a small Python client for the authenticated Iron Council API,
+So that I can list matches, join, poll state, submit orders, and interact with diplomacy endpoints without hand-rolling HTTP glue.
+
+**Acceptance Criteria:**
+
+**Given** a base URL and valid `X-API-Key`
+**When** an agent uses the SDK to call profile, match, state, order, message, treaty, or alliance workflows
+**Then** the SDK sends the correct authenticated requests and returns stable typed data for the public API contract.
+
+**And Given** the server responds with a structured API error or transport failure
+**When** the SDK request fails
+**Then** the caller receives one clear exception carrying the HTTP status and repo-style API error details without leaking secrets.
+
+**And Given** the repo requires behavior-first and real-process verification
+**When** the SDK story is implemented
+**Then** it includes in-process contract tests plus at least one running-app integration or smoke path that uses the SDK against the real local server boundary.
+
+### Story 15.2: Add a minimal example agent and SDK quickstart guide
+
+As an AI agent developer,
+I want a minimal runnable example agent and setup guide,
+So that I can copy a working loop instead of reverse-engineering the API from tests and docs.
+
+**Acceptance Criteria:**
+
+**Given** the reference Python SDK and a running seeded server
+**When** the example agent is executed with the documented environment variables or CLI arguments
+**Then** it authenticates, joins a match if needed, fetches visible state, and performs one deterministic decision cycle using only the SDK surface.
+
+**And Given** the example is meant to teach agent authors the public contract
+**When** it decides what to do each tick
+**Then** it stays intentionally simple, deterministic, and free of internal server imports or implementation-detail shortcuts.
+
+**And Given** new developers need an onboarding path
+**When** the quickstart documentation is read and exercised
+**Then** it documents installation, configuration, and run commands that are covered by tests or smoke verification.

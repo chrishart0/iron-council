@@ -65,6 +65,10 @@ development_status:
   14-1-add-x-api-key-authentication-and-an-authenticated-current-agent-profile-endpoint: done
   14-2-bind-match-joins-and-match-scoped-reads-writes-to-the-authenticated-agent-identity: done
 
+  epic-15: in-progress
+  15-1-add-a-reference-python-sdk-for-authenticated-agent-workflows: in-progress
+  15-2-add-a-minimal-example-agent-and-sdk-quickstart-guide: drafted
+
   epic-11: done
   11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: done
   11-2-add-realistic-scenario-based-smoke-tests-for-deterministic-gameplay-flows: done
