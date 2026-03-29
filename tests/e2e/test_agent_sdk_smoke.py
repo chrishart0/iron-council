@@ -34,3 +34,42 @@ def test_agent_sdk_smoke_flow_runs_through_real_process(
     assert state.player_id == "player-1"
     assert order_response.status == "accepted"
     assert order_response.player_id == "player-1"
+
+
+def test_agent_sdk_group_chat_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    sdk_module = load_python_agent_sdk_module()
+    creator_client = sdk_module.IronCouncilClient(
+        base_url=running_seeded_app.base_url,
+        api_key=build_seeded_agent_api_key("agent-player-2"),
+    )
+    invited_client = sdk_module.IronCouncilClient(
+        base_url=running_seeded_app.base_url,
+        api_key=build_seeded_agent_api_key("agent-player-3"),
+    )
+
+    created_group_chat = creator_client.create_group_chat(
+        running_seeded_app.primary_match_id,
+        tick=142,
+        name="SDK Smoke Council",
+        member_ids=["player-3"],
+    )
+    visible_group_chats = invited_client.get_group_chats(running_seeded_app.primary_match_id)
+    sent_message = invited_client.send_group_chat_message(
+        running_seeded_app.primary_match_id,
+        group_chat_id=created_group_chat.group_chat.group_chat_id,
+        tick=142,
+        content="SDK smoke ready.",
+    )
+    messages = creator_client.get_group_chat_messages(
+        running_seeded_app.primary_match_id,
+        group_chat_id=created_group_chat.group_chat.group_chat_id,
+    )
+
+    assert created_group_chat.status == "accepted"
+    assert created_group_chat.group_chat.member_ids == ["player-2", "player-3"]
+    assert visible_group_chats.group_chats[0].group_chat_id == "group-chat-1"
+    assert sent_message.message.content == "SDK smoke ready."
+    assert messages.messages[0].sender_id == "player-3"
+    assert messages.messages[0].content == "SDK smoke ready."

@@ -241,6 +241,61 @@ class MessageAcceptanceResponse(StrictModel):
     content: str
 
 
+class GroupChatCreateRequest(StrictModel):
+    match_id: str
+    tick: TickDuration
+    name: str = Field(min_length=1)
+    member_ids: list[str] = Field(min_length=1)
+
+
+class GroupChatRecord(StrictModel):
+    group_chat_id: str
+    name: str
+    member_ids: list[str] = Field(default_factory=list)
+    created_by: str
+    created_tick: TickDuration
+
+
+class GroupChatListResponse(StrictModel):
+    match_id: str
+    player_id: str
+    group_chats: list[GroupChatRecord] = Field(default_factory=list)
+
+
+class GroupChatCreateAcceptanceResponse(StrictModel):
+    status: Literal["accepted"]
+    match_id: str
+    group_chat: GroupChatRecord
+
+
+class GroupChatMessageCreateRequest(StrictModel):
+    match_id: str
+    tick: TickDuration
+    content: str = Field(min_length=1)
+
+
+class GroupChatMessageRecord(StrictModel):
+    message_id: int = Field(ge=0)
+    group_chat_id: str
+    sender_id: str
+    tick: TickDuration
+    content: str
+
+
+class GroupChatMessageListResponse(StrictModel):
+    match_id: str
+    group_chat_id: str
+    player_id: str
+    messages: list[GroupChatMessageRecord] = Field(default_factory=list)
+
+
+class GroupChatMessageAcceptanceResponse(StrictModel):
+    status: Literal["accepted"]
+    match_id: str
+    group_chat_id: str
+    message: GroupChatMessageRecord
+
+
 class TreatyActionRequest(StrictModel):
     match_id: str
     counterparty_id: str
@@ -457,6 +512,64 @@ class IronCouncilClient:
                 content=content,
             ),
             response_model=MessageAcceptanceResponse,
+        )
+
+    def get_group_chats(self, match_id: str) -> GroupChatListResponse:
+        return self._request_json(
+            "GET",
+            f"/api/v1/matches/{match_id}/group-chats",
+            response_model=GroupChatListResponse,
+        )
+
+    def create_group_chat(
+        self,
+        match_id: str,
+        *,
+        tick: int,
+        name: str,
+        member_ids: list[str],
+    ) -> GroupChatCreateAcceptanceResponse:
+        return self._request_json(
+            "POST",
+            f"/api/v1/matches/{match_id}/group-chats",
+            json_body=GroupChatCreateRequest(
+                match_id=match_id,
+                tick=tick,
+                name=name,
+                member_ids=member_ids,
+            ),
+            response_model=GroupChatCreateAcceptanceResponse,
+        )
+
+    def get_group_chat_messages(
+        self,
+        match_id: str,
+        *,
+        group_chat_id: str,
+    ) -> GroupChatMessageListResponse:
+        return self._request_json(
+            "GET",
+            f"/api/v1/matches/{match_id}/group-chats/{group_chat_id}/messages",
+            response_model=GroupChatMessageListResponse,
+        )
+
+    def send_group_chat_message(
+        self,
+        match_id: str,
+        *,
+        group_chat_id: str,
+        tick: int,
+        content: str,
+    ) -> GroupChatMessageAcceptanceResponse:
+        return self._request_json(
+            "POST",
+            f"/api/v1/matches/{match_id}/group-chats/{group_chat_id}/messages",
+            json_body=GroupChatMessageCreateRequest(
+                match_id=match_id,
+                tick=tick,
+                content=content,
+            ),
+            response_model=GroupChatMessageAcceptanceResponse,
         )
 
     def get_treaties(self, match_id: str) -> TreatyListResponse:

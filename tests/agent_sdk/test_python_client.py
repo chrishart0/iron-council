@@ -171,6 +171,51 @@ def test_sdk_workflow_methods_cover_orders_messages_treaties_and_alliances(
     assert alliances.alliances[0].alliance_id == "alliance-red"
 
 
+def test_sdk_group_chat_methods_cover_create_list_read_and_send_workflows(
+    client: Any,
+) -> None:
+    group_chat = client.create_group_chat(
+        "match-alpha",
+        tick=142,
+        name="War Room",
+        member_ids=["player-4"],
+    )
+    visible_group_chats = client.get_group_chats("match-alpha")
+
+    invited_client = client.__class__(
+        base_url="http://testserver",
+        api_key=build_seeded_agent_api_key("agent-player-4"),
+        session=client._session,
+    )
+    invited_visible_group_chats = invited_client.get_group_chats("match-alpha")
+    sent_group_message = invited_client.send_group_chat_message(
+        "match-alpha",
+        group_chat_id=group_chat.group_chat.group_chat_id,
+        tick=142,
+        content="Ready to coordinate.",
+    )
+    messages = client.get_group_chat_messages(
+        "match-alpha",
+        group_chat_id=group_chat.group_chat.group_chat_id,
+    )
+
+    assert group_chat.status == "accepted"
+    assert group_chat.group_chat.group_chat_id == "group-chat-1"
+    assert group_chat.group_chat.name == "War Room"
+    assert group_chat.group_chat.member_ids == ["player-2", "player-4"]
+    assert visible_group_chats.player_id == "player-2"
+    assert visible_group_chats.group_chats[0].group_chat_id == "group-chat-1"
+    assert invited_visible_group_chats.player_id == "player-4"
+    assert invited_visible_group_chats.group_chats[0].member_ids == ["player-2", "player-4"]
+    assert sent_group_message.status == "accepted"
+    assert sent_group_message.group_chat_id == "group-chat-1"
+    assert sent_group_message.message.content == "Ready to coordinate."
+    assert messages.player_id == "player-2"
+    assert messages.group_chat_id == "group-chat-1"
+    assert messages.messages[0].sender_id == "player-4"
+    assert messages.messages[0].content == "Ready to coordinate."
+
+
 def test_sdk_wraps_structured_api_failures_without_leaking_api_key(
     sdk_module: Any,
     seeded_registry: InMemoryMatchRegistry,
