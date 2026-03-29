@@ -19,6 +19,84 @@ from server.simulation_regression import (
     run_simulation_regression_batch,
 )
 
+EXPECTED_SCENARIO_RESULTS: list[tuple[str, int, str]] = [
+    (
+        "frontier-campaign/ticks=4/variant=opening-clash",
+        4,
+        "9da35d88ecf2e0ceb4b01eaac784a36ae3f2b458e7ef2d377a59b8d24b3d680d",
+    ),
+    (
+        "frontier-campaign/ticks=6/variant=late-upgrade",
+        6,
+        "a512181dec6e276d91ecde8568d2b9790ead33c0bd6a7badcd09ec29d63288ed",
+    ),
+    (
+        "frontier-campaign/ticks=6/variant=double-pressure",
+        6,
+        "82919c17f7257029af4473724b3faf1a07da90baa64f1e1253680cf1867a169e",
+    ),
+    (
+        "frontier-campaign/ticks=8/variant=extended-pressure",
+        8,
+        "9269be3487a23517635ba9434c9331d78874eaa3e5f1a8bdf762e2ee5edc0858",
+    ),
+    (
+        "attrition-line/ticks=2/variant=starving-start",
+        2,
+        "4092f982480fec038b81312bdbd905b0b1babfd0d16369fcd5589fadae47046c",
+    ),
+    (
+        "attrition-line/ticks=3/variant=desperate-march",
+        3,
+        "4d550564b0b8c40ebb742d2ca239610808cde8b26171ba77b0a8abfeb22d73df",
+    ),
+    (
+        "attrition-line/ticks=4/variant=counter-march",
+        4,
+        "85699a2ad78b93245016d4a00f289aecd166d67556da822765bea6ab8c390c70",
+    ),
+    (
+        "attrition-line/ticks=5/variant=delayed-contact",
+        5,
+        "592ce2bee194f933a8482d2f1e4c06cfc2659ab22a4ae57efffd20d0cbed4ec3",
+    ),
+    (
+        "victory-race/ticks=2/variant=alliance-hold",
+        2,
+        "c761a88bd768abb73bf800590f4f52c341d37ceb7de61c399a863135d449ada0",
+    ),
+    (
+        "victory-race/ticks=4/variant=alliance-countdown",
+        4,
+        "caf7b883f738ba0a867e6a55d7ee263982c1700d8a1df2e09067507f1a4abda1",
+    ),
+    (
+        "victory-race/ticks=4/variant=pressure-charlie",
+        4,
+        "22da85f78498c5234806752c3cdf8f1c4fd78c46dde5bc03ae7c0027a80acfd8",
+    ),
+    (
+        "victory-race/ticks=5/variant=defender-shift",
+        5,
+        "14dfc70fc12723ce0ad7f231d9dbe40d039ba916509867a4122988b3eeab4901",
+    ),
+]
+
+
+def _assert_expected_batch_outputs() -> None:
+    scenarios = build_regression_scenarios()
+    result = run_simulation_regression_batch(scenarios)
+
+    assert [scenario.scenario_id for scenario in scenarios] == [
+        scenario_id for scenario_id, _, _ in EXPECTED_SCENARIO_RESULTS
+    ]
+    assert result.total_runs == len(EXPECTED_SCENARIO_RESULTS)
+    assert [
+        (scenario.scenario_id, scenario.ticks, scenario.outcome_digest)
+        for scenario in result.scenario_results
+    ] == EXPECTED_SCENARIO_RESULTS
+    assert result.failures == [], format_regression_failures(result.failures)
+
 
 def _city_state(*, owner: str | None) -> CityState:
     return CityState(
@@ -90,12 +168,7 @@ def _broken_reference_scenario() -> RegressionScenario:
 
 
 def test_regression_harness_executes_declared_batch() -> None:
-    scenarios = build_regression_scenarios()
-    result = run_simulation_regression_batch(scenarios)
-
-    assert len(scenarios) >= 12
-    assert result.total_runs == len(scenarios)
-    assert result.failures == [], format_regression_failures(result.failures)
+    _assert_expected_batch_outputs()
 
 
 def test_regression_harness_reports_reproducible_invariant_failures() -> None:
@@ -112,10 +185,8 @@ def test_regression_harness_reports_reproducible_invariant_failures() -> None:
 
 
 def test_regression_harness_is_deterministic_across_repeated_runs() -> None:
-    first = run_simulation_regression_batch(build_regression_scenarios())
-    second = run_simulation_regression_batch(build_regression_scenarios())
-
-    assert first.model_dump(mode="json") == second.model_dump(mode="json")
+    _assert_expected_batch_outputs()
+    _assert_expected_batch_outputs()
 
 
 def test_regression_harness_formats_multiple_corrupt_state_failures() -> None:

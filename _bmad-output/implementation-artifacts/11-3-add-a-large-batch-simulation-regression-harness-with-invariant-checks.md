@@ -51,6 +51,7 @@ GPT-5 Codex
 
 - `uv sync --extra dev --frozen`
 - `uv run pytest --no-cov tests/test_simulation_regression.py::test_regression_harness_executes_declared_batch`
+- `uv run pytest --no-cov tests/test_simulation_regression.py::test_regression_harness_is_deterministic_across_repeated_runs`
 - `uv run pytest --no-cov tests/test_simulation_regression.py -q`
 - `make regression-test`
 - `make format`
@@ -60,6 +61,7 @@ GPT-5 Codex
 
 - Added `server/simulation_regression.py` with a deterministic 12-scenario batch harness, invariant checks, failure records, and stable outcome digests.
 - Added `tests/test_simulation_regression.py` covering batch execution, reproducible invariant reporting, repeated-run determinism, and malformed-state failure formatting.
+- Tightened Story 11.3 regression assertions to pin the exact scenario ID list and expected `outcome_digest` values so deterministic but behaviorally wrong gameplay changes fail the suite.
 - Added `make regression-test` as the stable targeted command path for rerunning only the regression harness.
 - Kept the harness deterministic and CI-friendly by reusing `simulate_ticks` with validated per-tick orders and modest curated scenario families instead of fuzzing.
 
@@ -76,3 +78,4 @@ GPT-5 Codex
 - 2026-03-28 14:40 UTC: Drafted Story 11.3 for deterministic batch regression and invariant validation.
 - 2026-03-29 08:31 UTC: Marked story in progress for deterministic regression harness implementation.
 - 2026-03-29 08:31 UTC: Implemented the deterministic batch regression harness, added invariant-focused tests and `make regression-test`, reran `make quality`, and marked the story done.
+- 2026-03-29 09:05 UTC: Strengthened regression expectations to assert the exact scenario result set and pinned outcome digests from the public harness output.
