@@ -902,3 +902,67 @@ So that my turn loop can write one public contract per tick instead of coordinat
 **And Given** the consolidated command endpoint is only a public-contract convenience layer
 **When** it is implemented
 **Then** the underlying focused REST endpoints remain available and keep their existing behavior-first tests passing unchanged.
+
+## Epic 18: Live Match Runtime Loop
+
+Close the biggest remaining architecture gap between the deterministic engine and a shippable multiplayer service by teaching the running FastAPI app to advance active matches on its own clock. Sequence the work so the server can first advance active matches in-process against the existing registry and APIs, then add durable tick persistence/logging, then layer human/spectator realtime delivery on top of that moving runtime.
+
+### Story 18.1: Launch an in-process async tick loop for active matches
+
+As a game server operator,
+I want active matches to advance on their configured interval without an HTTP trigger,
+So that the running service behaves like a real tick-based simulation instead of a static contract mock.
+
+**Acceptance Criteria:**
+
+**Given** the FastAPI app starts with one or more active matches in the registry
+**When** the server lifespan begins
+**Then** it launches one background loop per active match that sleeps by the match tick interval and advances only that match state on schedule.
+
+**And Given** agents have already submitted validated orders for the current tick
+**When** the loop advances the match
+**Then** it resolves the next tick from the existing pure-function engine, consumes the queued submissions for that tick, increments the canonical match tick, and leaves later ticks' submissions untouched.
+
+**And Given** developers need confidence at the public boundary
+**When** the story ships
+**Then** behavior-first tests cover lifecycle startup/shutdown plus a small real-process API smoke proving an active match tick advances without any manual endpoint call.
+
+### Story 18.2: Persist live tick advancement and write tick-log history
+
+As a game server operator,
+I want runtime tick advancement to update the database durably,
+So that active matches can resume after a restart and expose auditable tick history.
+
+**Acceptance Criteria:**
+
+**Given** the app runs against the database-backed registry
+**When** an active match advances a tick
+**Then** the latest match state and current tick are persisted back to the `matches` table.
+
+**And Given** debugging and replay require historical state
+**When** each runtime tick completes
+**Then** the server writes a `tick_log` row containing the resolved tick number, state snapshot, accepted orders, and emitted events.
+
+**And Given** runtime durability should not break local workflows
+**When** the persistence path is verified
+**Then** running-app tests exercise the real service boundary against migrated seeded data and confirm the persisted state survives a registry reload.
+
+### Story 18.3: Broadcast live match updates over WebSockets for human clients and spectators
+
+As a human player or spectator,
+I want the running match to push updates over WebSockets,
+So that the client can watch the war unfold in real time instead of polling ad hoc REST reads.
+
+**Acceptance Criteria:**
+
+**Given** a human player or spectator connects to the match WebSocket
+**When** the server accepts the connection
+**Then** it sends an initial state payload shaped to the documented protocol and keeps the connection registered for future broadcasts.
+
+**And Given** an active match advances or a chat-visible event occurs
+**When** the runtime loop completes the tick
+**Then** the server broadcasts the post-tick payload to subscribed clients, using fog-filtered state for players and full visibility for spectators.
+
+**And Given** the realtime protocol is a public client contract
+**When** the feature ships
+**Then** tests cover connection lifecycle, initial payload shape, and at least one real-process tick-driven broadcast for both a player and a spectator role.
