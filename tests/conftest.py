@@ -129,6 +129,7 @@ def running_seeded_app(tmp_path: Path) -> Iterator[RunningApp]:
             base_url=base_url,
             primary_match_id="00000000-0000-0000-0000-000000000101",
             secondary_match_id="00000000-0000-0000-0000-000000000102",
+            database_url=database_url,
         )
     finally:
         process.terminate()
@@ -197,6 +198,7 @@ def running_fast_tick_app(tmp_path: Path) -> Iterator[RunningApp]:
             base_url=base_url,
             primary_match_id="00000000-0000-0000-0000-000000000101",
             secondary_match_id="00000000-0000-0000-0000-000000000102",
+            database_url=database_url,
         )
     finally:
         process.terminate()

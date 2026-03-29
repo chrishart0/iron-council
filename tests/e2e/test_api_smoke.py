@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 from server.agent_registry import build_seeded_agent_api_key
+from server.db.registry import load_match_registry_from_database
 from tests.support import RunningApp
 
 
@@ -105,6 +106,10 @@ def test_active_match_ticks_forward_without_manual_advance_endpoint(
         army["owner"] == "player-2" and army["location"] == "manchester" and army["troops"] == 5
         for army in latest_state["visible_armies"]
     )
+    reloaded_registry = load_match_registry_from_database(running_fast_tick_app.database_url)
+    reloaded_match = reloaded_registry.get_match(running_fast_tick_app.primary_match_id)
+    assert reloaded_match is not None
+    assert reloaded_match.state.tick == 143
 
 
 def test_agent_join_and_profile_smoke_flow_runs_through_real_process(

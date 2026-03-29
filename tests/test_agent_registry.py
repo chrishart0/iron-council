@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from server.agent_registry import (
+    AdvancedMatchTick,
     InMemoryMatchRegistry,
     MatchAccessError,
     MatchJoinError,
@@ -478,3 +479,81 @@ def test_advance_match_tick_combines_same_player_submissions_before_validation()
         if army.owner == "player-1" and army.location == "london"
     ] == [("army-b", "london", "player-1", 28)]
     assert match.order_submissions == []
+
+
+def test_advance_match_tick_returns_resolved_tick_contract_for_persistence() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-1",
+                "tick": 142,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "london", "troops": 5}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-1",
+                "tick": 143,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "london", "troops": 1}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+
+    advanced_tick = registry.advance_match_tick("match-alpha")
+
+    assert isinstance(advanced_tick, AdvancedMatchTick)
+    assert advanced_tick.match_id == "match-alpha"
+    assert advanced_tick.resolved_tick == 143
+    assert advanced_tick.next_state.tick == 143
+    assert advanced_tick.accepted_orders.model_dump(mode="json") == {
+        "movements": [],
+        "recruitment": [{"city": "london", "troops": 5}],
+        "upgrades": [],
+        "transfers": [],
+    }
+    assert [event.model_dump(mode="json") for event in advanced_tick.events] == [
+        {"phase": "resource", "event": "phase.resource.completed"},
+        {"phase": "build", "event": "phase.build.completed"},
+        {"phase": "movement", "event": "phase.movement.completed"},
+        {"phase": "combat", "event": "phase.combat.completed"},
+        {"phase": "siege", "event": "phase.siege.completed"},
+        {"phase": "attrition", "event": "phase.attrition.completed"},
+        {"phase": "diplomacy", "event": "phase.diplomacy.completed"},
+        {"phase": "victory", "event": "phase.victory.completed"},
+    ]
+
+    match = registry.get_match("match-alpha")
+    assert match is not None
+    assert [submission.model_dump(mode="json") for submission in match.order_submissions] == [
+        {
+            "match_id": "match-alpha",
+            "player_id": "player-1",
+            "tick": 143,
+            "orders": {
+                "movements": [],
+                "recruitment": [{"city": "london", "troops": 1}],
+                "upgrades": [],
+                "transfers": [],
+            },
+        }
+    ]

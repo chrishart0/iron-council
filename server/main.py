@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from typing import Annotated, Any
@@ -12,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from server import __version__
 from server.agent_registry import (
+    AdvancedMatchTick,
     AllianceTransitionError,
     GroupChatAccessError,
     InMemoryMatchRegistry,
@@ -19,7 +21,7 @@ from server.agent_registry import (
     MatchJoinError,
     TreatyTransitionError,
 )
-from server.db.registry import load_match_registry_from_database
+from server.db.registry import load_match_registry_from_database, persist_advanced_match_tick
 from server.fog import project_agent_state
 from server.models.api import (
     AgentBriefingResponse,
@@ -367,11 +369,12 @@ def _require_joined_player_id(
 
 def create_app(*, match_registry: InMemoryMatchRegistry | None = None) -> FastAPI:
     registry = match_registry or _load_default_match_registry()
+    tick_persistence = _load_runtime_tick_persistence(match_registry=match_registry)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         app.state.match_registry = registry
-        app.state.match_runtime = MatchRuntime(registry)
+        app.state.match_runtime = MatchRuntime(registry, tick_persistence=tick_persistence)
         await app.state.match_runtime.start()
         try:
             yield
@@ -1255,6 +1258,25 @@ def _load_default_match_registry() -> InMemoryMatchRegistry:
         f"{MATCH_REGISTRY_BACKEND_VARIABLE} value {backend!r}; "
         "expected 'memory' or 'db'."
     )
+
+
+def _load_runtime_tick_persistence(
+    *,
+    match_registry: InMemoryMatchRegistry | None,
+) -> Callable[[AdvancedMatchTick], None] | None:
+    if match_registry is not None:
+        return None
+
+    backend = os.environ.get(MATCH_REGISTRY_BACKEND_VARIABLE, "memory")
+    if backend != "db":
+        return None
+
+    database_url = get_settings().database_url
+
+    def persist_tick(advanced_tick: AdvancedMatchTick) -> None:
+        persist_advanced_match_tick(database_url=database_url, advanced_tick=advanced_tick)
+
+    return persist_tick
 
 
 app = create_app()

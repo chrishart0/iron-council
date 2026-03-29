@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 
 from server.agent_registry import build_seeded_agent_api_key
-from server.db.registry import load_match_registry_from_database
+from server.db.registry import load_match_registry_from_database, persist_advanced_match_tick
 from server.db.testing import provision_seeded_database
+from server.models.orders import OrderEnvelope
 from sqlalchemy import create_engine, text
 
 
@@ -322,6 +323,83 @@ def test_load_match_registry_from_database_resolves_db_backed_agent_api_keys(
         "display_name": "Morgana",
         "is_seeded": True,
     }
+
+
+def test_persist_advanced_match_tick_updates_match_and_appends_tick_log_transactionally(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-persist-tick.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    registry = load_match_registry_from_database(database_url)
+
+    registry.record_submission(
+        match_id="00000000-0000-0000-0000-000000000101",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "player_id": "player-2",
+                "tick": 142,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "manchester", "troops": 5}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    advanced_tick = registry.advance_match_tick("00000000-0000-0000-0000-000000000101")
+
+    persist_advanced_match_tick(database_url=database_url, advanced_tick=advanced_tick)
+
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        persisted_match = connection.execute(
+            text("SELECT current_tick, state FROM matches WHERE id = :match_id"),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        ).one()
+        persisted_tick_log = connection.execute(
+            text(
+                """
+                SELECT tick, state_snapshot, orders, events
+                FROM tick_log
+                WHERE match_id = :match_id
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        ).one()
+
+    assert persisted_match.current_tick == 143
+    assert json.loads(persisted_match.state)["tick"] == 143
+    assert persisted_tick_log.tick == 143
+    assert json.loads(persisted_tick_log.state_snapshot)["tick"] == 143
+    assert json.loads(persisted_tick_log.orders) == {
+        "movements": [],
+        "recruitment": [{"city": "manchester", "troops": 5}],
+        "upgrades": [],
+        "transfers": [],
+    }
+    assert json.loads(persisted_tick_log.events) == [
+        {"phase": "resource", "event": "phase.resource.completed"},
+        {"phase": "build", "event": "phase.build.completed"},
+        {"phase": "movement", "event": "phase.movement.completed"},
+        {"phase": "combat", "event": "phase.combat.completed"},
+        {"phase": "siege", "event": "phase.siege.completed"},
+        {"phase": "attrition", "event": "phase.attrition.completed"},
+        {"phase": "diplomacy", "event": "phase.diplomacy.completed"},
+        {"phase": "victory", "event": "phase.victory.completed"},
+    ]
+
+    reloaded_registry = load_match_registry_from_database(database_url)
+    reloaded_match = reloaded_registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert reloaded_match is not None
+    assert reloaded_match.state.tick == 143
+    assert any(
+        army.owner == "player-2" and army.location == "manchester" and army.troops == 5
+        for army in reloaded_match.state.armies
+    )
 
 
 def test_load_match_registry_from_database_rejects_inactive_agent_api_keys(

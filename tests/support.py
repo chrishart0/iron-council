@@ -11,6 +11,7 @@ class RunningApp:
     base_url: str
     primary_match_id: str
     secondary_match_id: str
+    database_url: str
 
 
 def load_python_agent_sdk_module() -> ModuleType:

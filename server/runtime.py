@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 
-from server.agent_registry import InMemoryMatchRegistry
+from server.agent_registry import AdvancedMatchTick, InMemoryMatchRegistry
 from server.models.domain import MatchStatus
 
 
 class MatchRuntime:
-    def __init__(self, registry: InMemoryMatchRegistry) -> None:
+    def __init__(
+        self,
+        registry: InMemoryMatchRegistry,
+        *,
+        tick_persistence: Callable[[AdvancedMatchTick], None] | None = None,
+    ) -> None:
         self._registry = registry
+        self._tick_persistence = tick_persistence
         self._tasks: dict[str, asyncio.Task[None]] = {}
 
     async def start(self) -> None:
@@ -35,6 +42,8 @@ class MatchRuntime:
                 if match is None or match.status != MatchStatus.ACTIVE:
                     return
                 await asyncio.sleep(match.tick_interval_seconds)
-                self._registry.advance_match_tick(match_id)
+                advanced_tick = self._registry.advance_match_tick(match_id)
+                if self._tick_persistence is not None:
+                    self._tick_persistence(advanced_tick)
         except asyncio.CancelledError:
             raise

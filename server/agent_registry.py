@@ -41,7 +41,7 @@ from server.models.domain import MatchStatus
 from server.models.orders import OrderBatch, OrderEnvelope
 from server.models.state import MatchState
 from server.order_validation import validate_order_envelope
-from server.resolver import resolve_tick
+from server.resolver import TickPhaseEvent, resolve_tick
 
 
 @dataclass(slots=True)
@@ -159,6 +159,15 @@ class AuthenticatedAgentKeyRecord:
     agent_id: str
     key_hash: str
     is_active: bool = True
+
+
+@dataclass(slots=True)
+class AdvancedMatchTick:
+    match_id: str
+    resolved_tick: int
+    next_state: MatchState
+    accepted_orders: OrderBatch
+    events: list[TickPhaseEvent]
 
 
 class InMemoryMatchRegistry:
@@ -375,7 +384,7 @@ class InMemoryMatchRegistry:
         record.order_submissions.append(envelope.model_copy(deep=True))
         return len(record.order_submissions) - 1
 
-    def advance_match_tick(self, match_id: str) -> MatchRecord:
+    def advance_match_tick(self, match_id: str) -> AdvancedMatchTick:
         record = self._matches[match_id]
         current_tick = record.state.tick
         queued_for_current_tick = [
@@ -392,9 +401,16 @@ class InMemoryMatchRegistry:
             submissions=queued_for_current_tick,
         )
         resolution = resolve_tick(record.state, validated_orders)
-        record.state = resolution.next_state.model_copy(update={"tick": current_tick + 1})
+        next_state = resolution.next_state.model_copy(update={"tick": current_tick + 1})
+        record.state = next_state
         self._sync_victory_state(record.state)
-        return record
+        return AdvancedMatchTick(
+            match_id=match_id,
+            resolved_tick=record.state.tick,
+            next_state=record.state.model_copy(deep=True),
+            accepted_orders=validated_orders.model_copy(deep=True),
+            events=[event.model_copy(deep=True) for event in resolution.events],
+        )
 
     def apply_command_envelope(
         self,
