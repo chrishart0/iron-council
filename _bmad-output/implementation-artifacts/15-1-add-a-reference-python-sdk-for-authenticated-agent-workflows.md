@@ -1,6 +1,6 @@
 # Story 15.1: Add a reference Python SDK for authenticated agent workflows
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -16,21 +16,21 @@ So that I can list matches, join, poll state, submit orders, and interact with d
 
 ## Tasks / Subtasks
 
-- [ ] Create the minimal SDK surface for authenticated agent workflows. (AC: 1, 2)
-  - [ ] Add a narrow client module under `agent-sdk/python/` with one shared request helper and stable methods for the current REST surface.
-  - [ ] Add one repo-style exception carrying `status_code`, `error_code`, and `message` for API failures.
-  - [ ] Keep secrets out of `repr`/error text and avoid coupling the SDK to internal server objects beyond public response parsing.
-- [ ] Add behavior-first SDK contract tests. (AC: 1, 2)
-  - [ ] Cover happy-path match/profile/state/order/message/treaty/alliance calls against the in-process FastAPI app.
-  - [ ] Cover structured API-error propagation and transport-failure handling.
-  - [ ] Keep tests focused on public behavior, not internal helper sequencing.
-- [ ] Add real-running-app verification and keep the harness simple. (AC: 3)
-  - [ ] Exercise at least one join → state → submit or diplomacy flow through `running_seeded_app` using the SDK.
-  - [ ] Extend lint/type/test config so the new SDK files are included in the standard quality gate.
-  - [ ] Run the full repository quality gate after the SDK lands.
-- [ ] Update BMAD and docs artifacts. (AC: 3)
-  - [ ] Record debug commands and completion notes in this story file.
-  - [ ] Update the implementation plan and sprint status when the story is complete.
+- [x] Create the minimal SDK surface for authenticated agent workflows. (AC: 1, 2)
+  - [x] Add a narrow client module under `agent-sdk/python/` with one shared request helper and stable methods for the current REST surface.
+  - [x] Add one repo-style exception carrying `status_code`, `error_code`, and `message` for API failures.
+  - [x] Keep secrets out of `repr`/error text and avoid coupling the SDK to internal server objects beyond public response parsing.
+- [x] Add behavior-first SDK contract tests. (AC: 1, 2)
+  - [x] Cover happy-path match/profile/state/order/message/treaty/alliance calls against the in-process FastAPI app.
+  - [x] Cover structured API-error propagation and transport-failure handling.
+  - [x] Keep tests focused on public behavior, not internal helper sequencing.
+- [x] Add real-running-app verification and keep the harness simple. (AC: 3)
+  - [x] Exercise at least one join → state → submit or diplomacy flow through `running_seeded_app` using the SDK.
+  - [x] Extend lint/type/test config so the new SDK files are included in the standard quality gate.
+  - [x] Run the full repository quality gate after the SDK lands.
+- [x] Update BMAD and docs artifacts. (AC: 3)
+  - [x] Record debug commands and completion notes in this story file.
+  - [x] Update the implementation plan and sprint status when the story is complete.
 
 ## Dev Notes
 
@@ -65,16 +65,34 @@ GPT-5 Codex
 
 ### Debug Log References
 
-- Pending implementation.
+- Red: `uv run pytest -o addopts='' tests/agent_sdk/test_python_client.py`
+- Green: `uv run pytest -o addopts='' tests/agent_sdk/test_python_client.py`
+- Green: `uv run pytest -o addopts='' tests/e2e/test_agent_sdk_smoke.py`
+- Green: `uv sync --extra dev --frozen`
+- Green: `make format`
+- Green: `make quality`
 
 ### Completion Notes List
 
-- Pending implementation.
+- Added `IronCouncilClient` and `IronCouncilApiError` under `agent-sdk/python/iron_council_client.py` as a narrow synchronous reference SDK over the authenticated agent REST API.
+- Reused the server's public Pydantic response and request models for stable typed parsing without coupling the SDK to server internals beyond the public contract layer.
+- Added behavior-first in-process contract tests for match, profile, join, state, orders, messages, treaties, alliances, structured API errors, and transport failures.
+- Added a real-process smoke test that exercises profile, join, state, and order submission through `running_seeded_app`.
+- Extended Ruff, mypy, and coverage configuration so `agent-sdk/python` is part of the standard quality harness.
+- Verified the repository quality gate passes with the SDK included and captured the initial red-phase evidence from the missing SDK file failure.
 
 ### File List
 
-- Pending implementation.
+- `agent-sdk/python/iron_council_client.py`
+- `tests/agent_sdk/test_python_client.py`
+- `tests/e2e/test_agent_sdk_smoke.py`
+- `tests/support.py`
+- `pyproject.toml`
+- `Makefile`
+- `_bmad-output/implementation-artifacts/15-1-add-a-reference-python-sdk-for-authenticated-agent-workflows.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ### Change Log
 
 - 2026-03-29 17:55 UTC: Drafted Story 15.1 for the reference Python SDK.
+- 2026-03-29 18:31 UTC: Added the reference Python SDK, contract tests, real-process smoke coverage, and quality-harness updates; story completed.

@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 UV ?= uv
-SOURCE_DIRS := server tests
+SOURCE_DIRS := server tests agent-sdk/python
 SUPPORT_SERVICES_COMPOSE_FILE := compose.support-services.yaml
 DOCKER_COMPOSE ?= docker compose -f $(SUPPORT_SERVICES_COMPOSE_FILE)
 
