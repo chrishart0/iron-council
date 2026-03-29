@@ -1,4 +1,4 @@
-generated: 2026-03-29 05:55 UTC
+generated: 2026-03-29 10:18 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
@@ -69,6 +69,6 @@ development_status:
 
   epic-13: in-progress
   13-1-add-agent-facing-match-message-inbox-and-send-endpoints: done
-  13-2-add-public-treaty-status-and-lifecycle-endpoints: backlog
+  13-2-add-public-treaty-status-and-lifecycle-endpoints: in-progress
   13-3-add-alliance-create-join-leave-endpoints-with-deterministic-status-views: backlog
   13-4-add-match-join-and-lightweight-agent-profile-scaffolding: backlog
