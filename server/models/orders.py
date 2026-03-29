@@ -35,6 +35,7 @@ class UpgradeOrder(StrictModel):
 
 class TransferOrder(StrictModel):
     type: Literal["transfer"] = Field(default="transfer", exclude=True)
+    sender: str | None = Field(default=None, exclude=True)
     to: str
     resource: ResourceType
     amount: PositiveCount

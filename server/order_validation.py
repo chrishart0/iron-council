@@ -168,7 +168,9 @@ def validate_order_envelope(
             land_adjacency=land_adjacency,
         )
         if transfer_rejection is None:
-            result.accepted.transfers.append(transfer_order)
+            result.accepted.transfers.append(
+                transfer_order.model_copy(update={"sender": envelope.player_id})
+            )
         else:
             result.rejected.append(transfer_rejection)
 

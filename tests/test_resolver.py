@@ -9,6 +9,7 @@ from server.models.orders import (
     OrderBatch,
     OrderEnvelope,
     RecruitmentOrder,
+    TransferOrder,
     UpgradeOrder,
 )
 from server.models.state import (
@@ -1284,6 +1285,197 @@ def test_resolve_tick_build_phase_is_permutation_invariant_for_equivalent_recrui
     )
 
     assert alpha_then_bravo.next_state == bravo_then_alpha.next_state
+
+
+def test_resolve_tick_build_phase_applies_accepted_transfers_to_sender_and_recipient() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "alpha": CityState(
+                owner="player_1",
+                population=0,
+                resources=ResourceState(food=0, production=0, money=0),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+            "bravo": CityState(
+                owner="player_2",
+                population=0,
+                resources=ResourceState(food=0, production=0, money=0),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=9, production=8, money=7),
+                cities_owned=["alpha"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=2, production=1, money=0),
+                cities_owned=["bravo"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+
+    result = resolve_tick(
+        state,
+        OrderBatch(
+            transfers=[
+                TransferOrder(
+                    sender="player_1",
+                    to="player_2",
+                    resource=ResourceType.FOOD,
+                    amount=4,
+                ),
+                TransferOrder(
+                    sender="player_1",
+                    to="player_2",
+                    resource=ResourceType.PRODUCTION,
+                    amount=3,
+                ),
+                TransferOrder(
+                    sender="player_1",
+                    to="player_2",
+                    resource=ResourceType.MONEY,
+                    amount=2,
+                ),
+            ]
+        ),
+    )
+
+    assert result.next_state.players["player_1"].resources == ResourceState(
+        food=5,
+        production=5,
+        money=5,
+    )
+    assert result.next_state.players["player_2"].resources == ResourceState(
+        food=6,
+        production=4,
+        money=2,
+    )
+
+
+def test_resolve_tick_transfers_land_next_tick_for_recruitment_budget() -> None:
+    state = MatchState(
+        tick=5,
+        cities={
+            "citadel": CityState(
+                owner="player_1",
+                population=0,
+                resources=ResourceState(food=0, production=0, money=0),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+            "harbor": CityState(
+                owner="player_2",
+                population=0,
+                resources=ResourceState(food=0, production=0, money=0),
+                upgrades=CityUpgradeState(economy=0, military=0, fortification=0),
+                garrison=5,
+                building_queue=[],
+            ),
+        },
+        armies=[],
+        players={
+            "player_1": PlayerState(
+                resources=ResourceState(food=4, production=4, money=0),
+                cities_owned=["citadel"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+            "player_2": PlayerState(
+                resources=ResourceState(food=1, production=9, money=0),
+                cities_owned=["harbor"],
+                alliance_id="alliance_red",
+                is_eliminated=False,
+            ),
+        },
+        victory=VictoryState(
+            leading_alliance=None,
+            cities_held=0,
+            threshold=2,
+            countdown_ticks_remaining=None,
+        ),
+    )
+    map_definition = _custom_resolver_map()
+
+    sender_validation = validate_order_envelope(
+        OrderEnvelope.model_validate(
+            {
+                "match_id": "match_1",
+                "player_id": "player_1",
+                "tick": 5,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [
+                        {"to": "player_2", "resource": "food", "amount": 1},
+                        {"to": "player_2", "resource": "production", "amount": 1},
+                    ],
+                },
+            }
+        ),
+        state,
+        map_definition,
+    )
+    recipient_validation = validate_order_envelope(
+        OrderEnvelope.model_validate(
+            {
+                "match_id": "match_1",
+                "player_id": "player_2",
+                "tick": 5,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "harbor", "troops": 2}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+        state,
+        map_definition,
+    )
+
+    assert sender_validation.accepted.model_dump(mode="json") == {
+        "movements": [],
+        "recruitment": [],
+        "upgrades": [],
+        "transfers": [
+            {"to": "player_2", "resource": "food", "amount": 1},
+            {"to": "player_2", "resource": "production", "amount": 1},
+        ],
+    }
+    assert recipient_validation.accepted.model_dump(mode="json") == {
+        "movements": [],
+        "recruitment": [],
+        "upgrades": [],
+        "transfers": [],
+    }
+    assert recipient_validation.rejected[0].reason_code == "insufficient_resources"
+
+    result = resolve_tick(state, sender_validation.accepted, map_definition=map_definition)
+
+    assert result.next_state.players["player_2"].resources == ResourceState(
+        food=2,
+        production=10,
+        money=0,
+    )
 
 
 def test_resolve_tick_hands_neutral_city_to_single_surviving_occupier_after_combat() -> None:

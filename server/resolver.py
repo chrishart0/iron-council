@@ -6,7 +6,13 @@ from typing import Literal
 
 from server.data.maps import MapDefinition, load_uk_1900_map
 from server.models.domain import StrictModel, UpgradeTrack
-from server.models.orders import MovementOrder, OrderBatch, RecruitmentOrder, UpgradeOrder
+from server.models.orders import (
+    MovementOrder,
+    OrderBatch,
+    RecruitmentOrder,
+    TransferOrder,
+    UpgradeOrder,
+)
 from server.models.state import ArmyState, BuildingQueueItem, CityState, MatchState
 from server.order_validation import RECRUITMENT_COST_PER_TROOP, UPGRADE_COSTS
 
@@ -151,6 +157,7 @@ def _resolve_build_phase(
         validated_orders.upgrades,
         queued_tracks_at_phase_start=queued_tracks_at_phase_start,
     )
+    _process_transfer_orders(match_state, validated_orders.transfers)
     return _complete_phase(match_state, validated_orders, "build")
 
 
@@ -651,6 +658,32 @@ def _process_recruitment_orders(
         )
         match_state.armies.append(new_army)
         armies_by_id[army_id] = new_army
+
+
+def _process_transfer_orders(
+    match_state: MatchState,
+    transfer_orders: list[TransferOrder],
+) -> None:
+    for order in transfer_orders:
+        if order.sender is None:
+            continue
+
+        sender_state = match_state.players.get(order.sender)
+        recipient_state = match_state.players.get(order.to)
+        if sender_state is None or recipient_state is None:
+            continue
+
+        resource_name = order.resource.value
+        setattr(
+            sender_state.resources,
+            resource_name,
+            getattr(sender_state.resources, resource_name) - order.amount,
+        )
+        setattr(
+            recipient_state.resources,
+            resource_name,
+            getattr(recipient_state.resources, resource_name) + order.amount,
+        )
 
 
 def _recruitment_processing_key(
