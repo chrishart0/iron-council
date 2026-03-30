@@ -34,8 +34,10 @@ from server.agent_registry import (
 from server.db.registry import (
     MatchHistoryNotFoundError,
     TickHistoryNotFoundError,
+    get_completed_match_summaries,
     get_match_history,
     get_match_replay_tick,
+    get_public_leaderboard,
     load_match_registry_from_database,
     persist_advanced_match_tick,
 )
@@ -52,6 +54,7 @@ from server.models.api import (
     ApiErrorResponse,
     AuthenticatedAgentContext,
     AuthenticatedOrderSubmissionRequest,
+    CompletedMatchSummaryListResponse,
     GroupChatCreateAcceptanceResponse,
     GroupChatCreateRequest,
     GroupChatListResponse,
@@ -68,6 +71,7 @@ from server.models.api import (
     MatchSummary,
     MessageAcceptanceResponse,
     OrderAcceptanceResponse,
+    PublicLeaderboardResponse,
     TreatyActionAcceptanceResponse,
     TreatyActionRequest,
     TreatyListResponse,
@@ -656,6 +660,41 @@ def create_app(
                 message="Persisted match history is only available in DB-backed mode.",
             )
         return history_database_url
+
+    def require_db_backed_public_read_database_url(*, code: str, message: str) -> str:
+        if history_database_url is None:
+            raise ApiError(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                code=code,
+                message=message,
+            )
+        return history_database_url
+
+    @api_router.get(
+        "/leaderboard",
+        response_model=PublicLeaderboardResponse,
+        responses={HTTPStatus.SERVICE_UNAVAILABLE: API_ERROR_RESPONSE_SCHEMA},
+    )
+    async def list_public_leaderboard() -> PublicLeaderboardResponse:
+        return get_public_leaderboard(
+            database_url=require_db_backed_public_read_database_url(
+                code="leaderboard_unavailable",
+                message="Persisted leaderboard is only available in DB-backed mode.",
+            )
+        )
+
+    @api_router.get(
+        "/matches/completed",
+        response_model=CompletedMatchSummaryListResponse,
+        responses={HTTPStatus.SERVICE_UNAVAILABLE: API_ERROR_RESPONSE_SCHEMA},
+    )
+    async def list_completed_match_summaries() -> CompletedMatchSummaryListResponse:
+        return get_completed_match_summaries(
+            database_url=require_db_backed_public_read_database_url(
+                code="completed_match_summaries_unavailable",
+                message="Completed match summaries are only available in DB-backed mode.",
+            )
+        )
 
     @api_router.get(
         "/matches/{match_id}/history",

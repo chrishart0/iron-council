@@ -29,6 +29,7 @@ from server.models.api import (
 from server.models.orders import OrderEnvelope
 from server.websocket import MatchWebSocketManager, build_match_realtime_envelope
 from starlette.websockets import WebSocketDisconnect
+from tests.support import insert_completed_match_fixture
 
 
 def _army_by_id(payload: dict[str, Any], army_id: str) -> dict[str, Any]:
@@ -384,6 +385,137 @@ async def test_match_history_routes_read_persisted_tick_log_even_when_registry_s
     assert replay_response.status_code == HTTPStatus.OK
     assert replay_response.json()["tick"] == 142
     assert replay_response.json()["state_snapshot"] != {"tick": 999}
+
+
+@pytest.mark.asyncio
+async def test_public_leaderboard_and_completed_match_routes_return_compact_db_backed_reads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from server.db.testing import provision_seeded_database
+
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-public-reads.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        leaderboard_response = await client.get("/api/v1/leaderboard")
+        completed_matches_response = await client.get("/api/v1/matches/completed")
+
+    assert leaderboard_response.status_code == HTTPStatus.OK
+    assert leaderboard_response.json() == {
+        "leaderboard": [
+            {
+                "rank": 1,
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "elo": 1210,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 1,
+                "losses": 0,
+                "draws": 0,
+            },
+            {
+                "rank": 2,
+                "display_name": "Bedivere",
+                "competitor_kind": "human",
+                "elo": 1190,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 0,
+                "draws": 1,
+            },
+            {
+                "rank": 3,
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "elo": 1190,
+                "provisional": True,
+                "matches_played": 2,
+                "wins": 1,
+                "losses": 0,
+                "draws": 1,
+            },
+            {
+                "rank": 4,
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "elo": 1175,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 1,
+                "draws": 0,
+            },
+        ]
+    }
+    assert completed_matches_response.status_code == HTTPStatus.OK
+    assert completed_matches_response.json() == {
+        "matches": [
+            {
+                "match_id": "00000000-0000-0000-0000-000000000202",
+                "map": "mediterranean",
+                "final_tick": 200,
+                "tick_interval_seconds": 45,
+                "player_count": 2,
+                "completed_at": "2026-03-29T12:15:00Z",
+                "winning_alliance_name": None,
+                "winning_player_display_names": [],
+            },
+            {
+                "match_id": "00000000-0000-0000-0000-000000000201",
+                "map": "britain",
+                "final_tick": 155,
+                "tick_interval_seconds": 30,
+                "player_count": 3,
+                "completed_at": "2026-03-29T08:30:00Z",
+                "winning_alliance_name": "Iron Crown",
+                "winning_player_display_names": ["Arthur", "Morgana"],
+            },
+        ]
+    }
+
+
+@pytest.mark.asyncio
+async def test_public_leaderboard_and_completed_match_routes_return_structured_unavailable_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "memory")
+    memory_registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        memory_registry.seed_match(record)
+    app = create_app(match_registry=memory_registry)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        leaderboard_response = await client.get("/api/v1/leaderboard")
+        completed_matches_response = await client.get("/api/v1/matches/completed")
+
+    assert leaderboard_response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert leaderboard_response.json() == {
+        "error": {
+            "code": "leaderboard_unavailable",
+            "message": "Persisted leaderboard is only available in DB-backed mode.",
+        }
+    }
+    assert completed_matches_response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert completed_matches_response.json() == {
+        "error": {
+            "code": "completed_match_summaries_unavailable",
+            "message": "Completed match summaries are only available in DB-backed mode.",
+        }
+    }
 
 
 @pytest.mark.asyncio

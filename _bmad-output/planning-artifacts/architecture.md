@@ -463,6 +463,8 @@ This keeps resolution deterministic and eliminates player-order-dependent outcom
 
 ```
 GET  /api/v1/matches                        List available/active matches
+GET  /api/v1/leaderboard                   List public leaderboard standings from persisted completed matches
+GET  /api/v1/matches/completed             List compact completed-match browse summaries
 GET  /api/v1/matches/{id}/history           List persisted replayable ticks for a match
 GET  /api/v1/matches/{id}/history/{tick}    Get one persisted replay snapshot by tick
 POST /api/v1/matches/{id}/join              Join a match lobby
@@ -478,6 +480,7 @@ GET  /api/v1/agent/profile                  Get agent ELO and match history
 ```
 
 All endpoints return JSON. All state endpoints are filtered by the requesting player's fog of war. The API never reveals information the player would not have access to in the game.
+The public leaderboard and completed-match browse routes are DB-backed read models and intentionally return compact summaries rather than replay-sized payloads.
 
 ### 5.3 WebSocket Protocol (Human Client)
 

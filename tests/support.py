@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import ModuleType
+
+from sqlalchemy import create_engine, text
 
 
 @dataclass(frozen=True)
@@ -12,6 +15,149 @@ class RunningApp:
     primary_match_id: str
     secondary_match_id: str
     database_url: str
+
+
+def insert_completed_match_fixture(database_url: str) -> None:
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        seed_state = json.loads(
+            connection.execute(
+                text("SELECT state FROM matches WHERE id = :match_id"),
+                {"match_id": "00000000-0000-0000-0000-000000000101"},
+            ).scalar_one()
+        )
+        completed_state_one = {**seed_state, "tick": 155}
+        completed_state_two = {**seed_state, "tick": 200}
+        connection.execute(
+            text(
+                """
+                INSERT INTO matches (
+                    id, config, status, current_tick, state, winner_alliance, created_at, updated_at
+                ) VALUES (
+                    :id, :config, :status, :current_tick, :state, :winner_alliance,
+                    :created_at, :updated_at
+                )
+                """
+            ),
+            [
+                {
+                    "id": "00000000-0000-0000-0000-000000000201",
+                    "config": json.dumps({"map": "britain", "max_players": 4, "turn_seconds": 30}),
+                    "status": "completed",
+                    "current_tick": 155,
+                    "state": json.dumps(completed_state_one),
+                    "winner_alliance": "00000000-0000-0000-0000-000000000801",
+                    "created_at": "2026-03-29 08:00:00+00:00",
+                    "updated_at": "2026-03-29 08:30:00+00:00",
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000202",
+                    "config": json.dumps(
+                        {"map": "mediterranean", "max_players": 4, "turn_seconds": 45}
+                    ),
+                    "status": "completed",
+                    "current_tick": 200,
+                    "state": json.dumps(completed_state_two),
+                    "winner_alliance": None,
+                    "created_at": "2026-03-29 12:00:00+00:00",
+                    "updated_at": "2026-03-29 12:15:00+00:00",
+                },
+            ],
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO alliances (
+                    id, match_id, name, leader_id, formed_tick, dissolved_tick
+                ) VALUES (
+                    :id, :match_id, :name, :leader_id, :formed_tick, :dissolved_tick
+                )
+                """
+            ),
+            {
+                "id": "00000000-0000-0000-0000-000000000801",
+                "match_id": "00000000-0000-0000-0000-000000000201",
+                "name": "Iron Crown",
+                "leader_id": "00000000-0000-0000-0000-000000000701",
+                "formed_tick": 120,
+                "dissolved_tick": None,
+            },
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO players (
+                    id, user_id, match_id, display_name, is_agent, api_key_id, elo_rating,
+                    alliance_id, alliance_joined_tick, eliminated_at
+                ) VALUES (
+                    :id, :user_id, :match_id, :display_name, :is_agent, :api_key_id, :elo_rating,
+                    :alliance_id, :alliance_joined_tick, :eliminated_at
+                )
+                """
+            ),
+            [
+                {
+                    "id": "00000000-0000-0000-0000-000000000701",
+                    "user_id": "00000000-0000-0000-0000-000000000301",
+                    "match_id": "00000000-0000-0000-0000-000000000201",
+                    "display_name": "Arthur",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1210,
+                    "alliance_id": "00000000-0000-0000-0000-000000000801",
+                    "alliance_joined_tick": 120,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000702",
+                    "user_id": "00000000-0000-0000-0000-000000000302",
+                    "match_id": "00000000-0000-0000-0000-000000000201",
+                    "display_name": "Morgana",
+                    "is_agent": True,
+                    "api_key_id": "00000000-0000-0000-0000-000000000202",
+                    "elo_rating": 1190,
+                    "alliance_id": "00000000-0000-0000-0000-000000000801",
+                    "alliance_joined_tick": 120,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000703",
+                    "user_id": "00000000-0000-0000-0000-000000000303",
+                    "match_id": "00000000-0000-0000-0000-000000000201",
+                    "display_name": "Gawain",
+                    "is_agent": True,
+                    "api_key_id": "00000000-0000-0000-0000-000000000203",
+                    "elo_rating": 1175,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000704",
+                    "user_id": "00000000-0000-0000-0000-000000000302",
+                    "match_id": "00000000-0000-0000-0000-000000000202",
+                    "display_name": "Morgana",
+                    "is_agent": True,
+                    "api_key_id": "00000000-0000-0000-0000-000000000202",
+                    "elo_rating": 1190,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000705",
+                    "user_id": "00000000-0000-0000-0000-000000000304",
+                    "match_id": "00000000-0000-0000-0000-000000000202",
+                    "display_name": "Bedivere",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1190,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+            ],
+        )
 
 
 def load_python_agent_sdk_module() -> ModuleType:

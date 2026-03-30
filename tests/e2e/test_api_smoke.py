@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 from server.agent_registry import build_seeded_agent_api_key
 from server.db.registry import load_match_registry_from_database
-from tests.support import RunningApp
+from tests.support import RunningApp, insert_completed_match_fixture
 from websockets.sync.client import connect as connect_websocket
 
 
@@ -139,6 +139,91 @@ def test_match_history_and_replay_smoke_flow_runs_through_real_process(
         "state_snapshot": {"cities": {"london": {"owner": "Arthur", "population": 12}}},
         "orders": {"movements": [{"army_id": "army-1", "destination": "york"}]},
         "events": {"summary": ["Convoy secured", "Trade revenue collected"]},
+    }
+
+
+def test_public_leaderboard_and_completed_match_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    insert_completed_match_fixture(running_seeded_app.database_url)
+
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        leaderboard_response = client.get("/api/v1/leaderboard")
+        completed_matches_response = client.get("/api/v1/matches/completed")
+
+    assert leaderboard_response.status_code == HTTPStatus.OK
+    assert leaderboard_response.json() == {
+        "leaderboard": [
+            {
+                "rank": 1,
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "elo": 1210,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 1,
+                "losses": 0,
+                "draws": 0,
+            },
+            {
+                "rank": 2,
+                "display_name": "Bedivere",
+                "competitor_kind": "human",
+                "elo": 1190,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 0,
+                "draws": 1,
+            },
+            {
+                "rank": 3,
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "elo": 1190,
+                "provisional": True,
+                "matches_played": 2,
+                "wins": 1,
+                "losses": 0,
+                "draws": 1,
+            },
+            {
+                "rank": 4,
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "elo": 1175,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 1,
+                "draws": 0,
+            },
+        ]
+    }
+    assert completed_matches_response.status_code == HTTPStatus.OK
+    assert completed_matches_response.json() == {
+        "matches": [
+            {
+                "match_id": "00000000-0000-0000-0000-000000000202",
+                "map": "mediterranean",
+                "final_tick": 200,
+                "tick_interval_seconds": 45,
+                "player_count": 2,
+                "completed_at": "2026-03-29T12:15:00Z",
+                "winning_alliance_name": None,
+                "winning_player_display_names": [],
+            },
+            {
+                "match_id": "00000000-0000-0000-0000-000000000201",
+                "map": "britain",
+                "final_tick": 155,
+                "tick_interval_seconds": 30,
+                "player_count": 3,
+                "completed_at": "2026-03-29T08:30:00Z",
+                "winning_alliance_name": "Iron Crown",
+                "winning_player_display_names": ["Arthur", "Morgana"],
+            },
+        ]
     }
 
 

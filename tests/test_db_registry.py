@@ -7,14 +7,18 @@ from server.agent_registry import build_seeded_agent_api_key
 from server.db.registry import (
     MatchHistoryNotFoundError,
     TickHistoryNotFoundError,
+    get_completed_match_summaries,
     get_match_history,
     get_match_replay_tick,
+    get_public_leaderboard,
     load_match_registry_from_database,
     persist_advanced_match_tick,
 )
 from server.db.testing import provision_seeded_database
 from server.models.orders import OrderEnvelope
 from sqlalchemy import create_engine, text
+
+from tests.support import insert_completed_match_fixture
 
 
 def test_load_match_registry_from_database_preserves_persisted_alliance_metadata(
@@ -500,6 +504,134 @@ def test_get_match_history_and_replay_tick_distinguish_missing_match_and_tick(
         pass
     else:
         raise AssertionError("Expected missing replay tick to raise TickHistoryNotFoundError.")
+
+
+def test_get_public_leaderboard_returns_ranked_competitors_with_stable_tiebreakers(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-leaderboard.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+
+    leaderboard = get_public_leaderboard(database_url=database_url)
+
+    assert leaderboard.model_dump(mode="json") == {
+        "leaderboard": [
+            {
+                "rank": 1,
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "elo": 1210,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 1,
+                "losses": 0,
+                "draws": 0,
+            },
+            {
+                "rank": 2,
+                "display_name": "Bedivere",
+                "competitor_kind": "human",
+                "elo": 1190,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 0,
+                "draws": 1,
+            },
+            {
+                "rank": 3,
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "elo": 1190,
+                "provisional": True,
+                "matches_played": 2,
+                "wins": 1,
+                "losses": 0,
+                "draws": 1,
+            },
+            {
+                "rank": 4,
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "elo": 1175,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 1,
+                "draws": 0,
+            },
+        ]
+    }
+
+
+def test_get_public_leaderboard_keeps_agent_rows_distinct_when_same_user_has_multiple_api_keys(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-leaderboard-agent-identity.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE players
+                SET user_id = :shared_user_id
+                WHERE id IN (:player_one_id, :player_two_id)
+                """
+            ),
+            {
+                "shared_user_id": "00000000-0000-0000-0000-000000009999",
+                "player_one_id": "00000000-0000-0000-0000-000000000702",
+                "player_two_id": "00000000-0000-0000-0000-000000000703",
+            },
+        )
+
+    leaderboard = get_public_leaderboard(database_url=database_url)
+    agent_rows = [row for row in leaderboard.leaderboard if row.competitor_kind == "agent"]
+
+    assert [row.display_name for row in agent_rows] == ["Morgana", "Gawain"]
+    assert [row.matches_played for row in agent_rows] == [2, 1]
+    assert [row.wins for row in agent_rows] == [1, 0]
+    assert [row.losses for row in agent_rows] == [0, 1]
+    assert [row.draws for row in agent_rows] == [1, 0]
+
+
+def test_get_completed_match_summaries_returns_compact_browse_rows_only_for_completed_matches(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-completed-matches.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+
+    summaries = get_completed_match_summaries(database_url=database_url)
+
+    assert summaries.model_dump(mode="json") == {
+        "matches": [
+            {
+                "match_id": "00000000-0000-0000-0000-000000000202",
+                "map": "mediterranean",
+                "final_tick": 200,
+                "tick_interval_seconds": 45,
+                "player_count": 2,
+                "completed_at": "2026-03-29T12:15:00Z",
+                "winning_alliance_name": None,
+                "winning_player_display_names": [],
+            },
+            {
+                "match_id": "00000000-0000-0000-0000-000000000201",
+                "map": "britain",
+                "final_tick": 155,
+                "tick_interval_seconds": 30,
+                "player_count": 3,
+                "completed_at": "2026-03-29T08:30:00Z",
+                "winning_alliance_name": "Iron Crown",
+                "winning_player_display_names": ["Arthur", "Morgana"],
+            },
+        ]
+    }
 
 
 def test_load_match_registry_from_database_rejects_inactive_agent_api_keys(

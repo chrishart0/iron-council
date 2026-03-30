@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import Field, model_validator
@@ -47,6 +48,40 @@ class MatchReplayTickResponse(StrictModel):
     state_snapshot: dict[str, Any]
     orders: dict[str, Any]
     events: dict[str, Any] | list[dict[str, Any]]
+
+
+CompetitorKind = Literal["human", "agent"]
+
+
+class LeaderboardEntry(StrictModel):
+    rank: int = Field(ge=1)
+    display_name: str
+    competitor_kind: CompetitorKind
+    elo: int = Field(ge=0)
+    provisional: bool
+    matches_played: int = Field(ge=0)
+    wins: int = Field(ge=0)
+    losses: int = Field(ge=0)
+    draws: int = Field(ge=0)
+
+
+class PublicLeaderboardResponse(StrictModel):
+    leaderboard: list[LeaderboardEntry] = Field(default_factory=list)
+
+
+class CompletedMatchSummary(StrictModel):
+    match_id: str
+    map: str
+    final_tick: TickDuration
+    tick_interval_seconds: int = Field(gt=0)
+    player_count: int = Field(ge=0)
+    completed_at: datetime
+    winning_alliance_name: str | None = None
+    winning_player_display_names: list[str] = Field(default_factory=list)
+
+
+class CompletedMatchSummaryListResponse(StrictModel):
+    matches: list[CompletedMatchSummary] = Field(default_factory=list)
 
 
 class OrderAcceptanceResponse(StrictModel):
