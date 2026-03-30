@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 25-2-add-a-read-only-spectator-live-match-page-over-websockets
+next_story: 25-3-add-authenticated-human-lobby-create-join-start-flows-in-the-web-client
 
 development_status:
   epic-1: done
@@ -118,5 +118,5 @@ development_status:
 
   epic-25: in-progress
   25-1-add-a-public-match-detail-page-in-the-web-client: done
-  25-2-add-a-read-only-spectator-live-match-page-over-websockets: backlog
+  25-2-add-a-read-only-spectator-live-match-page-over-websockets: done
   25-3-add-authenticated-human-lobby-create-join-start-flows-in-the-web-client: backlog
