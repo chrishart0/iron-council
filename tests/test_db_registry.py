@@ -6,11 +6,13 @@ from pathlib import Path
 from server.agent_registry import build_seeded_agent_api_key
 from server.db.registry import (
     MatchHistoryNotFoundError,
+    PublicMatchDetailNotFoundError,
     TickHistoryNotFoundError,
     get_completed_match_summaries,
     get_match_history,
     get_match_replay_tick,
     get_public_leaderboard,
+    get_public_match_detail,
     get_public_match_summaries,
     load_match_registry_from_database,
     persist_advanced_match_tick,
@@ -668,6 +670,129 @@ def test_get_public_match_browse_summaries_returns_compact_rows_for_only_non_com
             },
         ]
     }
+
+
+def test_get_public_match_detail_returns_compact_public_metadata_and_sorted_roster(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-public-match-detail.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    detail = get_public_match_detail(
+        database_url=database_url,
+        match_id="00000000-0000-0000-0000-000000000101",
+    )
+
+    assert detail.model_dump(mode="json") == {
+        "match_id": "00000000-0000-0000-0000-000000000101",
+        "status": "active",
+        "map": "britain",
+        "tick": 142,
+        "tick_interval_seconds": 30,
+        "current_player_count": 3,
+        "max_player_count": 5,
+        "open_slot_count": 2,
+        "roster": [
+            {"display_name": "Arthur", "competitor_kind": "human"},
+            {"display_name": "Gawain", "competitor_kind": "agent"},
+            {"display_name": "Morgana", "competitor_kind": "agent"},
+        ],
+    }
+
+
+def test_get_public_match_detail_stably_orders_visible_roster_rows(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-public-match-detail-ordering.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM players WHERE match_id = :match_id"),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO players (
+                    id, user_id, match_id, display_name, is_agent, api_key_id, elo_rating,
+                    alliance_id, alliance_joined_tick, eliminated_at
+                ) VALUES (
+                    :id, :user_id, :match_id, :display_name, :is_agent, :api_key_id, :elo_rating,
+                    :alliance_id, :alliance_joined_tick, :eliminated_at
+                )
+                """
+            ),
+            [
+                {
+                    "id": "00000000-0000-0000-0000-000000000771",
+                    "user_id": "00000000-0000-0000-0000-000000000371",
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "display_name": "Alex",
+                    "is_agent": True,
+                    "api_key_id": "00000000-0000-0000-0000-000000000202",
+                    "elo_rating": 1200,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000772",
+                    "user_id": "00000000-0000-0000-0000-000000000372",
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "display_name": "Alex",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1200,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000773",
+                    "user_id": "00000000-0000-0000-0000-000000000373",
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "display_name": "alex",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1200,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+            ],
+        )
+
+    detail = get_public_match_detail(
+        database_url=database_url,
+        match_id="00000000-0000-0000-0000-000000000101",
+    )
+
+    assert [row.model_dump(mode="json") for row in detail.roster] == [
+        {"display_name": "Alex", "competitor_kind": "human"},
+        {"display_name": "alex", "competitor_kind": "human"},
+        {"display_name": "Alex", "competitor_kind": "agent"},
+    ]
+
+
+def test_get_public_match_detail_treats_completed_and_unknown_matches_as_not_found(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-public-match-detail-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+
+    for missing_match_id in (
+        "00000000-0000-0000-0000-000000000201",
+        "00000000-0000-0000-0000-000000009999",
+    ):
+        try:
+            get_public_match_detail(database_url=database_url, match_id=missing_match_id)
+        except PublicMatchDetailNotFoundError:
+            pass
+        else:
+            raise AssertionError("Expected public match detail lookup to raise not-found.")
 
 
 def test_public_match_browse_summaries_order_rows_by_status_and_recency(

@@ -464,6 +464,7 @@ This keeps resolution deterministic and eliminates player-order-dependent outcom
 
 ```
 GET  /api/v1/matches                        List compact public browse summaries for lobby/active/paused matches
+GET  /api/v1/matches/{id}                   Get one compact public lobby/live match detail with visible roster rows
 GET  /api/v1/leaderboard                   List public leaderboard standings from persisted completed matches
 GET  /api/v1/matches/completed             List compact completed-match browse summaries
 GET  /api/v1/matches/{id}/history           List persisted replayable ticks for a match
@@ -481,7 +482,7 @@ GET  /api/v1/agent/profile                  Get agent ELO and match history
 ```
 
 All endpoints return JSON. All state endpoints are filtered by the requesting player's fog of war. The API never reveals information the player would not have access to in the game.
-The public matches, leaderboard, and completed-match browse routes are DB-backed read models in persisted mode and intentionally return compact summaries rather than replay-sized payloads. `GET /api/v1/matches` excludes completed matches and exposes only browse metadata such as status, map, tick, tick interval, and public slot counts.
+The public matches, leaderboard, and completed-match browse routes are DB-backed read models in persisted mode and intentionally return compact summaries rather than replay-sized payloads. `GET /api/v1/matches` excludes completed matches and exposes only browse metadata such as status, map, tick, tick interval, and public slot counts. `GET /api/v1/matches/{id}` extends that public browse surface for one non-completed match with only compact match metadata plus visible roster rows (`display_name`, `competitor_kind`), and it must not expose fog-filtered state, replay/history payloads, player IDs, join tokens, auth info, or API keys.
 
 ### 5.3 WebSocket Protocol (Human Client)
 

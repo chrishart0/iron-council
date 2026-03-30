@@ -29,15 +29,18 @@ from server.agent_registry import (
     InMemoryMatchRegistry,
     MatchAccessError,
     MatchJoinError,
+    MatchRecord,
     TreatyTransitionError,
 )
 from server.db.registry import (
     MatchHistoryNotFoundError,
+    PublicMatchDetailNotFoundError,
     TickHistoryNotFoundError,
     get_completed_match_summaries,
     get_match_history,
     get_match_replay_tick,
     get_public_leaderboard,
+    get_public_match_detail,
     get_public_match_summaries,
     load_match_registry_from_database,
     persist_advanced_match_tick,
@@ -73,6 +76,8 @@ from server.models.api import (
     MessageAcceptanceResponse,
     OrderAcceptanceResponse,
     PublicLeaderboardResponse,
+    PublicMatchDetailResponse,
+    PublicMatchRosterRow,
     TreatyActionAcceptanceResponse,
     TreatyActionRequest,
     TreatyListResponse,
@@ -720,6 +725,48 @@ def create_app(
                 code="completed_match_summaries_unavailable",
                 message="Completed match summaries are only available in DB-backed mode.",
             )
+        )
+
+    @api_router.get(
+        "/matches/{match_id}",
+        response_model=PublicMatchDetailResponse,
+        responses={HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA},
+    )
+    async def get_public_match_detail_route(
+        match_id: str,
+        registry: MatchRegistryDependency,
+    ) -> PublicMatchDetailResponse:
+        if history_database_url is not None:
+            try:
+                return get_public_match_detail(
+                    database_url=history_database_url,
+                    match_id=match_id,
+                )
+            except PublicMatchDetailNotFoundError as exc:
+                raise ApiError(
+                    status_code=HTTPStatus.NOT_FOUND,
+                    code="match_not_found",
+                    message=f"Match '{match_id}' was not found.",
+                ) from exc
+
+        record = registry.get_match(match_id)
+        if record is None or record.status is MatchStatus.COMPLETED:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+
+        return PublicMatchDetailResponse(
+            match_id=record.match_id,
+            status=record.status,
+            map=record.map_id,
+            tick=record.state.tick,
+            tick_interval_seconds=record.tick_interval_seconds,
+            current_player_count=record.public_current_player_count,
+            max_player_count=record.public_max_player_count,
+            open_slot_count=record.public_open_slot_count,
+            roster=_build_in_memory_public_match_roster(registry=registry, record=record),
         )
 
     @api_router.get(
@@ -1620,6 +1667,39 @@ def _load_history_database_url() -> str | None:
     if backend != "db":
         return None
     return get_settings().database_url
+
+
+def _build_in_memory_public_match_roster(
+    *, registry: InMemoryMatchRegistry, record: MatchRecord
+) -> list[PublicMatchRosterRow]:
+    visible_player_ids = [
+        player_id
+        for player_id, player_state in sorted(record.state.players.items())
+        if player_state.cities_owned and not player_state.is_eliminated
+    ]
+    if not visible_player_ids:
+        visible_player_ids = [
+            agent_id.removeprefix("agent-")
+            for agent_id in sorted(record.joined_agents)
+            if agent_id.startswith("agent-")
+        ]
+    roster = [
+        PublicMatchRosterRow(
+            display_name=profile.display_name,
+            competitor_kind="agent",
+        )
+        for player_id in visible_player_ids
+        if (profile := registry.get_agent_profile(f"agent-{player_id}")) is not None
+    ]
+    ordered_roster = sorted(
+        roster,
+        key=lambda row: (
+            row.display_name.casefold(),
+            0 if row.competitor_kind == "human" else 1,
+            row.display_name,
+        ),
+    )
+    return ordered_roster[: record.public_current_player_count]
 
 
 app = create_app()

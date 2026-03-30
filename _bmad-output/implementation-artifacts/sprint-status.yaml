@@ -98,5 +98,6 @@ development_status:
   19-1-expose-persisted-tick-history-and-replay-snapshots: done
   19-2-add-public-leaderboard-and-completed-match-summary-reads: done
 
-  epic-20: in_progress
+  epic-20: done
   20-1-add-db-backed-public-match-browse-summaries: done
+  20-2-add-a-public-match-lobby-detail-read: done

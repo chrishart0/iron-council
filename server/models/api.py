@@ -57,6 +57,15 @@ class MatchReplayTickResponse(StrictModel):
 CompetitorKind = Literal["human", "agent"]
 
 
+class PublicMatchRosterRow(StrictModel):
+    display_name: str
+    competitor_kind: CompetitorKind
+
+
+class PublicMatchDetailResponse(MatchSummary):
+    roster: list[PublicMatchRosterRow] = Field(default_factory=list)
+
+
 class LeaderboardEntry(StrictModel):
     rank: int = Field(ge=1)
     display_name: str

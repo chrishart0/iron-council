@@ -26,6 +26,7 @@ from server.models.api import (
     MatchMessageCreateRequest,
     TreatyActionRequest,
 )
+from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
 from server.websocket import MatchWebSocketManager, build_match_realtime_envelope
 from starlette.websockets import WebSocketDisconnect
@@ -296,6 +297,150 @@ async def test_list_matches_returns_compact_db_backed_public_browse_rows_and_exc
                 "open_slot_count": 5,
             },
         ]
+    }
+
+
+@pytest.mark.asyncio
+async def test_public_match_detail_route_returns_compact_db_backed_metadata_and_public_roster(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from server.db.testing import provision_seeded_database
+
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-match-detail.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/api/v1/matches/00000000-0000-0000-0000-000000000101")
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        "match_id": "00000000-0000-0000-0000-000000000101",
+        "status": "active",
+        "map": "britain",
+        "tick": 142,
+        "tick_interval_seconds": 30,
+        "current_player_count": 3,
+        "max_player_count": 5,
+        "open_slot_count": 2,
+        "roster": [
+            {"display_name": "Arthur", "competitor_kind": "human"},
+            {"display_name": "Gawain", "competitor_kind": "agent"},
+            {"display_name": "Morgana", "competitor_kind": "agent"},
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_public_match_detail_route_returns_structured_not_found_for_missing_matches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from server.db.testing import provision_seeded_database
+
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-match-detail-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        completed_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000201"
+        )
+        missing_response = await client.get("/api/v1/matches/00000000-0000-0000-0000-000000009999")
+
+    assert completed_response.status_code == HTTPStatus.NOT_FOUND
+    assert completed_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match '00000000-0000-0000-0000-000000000201' was not found.",
+        }
+    }
+    assert missing_response.status_code == HTTPStatus.NOT_FOUND
+    assert missing_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match '00000000-0000-0000-0000-000000009999' was not found.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_public_match_detail_route_preserves_seeded_memory_fallback_contract() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+    app = create_app(match_registry=registry)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/api/v1/matches/match-alpha")
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        "match_id": "match-alpha",
+        "status": "active",
+        "map": "britain",
+        "tick": 142,
+        "tick_interval_seconds": 30,
+        "current_player_count": 3,
+        "max_player_count": 5,
+        "open_slot_count": 2,
+        "roster": [
+            {"display_name": "Arthur", "competitor_kind": "agent"},
+            {"display_name": "Gawain", "competitor_kind": "agent"},
+            {"display_name": "Lancelot", "competitor_kind": "agent"},
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_public_match_detail_route_rejects_unknown_and_completed_in_memory() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    completed_record = build_seeded_match_records(primary_match_id="match-gamma")[0]
+    completed_record.status = MatchStatus.COMPLETED
+    registry.seed_match(completed_record)
+
+    app = create_app(match_registry=registry)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        missing_response = await client.get("/api/v1/matches/unknown-match")
+        completed_response = await client.get("/api/v1/matches/match-gamma")
+
+    assert missing_response.status_code == HTTPStatus.NOT_FOUND
+    assert missing_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match 'unknown-match' was not found.",
+        }
+    }
+    assert completed_response.status_code == HTTPStatus.NOT_FOUND
+    assert completed_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match 'match-gamma' was not found.",
+        }
     }
 
 

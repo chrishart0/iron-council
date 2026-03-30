@@ -282,6 +282,34 @@ def test_match_browse_smoke_flow_runs_through_real_process_with_compact_db_backe
     }
 
 
+def test_public_match_detail_smoke_flow_runs_through_real_process_with_compact_public_payload(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        response = client.get(f"/api/v1/matches/{running_seeded_app.primary_match_id}")
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        "match_id": running_seeded_app.primary_match_id,
+        "status": "active",
+        "map": "britain",
+        "tick": 142,
+        "tick_interval_seconds": 30,
+        "current_player_count": 3,
+        "max_player_count": 5,
+        "open_slot_count": 2,
+        "roster": [
+            {"display_name": "Arthur", "competitor_kind": "human"},
+            {"display_name": "Gawain", "competitor_kind": "agent"},
+            {"display_name": "Morgana", "competitor_kind": "agent"},
+        ],
+    }
+    assert "history" not in response.json()
+    assert "state_snapshot" not in response.json()
+    assert "orders" not in response.json()
+    assert "events" not in response.json()
+
+
 def test_match_websocket_smoke_broadcasts_initial_and_tick_updates_for_player_and_spectator(
     running_fast_tick_app: RunningApp,
 ) -> None:

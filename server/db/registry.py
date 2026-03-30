@@ -32,6 +32,8 @@ from server.models.api import (
     MatchReplayTickResponse,
     MatchSummary,
     PublicLeaderboardResponse,
+    PublicMatchDetailResponse,
+    PublicMatchRosterRow,
 )
 from server.models.domain import MatchStatus
 from server.models.state import MatchState
@@ -42,6 +44,10 @@ class MatchHistoryNotFoundError(KeyError):
 
 
 class TickHistoryNotFoundError(KeyError):
+    pass
+
+
+class PublicMatchDetailNotFoundError(KeyError):
     pass
 
 
@@ -309,6 +315,43 @@ def get_public_match_summaries(*, database_url: str) -> MatchListResponse:
     )
 
 
+def get_public_match_detail(*, database_url: str, match_id: str) -> PublicMatchDetailResponse:
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        match = session.scalar(
+            select(Match).where(
+                Match.id == match_id,
+                Match.status != MatchStatus.COMPLETED.value,
+            )
+        )
+        if match is None:
+            raise PublicMatchDetailNotFoundError(match_id)
+
+        players = session.scalars(
+            select(Player)
+            .where(Player.match_id == match.id)
+            .order_by(Player.display_name, Player.is_agent, Player.id)
+        ).all()
+
+    return PublicMatchDetailResponse(
+        match_id=str(match.id),
+        status=MatchStatus(match.status),
+        map=str(match.config.get("map", "")),
+        tick=int(match.current_tick),
+        tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
+        current_player_count=len(players),
+        max_player_count=max(int(match.config.get("max_players", 0)), 0),
+        open_slot_count=max(int(match.config.get("max_players", 0)) - len(players), 0),
+        roster=[
+            PublicMatchRosterRow(
+                display_name=player.display_name,
+                competitor_kind="agent" if player.is_agent else "human",
+            )
+            for player in sorted(players, key=_public_match_roster_sort_key)
+        ],
+    )
+
+
 def _leaderboard_competitor_identity(player: Player) -> str:
     if player.is_agent:
         if player.api_key_id is not None:
@@ -323,6 +366,15 @@ def _public_match_browse_sort_key(match: Match) -> tuple[int, float, int, str]:
         -_to_utc(match.updated_at).timestamp(),
         -int(match.current_tick),
         str(match.id),
+    )
+
+
+def _public_match_roster_sort_key(player: Player) -> tuple[str, int, str, str]:
+    return (
+        player.display_name.casefold(),
+        0 if not player.is_agent else 1,
+        player.display_name,
+        str(player.id),
     )
 
 
