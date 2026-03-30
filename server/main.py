@@ -31,7 +31,14 @@ from server.agent_registry import (
     MatchJoinError,
     TreatyTransitionError,
 )
-from server.db.registry import load_match_registry_from_database, persist_advanced_match_tick
+from server.db.registry import (
+    MatchHistoryNotFoundError,
+    TickHistoryNotFoundError,
+    get_match_history,
+    get_match_replay_tick,
+    load_match_registry_from_database,
+    persist_advanced_match_tick,
+)
 from server.fog import project_agent_state
 from server.models.api import (
     AgentBriefingResponse,
@@ -51,11 +58,13 @@ from server.models.api import (
     GroupChatMessageAcceptanceResponse,
     GroupChatMessageCreateRequest,
     GroupChatMessageListResponse,
+    MatchHistoryResponse,
     MatchJoinRequest,
     MatchJoinResponse,
     MatchListResponse,
     MatchMessageCreateRequest,
     MatchMessageInboxResponse,
+    MatchReplayTickResponse,
     MatchSummary,
     MessageAcceptanceResponse,
     OrderAcceptanceResponse,
@@ -451,6 +460,7 @@ def create_app(
         if tick_persistence is _DEFAULT_TICK_PERSISTENCE
         else cast(TickPersistence | None, tick_persistence)
     )
+    history_database_url = _load_history_database_url()
 
     async def broadcast_current_match(match_id: str) -> None:
         await broadcast_match_update(
@@ -637,6 +647,64 @@ def create_app(
                 for record in registry.list_matches()
             ]
         )
+
+    def require_history_database_url() -> str:
+        if history_database_url is None:
+            raise ApiError(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                code="match_history_unavailable",
+                message="Persisted match history is only available in DB-backed mode.",
+            )
+        return history_database_url
+
+    @api_router.get(
+        "/matches/{match_id}/history",
+        response_model=MatchHistoryResponse,
+        responses={
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.SERVICE_UNAVAILABLE: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def get_persisted_match_history(match_id: str) -> MatchHistoryResponse:
+        try:
+            return get_match_history(
+                database_url=require_history_database_url(),
+                match_id=match_id,
+            )
+        except MatchHistoryNotFoundError as exc:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            ) from exc
+
+    @api_router.get(
+        "/matches/{match_id}/history/{tick}",
+        response_model=MatchReplayTickResponse,
+        responses={
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.SERVICE_UNAVAILABLE: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def get_persisted_match_replay_tick(match_id: str, tick: int) -> MatchReplayTickResponse:
+        try:
+            return get_match_replay_tick(
+                database_url=require_history_database_url(),
+                match_id=match_id,
+                tick=tick,
+            )
+        except MatchHistoryNotFoundError as exc:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            ) from exc
+        except TickHistoryNotFoundError as exc:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="tick_not_found",
+                message=f"Tick '{tick}' was not found for match '{match_id}'.",
+            ) from exc
 
     @api_router.get(
         "/agent/profile",
@@ -1480,6 +1548,13 @@ def _load_runtime_tick_persistence(
         persist_advanced_match_tick(database_url=database_url, advanced_tick=advanced_tick)
 
     return persist_tick
+
+
+def _load_history_database_url() -> str | None:
+    backend = os.environ.get(MATCH_REGISTRY_BACKEND_VARIABLE, "memory")
+    if backend != "db":
+        return None
+    return get_settings().database_url
 
 
 app = create_app()

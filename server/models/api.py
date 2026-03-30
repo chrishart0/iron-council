@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -27,6 +27,26 @@ class MatchSummary(StrictModel):
 
 class MatchListResponse(StrictModel):
     matches: list[MatchSummary] = Field(default_factory=list)
+
+
+class MatchHistoryEntry(StrictModel):
+    tick: TickDuration
+
+
+class MatchHistoryResponse(StrictModel):
+    match_id: str
+    status: MatchStatus
+    current_tick: TickDuration
+    tick_interval_seconds: int = Field(gt=0)
+    history: list[MatchHistoryEntry] = Field(default_factory=list)
+
+
+class MatchReplayTickResponse(StrictModel):
+    match_id: str
+    tick: TickDuration
+    state_snapshot: dict[str, Any]
+    orders: dict[str, Any]
+    events: dict[str, Any] | list[dict[str, Any]]
 
 
 class OrderAcceptanceResponse(StrictModel):

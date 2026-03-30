@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ from server.agent_registry import (
     build_seeded_match_records,
 )
 from server.auth import hash_api_key
+from server.db.registry import load_match_registry_from_database
 from server.main import create_app
 from server.models.api import (
     AuthenticatedAgentContext,
@@ -238,6 +240,150 @@ async def test_list_matches_returns_stable_json_summaries(app_client: AsyncClien
             },
         ]
     }
+
+
+@pytest.mark.asyncio
+async def test_match_history_routes_return_persisted_entries_and_replay_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from server.db.testing import provision_seeded_database
+
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-history.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        history_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/history"
+        )
+        replay_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/history/142"
+        )
+
+    assert history_response.status_code == HTTPStatus.OK
+    assert history_response.json() == {
+        "match_id": "00000000-0000-0000-0000-000000000101",
+        "status": "active",
+        "current_tick": 142,
+        "tick_interval_seconds": 30,
+        "history": [{"tick": 142}],
+    }
+    assert replay_response.status_code == HTTPStatus.OK
+    assert replay_response.json() == {
+        "match_id": "00000000-0000-0000-0000-000000000101",
+        "tick": 142,
+        "state_snapshot": {"cities": {"london": {"owner": "Arthur", "population": 12}}},
+        "orders": {"movements": [{"army_id": "army-1", "destination": "york"}]},
+        "events": {"summary": ["Convoy secured", "Trade revenue collected"]},
+    }
+
+
+@pytest.mark.asyncio
+async def test_match_history_routes_return_structured_not_found_and_unavailable_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from server.db.testing import provision_seeded_database
+
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-history-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    db_backed_app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=db_backed_app),
+        base_url="http://testserver",
+    ) as client:
+        missing_match_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000009999/history"
+        )
+        missing_tick_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/history/999"
+        )
+
+    assert missing_match_response.status_code == HTTPStatus.NOT_FOUND
+    assert missing_match_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match '00000000-0000-0000-0000-000000009999' was not found.",
+        }
+    }
+    assert missing_tick_response.status_code == HTTPStatus.NOT_FOUND
+    assert missing_tick_response.json() == {
+        "error": {
+            "code": "tick_not_found",
+            "message": (
+                "Tick '999' was not found for match '00000000-0000-0000-0000-000000000101'."
+            ),
+        }
+    }
+
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "memory")
+    memory_registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        memory_registry.seed_match(record)
+    memory_app = create_app(match_registry=memory_registry)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=memory_app),
+        base_url="http://testserver",
+    ) as client:
+        unavailable_response = await client.get("/api/v1/matches/match-alpha/history")
+
+    assert unavailable_response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert unavailable_response.json() == {
+        "error": {
+            "code": "match_history_unavailable",
+            "message": "Persisted match history is only available in DB-backed mode.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_match_history_routes_read_persisted_tick_log_even_when_registry_state_drifts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from server.db.testing import provision_seeded_database
+
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-history-source-of-truth.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    db_registry = load_match_registry_from_database(database_url)
+    drifted_match = db_registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert drifted_match is not None
+    drifted_match.state.tick = 999
+
+    app = create_app(match_registry=db_registry)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        history_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/history"
+        )
+        replay_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/history/142"
+        )
+
+    assert history_response.status_code == HTTPStatus.OK
+    assert history_response.json()["current_tick"] == 142
+    assert history_response.json()["history"] == [{"tick": 142}]
+    assert replay_response.status_code == HTTPStatus.OK
+    assert replay_response.json()["tick"] == 142
+    assert replay_response.json()["state_snapshot"] != {"tick": 999}
 
 
 @pytest.mark.asyncio

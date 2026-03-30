@@ -16,9 +16,24 @@ from server.agent_registry import (
     build_seeded_agent_profiles,
 )
 from server.db.models import Alliance, ApiKey, Match, Player, TickLog
-from server.models.api import AgentProfileHistory, AgentProfileRating, AgentProfileResponse
+from server.models.api import (
+    AgentProfileHistory,
+    AgentProfileRating,
+    AgentProfileResponse,
+    MatchHistoryEntry,
+    MatchHistoryResponse,
+    MatchReplayTickResponse,
+)
 from server.models.domain import MatchStatus
 from server.models.state import MatchState
+
+
+class MatchHistoryNotFoundError(KeyError):
+    pass
+
+
+class TickHistoryNotFoundError(KeyError):
+    pass
 
 
 def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistry:
@@ -93,6 +108,58 @@ def persist_advanced_match_tick(*, database_url: str, advanced_tick: AdvancedMat
                 events=[event.model_dump(mode="json") for event in advanced_tick.events],
             )
         )
+
+
+def get_match_history(*, database_url: str, match_id: str) -> MatchHistoryResponse:
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        match = session.get(Match, match_id)
+        if match is None:
+            raise MatchHistoryNotFoundError(match_id)
+
+        ticks = (
+            session.execute(
+                select(TickLog.tick)
+                .where(TickLog.match_id == match_id)
+                .order_by(TickLog.tick, TickLog.id)
+            )
+            .scalars()
+            .all()
+        )
+
+    return MatchHistoryResponse(
+        match_id=str(match.id),
+        status=MatchStatus(match.status),
+        current_tick=int(match.current_tick),
+        tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
+        history=[MatchHistoryEntry(tick=int(tick)) for tick in ticks],
+    )
+
+
+def get_match_replay_tick(
+    *, database_url: str, match_id: str, tick: int
+) -> MatchReplayTickResponse:
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        match = session.get(Match, match_id)
+        if match is None:
+            raise MatchHistoryNotFoundError(match_id)
+
+        tick_row = session.scalar(
+            select(TickLog)
+            .where(TickLog.match_id == match_id, TickLog.tick == tick)
+            .order_by(TickLog.id)
+        )
+        if tick_row is None:
+            raise TickHistoryNotFoundError((match_id, tick))
+
+    return MatchReplayTickResponse(
+        match_id=str(match.id),
+        tick=int(tick_row.tick),
+        state_snapshot=tick_row.state_snapshot,
+        orders=tick_row.orders,
+        events=tick_row.events,
+    )
 
 
 def _load_persisted_alliances_by_match(

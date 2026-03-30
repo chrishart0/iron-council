@@ -4,7 +4,14 @@ import json
 from pathlib import Path
 
 from server.agent_registry import build_seeded_agent_api_key
-from server.db.registry import load_match_registry_from_database, persist_advanced_match_tick
+from server.db.registry import (
+    MatchHistoryNotFoundError,
+    TickHistoryNotFoundError,
+    get_match_history,
+    get_match_replay_tick,
+    load_match_registry_from_database,
+    persist_advanced_match_tick,
+)
 from server.db.testing import provision_seeded_database
 from server.models.orders import OrderEnvelope
 from sqlalchemy import create_engine, text
@@ -400,6 +407,99 @@ def test_persist_advanced_match_tick_updates_match_and_appends_tick_log_transact
         army.owner == "player-2" and army.location == "manchester" and army.troops == 5
         for army in reloaded_match.state.armies
     )
+
+
+def test_get_match_history_returns_deterministic_tick_entries_with_match_metadata(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-history.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO tick_log (
+                    id, match_id, tick, state_snapshot, orders, events, created_at
+                ) VALUES (
+                    :id, :match_id, :tick, :state_snapshot, :orders, :events, CURRENT_TIMESTAMP
+                )
+                """
+            ),
+            {
+                "id": 9000,
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "tick": 141,
+                "state_snapshot": json.dumps({"tick": 141, "phase": "combat"}),
+                "orders": json.dumps({"movements": [], "recruitment": []}),
+                "events": json.dumps([{"event": "phase.combat.completed"}]),
+            },
+        )
+
+    history = get_match_history(
+        database_url=database_url,
+        match_id="00000000-0000-0000-0000-000000000101",
+    )
+
+    assert history.model_dump(mode="json") == {
+        "match_id": "00000000-0000-0000-0000-000000000101",
+        "status": "active",
+        "current_tick": 142,
+        "tick_interval_seconds": 30,
+        "history": [
+            {"tick": 141},
+            {"tick": 142},
+        ],
+    }
+
+
+def test_get_match_replay_tick_returns_persisted_snapshot_orders_and_events(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-replay.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    replay_tick = get_match_replay_tick(
+        database_url=database_url,
+        match_id="00000000-0000-0000-0000-000000000101",
+        tick=142,
+    )
+
+    assert replay_tick.model_dump(mode="json") == {
+        "match_id": "00000000-0000-0000-0000-000000000101",
+        "tick": 142,
+        "state_snapshot": {"cities": {"london": {"owner": "Arthur", "population": 12}}},
+        "orders": {"movements": [{"army_id": "army-1", "destination": "york"}]},
+        "events": {"summary": ["Convoy secured", "Trade revenue collected"]},
+    }
+
+
+def test_get_match_history_and_replay_tick_distinguish_missing_match_and_tick(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-history-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    try:
+        get_match_history(
+            database_url=database_url, match_id="00000000-0000-0000-0000-000000009999"
+        )
+    except MatchHistoryNotFoundError:
+        pass
+    else:
+        raise AssertionError("Expected missing match history to raise MatchHistoryNotFoundError.")
+
+    try:
+        get_match_replay_tick(
+            database_url=database_url,
+            match_id="00000000-0000-0000-0000-000000000101",
+            tick=999,
+        )
+    except TickHistoryNotFoundError:
+        pass
+    else:
+        raise AssertionError("Expected missing replay tick to raise TickHistoryNotFoundError.")
 
 
 def test_load_match_registry_from_database_rejects_inactive_agent_api_keys(

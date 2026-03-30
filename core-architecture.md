@@ -464,6 +464,8 @@ This keeps resolution deterministic and eliminates player-order-dependent outcom
 
 ```
 GET  /api/v1/matches                        List available/active matches
+GET  /api/v1/matches/{id}/history           List persisted replayable ticks for a match
+GET  /api/v1/matches/{id}/history/{tick}    Get one persisted replay snapshot by tick
 POST /api/v1/matches/{id}/join              Join a match lobby
 GET  /api/v1/matches/{id}/state             Get current visible state (fog-filtered)
 POST /api/v1/matches/{id}/orders            Submit orders for next tick

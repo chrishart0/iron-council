@@ -113,6 +113,35 @@ def test_active_match_ticks_forward_without_manual_advance_endpoint(
     assert reloaded_match.state.tick == 143
 
 
+def test_match_history_and_replay_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        history_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/history"
+        )
+        replay_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/history/142"
+        )
+
+    assert history_response.status_code == HTTPStatus.OK
+    assert history_response.json() == {
+        "match_id": running_seeded_app.primary_match_id,
+        "status": "active",
+        "current_tick": 142,
+        "tick_interval_seconds": 30,
+        "history": [{"tick": 142}],
+    }
+    assert replay_response.status_code == HTTPStatus.OK
+    assert replay_response.json() == {
+        "match_id": running_seeded_app.primary_match_id,
+        "tick": 142,
+        "state_snapshot": {"cities": {"london": {"owner": "Arthur", "population": 12}}},
+        "orders": {"movements": [{"army_id": "army-1", "destination": "york"}]},
+        "events": {"summary": ["Convoy secured", "Trade revenue collected"]},
+    }
+
+
 def test_match_websocket_smoke_broadcasts_initial_and_tick_updates_for_player_and_spectator(
     running_fast_tick_app: RunningApp,
 ) -> None:
