@@ -9,6 +9,7 @@ import httpx
 from server.agent_registry import build_seeded_agent_api_key
 from server.db.registry import load_match_registry_from_database
 from tests.support import RunningApp
+from websockets.sync.client import connect as connect_websocket
 
 
 def _headers(agent_id: str = "agent-player-2") -> dict[str, str]:
@@ -110,6 +111,76 @@ def test_active_match_ticks_forward_without_manual_advance_endpoint(
     reloaded_match = reloaded_registry.get_match(running_fast_tick_app.primary_match_id)
     assert reloaded_match is not None
     assert reloaded_match.state.tick == 143
+
+
+def test_match_websocket_smoke_broadcasts_initial_and_tick_updates_for_player_and_spectator(
+    running_fast_tick_app: RunningApp,
+) -> None:
+    websocket_base_url = running_fast_tick_app.base_url.replace("http://", "ws://", 1)
+    player_api_key = build_seeded_agent_api_key("agent-player-2")
+    player_url = (
+        f"{websocket_base_url}/ws/matches/{running_fast_tick_app.primary_match_id}"
+        f"?viewer=player&player_id=player-2&api_key={player_api_key}"
+    )
+    spectator_url = (
+        f"{websocket_base_url}/ws/matches/{running_fast_tick_app.primary_match_id}?viewer=spectator"
+    )
+
+    with (
+        connect_websocket(player_url, open_timeout=5, close_timeout=1) as player_socket,
+        connect_websocket(spectator_url, open_timeout=5, close_timeout=1) as spectator_socket,
+        httpx.Client(base_url=running_fast_tick_app.base_url, timeout=5) as client,
+    ):
+        initial_player = player_socket.recv(timeout=5)
+        initial_spectator = spectator_socket.recv(timeout=5)
+        assert isinstance(initial_player, str)
+        assert isinstance(initial_spectator, str)
+
+        submit_response = client.post(
+            f"/api/v1/matches/{running_fast_tick_app.primary_match_id}/orders",
+            json={
+                "match_id": running_fast_tick_app.primary_match_id,
+                "tick": 142,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "manchester", "troops": 5}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            },
+            headers=_headers("agent-player-2"),
+        )
+        assert submit_response.status_code == HTTPStatus.ACCEPTED
+
+        tick_player = player_socket.recv(timeout=5)
+        tick_spectator = spectator_socket.recv(timeout=5)
+        assert isinstance(tick_player, str)
+        assert isinstance(tick_spectator, str)
+
+    import json
+
+    initial_player_payload = json.loads(initial_player)
+    initial_spectator_payload = json.loads(initial_spectator)
+    tick_player_payload = json.loads(tick_player)
+    tick_spectator_payload = json.loads(tick_spectator)
+
+    assert initial_player_payload["data"]["viewer_role"] == "player"
+    assert initial_player_payload["data"]["state"]["tick"] == 142
+    assert (
+        initial_player_payload["data"]["state"]["cities"]["birmingham"]["visibility"] == "partial"
+    )
+    assert initial_spectator_payload["data"]["viewer_role"] == "spectator"
+    assert initial_spectator_payload["data"]["state"]["cities"]["birmingham"]["garrison"] == 7
+    assert tick_player_payload["data"]["state"]["tick"] == 143
+    assert tick_spectator_payload["data"]["state"]["tick"] == 143
+    assert any(
+        army["owner"] == "player-2" and army["troops"] == 5
+        for army in tick_player_payload["data"]["state"]["visible_armies"]
+    )
+    assert any(
+        army["owner"] == "player-2" and army["troops"] == 5
+        for army in tick_spectator_payload["data"]["state"]["armies"]
+    )
 
 
 def test_agent_join_and_profile_smoke_flow_runs_through_real_process(

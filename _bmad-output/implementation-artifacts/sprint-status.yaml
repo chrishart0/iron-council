@@ -89,7 +89,7 @@ development_status:
   17-1-add-an-authenticated-bundled-agent-briefing-endpoint: done
   17-2-add-a-consolidated-authenticated-agent-command-endpoint: done
 
-  epic-18: in-progress
+  epic-18: done
   18-1-launch-an-in-process-async-tick-loop-for-active-matches: done
   18-2-persist-live-tick-advancement-and-write-tick-log-history: done
-  18-3-broadcast-live-match-updates-over-websockets-for-human-clients-and-spectators: backlog
+  18-3-broadcast-live-match-updates-over-websockets-for-human-clients-and-spectators: done

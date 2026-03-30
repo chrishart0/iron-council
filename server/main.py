@@ -6,10 +6,20 @@ from contextlib import asynccontextmanager
 from http import HTTPStatus
 from typing import Annotated, Any, Final, cast
 
-from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    Header,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.websockets import WebSocketState
 
 from server import __version__
 from server.agent_registry import (
@@ -55,8 +65,14 @@ from server.models.api import (
 )
 from server.models.fog import AgentStateProjection
 from server.models.orders import OrderEnvelope
+from server.models.realtime import RealtimeViewerRole
 from server.runtime import MatchRuntime
 from server.settings import get_settings
+from server.websocket import (
+    MatchWebSocketManager,
+    broadcast_match_update,
+    build_match_realtime_envelope,
+)
 
 MATCH_REGISTRY_BACKEND_VARIABLE = "IRON_COUNCIL_MATCH_REGISTRY_BACKEND"
 
@@ -369,24 +385,83 @@ def _require_joined_player_id(
         ) from exc
 
 
+def _resolve_websocket_player_viewer(
+    *,
+    registry: InMemoryMatchRegistry,
+    match_id: str,
+    player_id: str | None,
+    api_key: str | None,
+) -> str:
+    if player_id is None or api_key is None:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code="invalid_websocket_auth",
+            message="Player websocket connections require player_id and api_key query parameters.",
+        )
+
+    authenticated_agent = registry.resolve_authenticated_agent(api_key)
+    if authenticated_agent is None:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code="invalid_websocket_auth",
+            message="Player websocket connections require a valid active api_key.",
+        )
+
+    resolved_player_id = _require_joined_player_id(
+        registry=registry,
+        match_id=match_id,
+        authenticated_agent=authenticated_agent,
+    )
+    if resolved_player_id != player_id:
+        raise ApiError(
+            status_code=HTTPStatus.FORBIDDEN,
+            code="player_auth_mismatch",
+            message=(
+                f"Player websocket auth resolved to player '{resolved_player_id}', not "
+                f"'{player_id}'."
+            ),
+        )
+    return resolved_player_id
+
+
+async def _close_websocket_for_api_error(websocket: WebSocket, exc: ApiError) -> None:
+    if websocket.client_state is WebSocketState.CONNECTED:
+        await websocket.close(code=1008, reason=exc.code)
+        return
+    await websocket.close(code=1008, reason=exc.code)
+
+
 def create_app(
     *,
     match_registry: InMemoryMatchRegistry | None = None,
     tick_persistence: TickPersistence | None | object = _DEFAULT_TICK_PERSISTENCE,
 ) -> FastAPI:
     registry = match_registry or _load_default_match_registry()
+    websocket_manager = MatchWebSocketManager()
     runtime_tick_persistence = (
         _load_runtime_tick_persistence(match_registry=match_registry)
         if tick_persistence is _DEFAULT_TICK_PERSISTENCE
         else cast(TickPersistence | None, tick_persistence)
     )
 
+    async def broadcast_current_match(match_id: str) -> None:
+        await broadcast_match_update(
+            registry=registry,
+            manager=websocket_manager,
+            match_id=match_id,
+        )
+
+    async def broadcast_advanced_tick(advanced_tick: AdvancedMatchTick) -> None:
+        await broadcast_current_match(advanced_tick.match_id)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         app.state.match_registry = registry
+        app.state.match_websocket_manager = websocket_manager
         app.state.match_runtime = MatchRuntime(
             registry,
             tick_persistence=runtime_tick_persistence,
+            tick_broadcast=broadcast_advanced_tick,
         )
         await app.state.match_runtime.start()
         try:
@@ -396,6 +471,7 @@ def create_app(
 
     app = FastAPI(title="iron-counsil-server", version=__version__, lifespan=lifespan)
     app.state.match_registry = registry
+    app.state.match_websocket_manager = websocket_manager
 
     @app.exception_handler(ApiError)
     async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:
@@ -440,6 +516,64 @@ def create_app(
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.websocket("/ws/matches/{match_id}")
+    async def match_websocket(
+        websocket: WebSocket,
+        match_id: str,
+        viewer: str = Query(default="spectator"),
+        player_id: str | None = Query(default=None),
+        api_key: str | None = Query(default=None),
+    ) -> None:
+        record = registry.get_match(match_id)
+        if record is None:
+            await websocket.close(code=1008, reason="match_not_found")
+            return
+
+        try:
+            if viewer not in {"player", "spectator"}:
+                raise ApiError(
+                    status_code=HTTPStatus.BAD_REQUEST,
+                    code="invalid_viewer",
+                    message="Websocket viewer must be either 'player' or 'spectator'.",
+                )
+            viewer_role = cast(RealtimeViewerRole, viewer)
+            resolved_player_id = (
+                _resolve_websocket_player_viewer(
+                    registry=registry,
+                    match_id=match_id,
+                    player_id=player_id,
+                    api_key=api_key,
+                )
+                if viewer_role == "player"
+                else None
+            )
+        except ApiError as exc:
+            await _close_websocket_for_api_error(websocket, exc)
+            return
+
+        await websocket.accept()
+        websocket_manager.register(
+            match_id=match_id,
+            websocket=websocket,
+            viewer_role=viewer_role,
+            player_id=resolved_player_id,
+        )
+        try:
+            await websocket.send_json(
+                build_match_realtime_envelope(
+                    registry=registry,
+                    match_id=match_id,
+                    viewer_role=viewer_role,
+                    player_id=resolved_player_id,
+                ).model_dump(mode="json")
+            )
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            websocket_manager.unregister(match_id=match_id, websocket=websocket)
 
     api_router = APIRouter(prefix="/api/v1")
 
@@ -728,7 +862,7 @@ def create_app(
             )
 
         try:
-            return registry.apply_command_envelope(
+            response = registry.apply_command_envelope(
                 match_id=match_id,
                 command=command,
                 player_id=resolved_player_id,
@@ -744,6 +878,14 @@ def create_app(
                 code=exc.code,
                 message=exc.message,
             ) from exc
+
+        if (
+            command.alliance is not None
+            or command.treaties
+            or any(message.channel == "world" for message in command.messages)
+        ):
+            await broadcast_current_match(match_id)
+        return response
 
     @api_router.get(
         "/matches/{match_id}/messages",
@@ -1060,6 +1202,8 @@ def create_app(
             message=message,
             sender_id=resolved_player_id,
         )
+        if accepted_message.channel == "world":
+            await broadcast_current_match(match_id)
         return MessageAcceptanceResponse(
             status="accepted",
             match_id=match_id,
@@ -1164,11 +1308,13 @@ def create_app(
                 message=exc.message,
             ) from exc
 
-        return TreatyActionAcceptanceResponse(
+        response = TreatyActionAcceptanceResponse(
             status="accepted",
             match_id=match_id,
             treaty=treaty,
         )
+        await broadcast_current_match(match_id)
+        return response
 
     @api_router.get(
         "/matches/{match_id}/alliances",
@@ -1249,12 +1395,14 @@ def create_app(
                 message=exc.message,
             ) from exc
 
-        return AllianceActionAcceptanceResponse(
+        response = AllianceActionAcceptanceResponse(
             status="accepted",
             match_id=match_id,
             player_id=resolved_player_id,
             alliance=alliance,
         )
+        await broadcast_current_match(match_id)
+        return response
 
     app.include_router(api_router)
     return app

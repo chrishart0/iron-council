@@ -1,6 +1,6 @@
 # Story 18.3: Broadcast live match updates over WebSockets for human clients and spectators
 
-Status: backlog
+Status: done
 
 ## Story
 
@@ -16,11 +16,47 @@ So that the client can watch the war unfold in real time instead of polling ad h
 
 ## Tasks / Subtasks
 
-- [ ] Add a small explicit WebSocket connection manager and realtime payload contract for per-match subscriptions. (AC: 1)
-- [ ] Expose a match WebSocket route that accepts player and spectator viewers, sends an initial payload, and cleans up registrations on disconnect. (AC: 1)
-- [ ] Broadcast post-tick realtime payloads from the runtime/app path with fog-filtered player state and full spectator visibility, and include chat-visible/public diplomacy context needed by the client contract. (AC: 2)
-- [ ] Add behavior-first API/WebSocket tests plus a real-process smoke covering one player connection and one spectator connection through a live tick. (AC: 3)
-- [ ] Run simplification/review and refresh BMAD completion notes when the story ships. (AC: 3)
+- [x] Add a small explicit WebSocket connection manager and realtime payload contract for per-match subscriptions. (AC: 1)
+- [x] Expose a match WebSocket route that accepts player and spectator viewers, sends an initial payload, and cleans up registrations on disconnect. (AC: 1)
+- [x] Broadcast post-tick realtime payloads from the runtime/app path with fog-filtered player state and full spectator visibility, and include chat-visible/public diplomacy context needed by the client contract. (AC: 2)
+- [x] Add behavior-first API/WebSocket tests plus a real-process smoke covering one player connection and one spectator connection through a live tick. (AC: 3)
+- [x] Run simplification/review and refresh BMAD completion notes when the story ships. (AC: 3)
+
+## Dev Agent Record
+
+### Agent Model Used
+
+GPT-5 Codex
+
+### Debug Log References
+
+- `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'websocket or realtime'`
+- `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py`
+- `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/e2e/test_api_smoke.py -k websocket`
+- `make format`
+- `uv sync --extra dev`
+- `make quality`
+
+### Completion Notes List
+
+- Added a minimal realtime contract in `server/models/realtime.py` and one boring per-match websocket manager in `server/websocket.py`, reusing `project_agent_state()` for player fog filtering and a direct full-state spectator projection.
+- Added `/ws/matches/{match_id}` with outbound-only behavior: the server accepts a player or spectator subscription, sends one initial `tick_update` payload immediately, and keeps the connection registered until disconnect.
+- Chose the narrowest auth contract that fits current repo reality: spectator websockets are open, while player websockets authenticate with the existing active API key via websocket query params plus an explicit `player_id`. This keeps the route shape stable for later JWT replacement without introducing a broader auth system in Story 18.3.
+- Wired runtime tick broadcasts after successful tick persistence, preserving Story 18.2's durability/rollback path. The runtime does not broadcast a post-tick payload until the authoritative state advance and optional persistence step have succeeded.
+- Reused the same realtime payload builder for initial sends and live fanout, and triggered refresh broadcasts for public world-message, treaty, and alliance writes so browser clients do not need to reconnect to observe public/chat-visible changes.
+- Added API-level websocket tests for initial payload shape, connection lifecycle, invalid viewer/auth cases, and public-event refresh, plus a real-process websocket smoke that proves both a player and a spectator receive a live tick-driven update.
+
+### File List
+
+- _bmad-output/implementation-artifacts/18-3-broadcast-live-match-updates-over-websockets-for-human-clients-and-spectators.md
+- _bmad-output/implementation-artifacts/sprint-status.yaml
+- server/agent_registry.py
+- server/main.py
+- server/models/realtime.py
+- server/runtime.py
+- server/websocket.py
+- tests/api/test_agent_api.py
+- tests/e2e/test_api_smoke.py
 
 ## Dev Notes
 

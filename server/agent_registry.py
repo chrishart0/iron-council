@@ -577,7 +577,10 @@ class InMemoryMatchRegistry:
         if record is None:
             return []
 
-        alliances = sorted(record.alliances, key=lambda alliance: alliance.alliance_id)
+        alliances = sorted(
+            record.alliances or self._derive_alliances_from_state(record.state),
+            key=lambda alliance: alliance.alliance_id,
+        )
         return [self._to_alliance_record(alliance) for alliance in alliances]
 
     def apply_alliance_action(
