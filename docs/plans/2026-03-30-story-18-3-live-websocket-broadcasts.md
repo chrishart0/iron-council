@@ -48,7 +48,7 @@ Expected: FAIL because no realtime payload/manager seam exists yet.
 Create a small explicit realtime contract, for example:
 - `RealtimeEnvelope(type='tick_update', data=...)`
 - player snapshot payload reusing existing briefing/state shapes as much as possible
-- spectator snapshot payload with full match visibility and public diplomacy/message context only
+- spectator snapshot payload with full match visibility plus all chat, treaty, and alliance context required by the spectator contract
 - a per-match connection manager that can register, unregister, and broadcast JSON payloads to subscribed sockets
 
 Keep the connection manager dumb: no background tasks, no retries, no cross-process ambitions.

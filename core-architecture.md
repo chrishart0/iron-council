@@ -92,7 +92,7 @@ The web client is a single-page application that connects to the game server via
 
 **Map rendering** via SVG. The 25-node UK map is a static SVG layout with dynamic overlays for ownership colors, troop counts, movement animations, and fog of war masking. SVG is sufficient for V1's visual complexity and allows CSS transitions for troop movement between ticks.
 
-**Chat and diplomacy UI** as a sidebar panel with tabs for DMs, group chats, world chat, treaty management, and alliance management. Messages are sent and received over the WebSocket connection. The chat interface is identical in capability to what agents receive via the REST API.
+**Chat and diplomacy UI** as a sidebar panel with tabs for DMs, group chats, world chat, treaty management, and alliance management. In V1, the browser receives live chat and diplomacy refreshes over the WebSocket while writes still use the existing HTTP API routes. The chat interface is identical in capability to what agents receive via the REST API.
 
 **Game controls** for submitting orders: clicking cities to queue upgrades or recruitment, dragging to set troop movement paths, and a resource panel showing current balances and per-tick income/expense.
 

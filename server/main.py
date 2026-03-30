@@ -562,12 +562,6 @@ def create_app(
             return
 
         await websocket.accept()
-        websocket_manager.register(
-            match_id=match_id,
-            websocket=websocket,
-            viewer_role=viewer_role,
-            player_id=resolved_player_id,
-        )
         try:
             await websocket.send_json(
                 build_match_realtime_envelope(
@@ -576,6 +570,12 @@ def create_app(
                     viewer_role=viewer_role,
                     player_id=resolved_player_id,
                 ).model_dump(mode="json")
+            )
+            websocket_manager.register(
+                match_id=match_id,
+                websocket=websocket,
+                viewer_role=viewer_role,
+                player_id=resolved_player_id,
             )
             while True:
                 await websocket.receive_text()
