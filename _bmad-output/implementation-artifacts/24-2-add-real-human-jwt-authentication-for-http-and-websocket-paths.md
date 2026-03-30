@@ -62,6 +62,7 @@ GPT-5 Codex
 
 - 2026-03-30: `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_auth.py tests/test_settings.py`
 - 2026-03-30: `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'human_jwt or bearer or websocket'`
+- 2026-03-30: `uv run pytest --no-cov tests/e2e/test_api_smoke.py -k websocket`
 - 2026-03-30: `make quality`
 
 ### Completion Notes List
@@ -72,6 +73,8 @@ GPT-5 Codex
 - Spectator websocket access remains unauthenticated and unchanged.
 - Added focused settings/auth unit tests and focused API-boundary coverage for valid, missing, invalid, and wrong-role human JWT cases.
 - Created the missing story plan doc referenced by the task and aligned the websocket contract note in `core-architecture.md`.
+- Follow-up after review: websocket auth failures now emit a small structured auth error envelope before closing, successful player websocket payloads remain unchanged, and the HTTP write path now has direct Bearer-token order submission coverage for both success and failure cases.
+- Follow-up after review: `create_app(settings_override=...)` is now the authoritative source for DB-backed loader/auth resolution, and added narrow JWT regression coverage for issuer mismatch and expiry.
 
 ### File List
 

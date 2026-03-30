@@ -112,8 +112,6 @@ from server.websocket import (
     build_match_realtime_envelope,
 )
 
-MATCH_REGISTRY_BACKEND_VARIABLE = "IRON_COUNCIL_MATCH_REGISTRY_BACKEND"
-
 
 class ApiError(Exception):
     def __init__(self, *, status_code: int, code: str, message: str) -> None:
@@ -416,6 +414,7 @@ def _command_validation_error_response(exc: RequestValidationError) -> JSONRespo
 
 
 def get_authenticated_agent(
+    request: Request,
     registry: MatchRegistryDependency,
     api_key: ApiKeyHeader = None,
 ) -> AuthenticatedAgentContext:
@@ -427,7 +426,8 @@ def get_authenticated_agent(
         )
 
     authenticated_agent = registry.resolve_authenticated_agent(api_key)
-    if authenticated_agent is None and (database_url := _load_history_database_url()) is not None:
+    database_url = cast(str | None, request.app.state.history_database_url)
+    if authenticated_agent is None and database_url is not None:
         authenticated_agent = resolve_authenticated_agent_context_from_db(
             database_url=database_url,
             api_key=api_key,
@@ -479,6 +479,7 @@ def _require_joined_human_player_id(
 def _resolve_human_player_id(
     *,
     registry: InMemoryMatchRegistry,
+    history_database_url: str | None,
     match_id: str,
     user_id: str,
 ) -> str:
@@ -489,7 +490,7 @@ def _resolve_human_player_id(
             code="match_not_found",
             message=f"Match '{match_id}' was not found.",
         )
-    if history_database_url := _load_history_database_url():
+    if history_database_url is not None:
         db_player_id = resolve_human_player_id_from_db(
             database_url=history_database_url,
             match_id=match_id,
@@ -508,12 +509,24 @@ def _resolve_match_player_id(
     *,
     registry: InMemoryMatchRegistry,
     settings: Settings,
+    history_database_url: str | None,
     match_id: str,
     api_key: str | None,
     authorization: str | None,
 ) -> str:
     if api_key is not None:
-        authenticated_agent = get_authenticated_agent(registry=registry, api_key=api_key)
+        authenticated_agent = registry.resolve_authenticated_agent(api_key)
+        if authenticated_agent is None and history_database_url is not None:
+            authenticated_agent = resolve_authenticated_agent_context_from_db(
+                database_url=history_database_url,
+                api_key=api_key,
+            )
+        if authenticated_agent is None:
+            raise ApiError(
+                status_code=HTTPStatus.UNAUTHORIZED,
+                code="invalid_api_key",
+                message="A valid active X-API-Key header is required.",
+            )
         return _require_joined_player_id(
             registry=registry,
             match_id=match_id,
@@ -536,6 +549,7 @@ def _resolve_match_player_id(
         ) from exc
     return _resolve_human_player_id(
         registry=registry,
+        history_database_url=history_database_url,
         match_id=match_id,
         user_id=human_context.user_id,
     )
@@ -545,6 +559,7 @@ def _resolve_websocket_player_viewer(
     *,
     registry: InMemoryMatchRegistry,
     settings: Settings,
+    history_database_url: str | None,
     match_id: str,
     player_id: str | None,
     token: str | None,
@@ -566,6 +581,7 @@ def _resolve_websocket_player_viewer(
 
     resolved_player_id = _resolve_human_player_id(
         registry=registry,
+        history_database_url=history_database_url,
         match_id=match_id,
         user_id=human_context.user_id,
     )
@@ -588,6 +604,14 @@ async def _close_websocket_for_api_error(websocket: WebSocket, exc: ApiError) ->
     await websocket.close(code=1008, reason=exc.code)
 
 
+async def _send_websocket_auth_error(websocket: WebSocket, exc: ApiError) -> None:
+    if websocket.client_state is not WebSocketState.CONNECTED:
+        await websocket.accept()
+    payload = ApiErrorResponse(error=ApiErrorDetail(code=exc.code, message=exc.message))
+    await websocket.send_json(payload.model_dump(mode="json"))
+    await websocket.close(code=1008, reason=exc.code)
+
+
 def create_app(
     *,
     match_registry: InMemoryMatchRegistry | None = None,
@@ -598,14 +622,14 @@ def create_app(
     if settings_override is not None:
         settings_env.update(settings_override)
     settings = get_settings(env=settings_env)
-    registry = match_registry or _load_default_match_registry()
+    registry = match_registry or _load_default_match_registry(settings=settings)
     websocket_manager = MatchWebSocketManager()
     runtime_tick_persistence = (
-        _load_runtime_tick_persistence(match_registry=match_registry)
+        _load_runtime_tick_persistence(settings=settings, match_registry=match_registry)
         if tick_persistence is _DEFAULT_TICK_PERSISTENCE
         else cast(TickPersistence | None, tick_persistence)
     )
-    history_database_url = _load_history_database_url()
+    history_database_url = _load_history_database_url(settings=settings)
 
     async def broadcast_current_match(match_id: str) -> None:
         await broadcast_match_update(
@@ -628,6 +652,8 @@ def create_app(
         app.state.match_registry = registry
         app.state.match_websocket_manager = websocket_manager
         app.state.match_runtime = match_runtime
+        app.state.settings = settings
+        app.state.history_database_url = history_database_url
         await match_runtime.start()
         try:
             yield
@@ -638,6 +664,8 @@ def create_app(
     app.state.match_registry = registry
     app.state.match_websocket_manager = websocket_manager
     app.state.match_runtime = match_runtime
+    app.state.settings = settings
+    app.state.history_database_url = history_database_url
 
     @app.exception_handler(ApiError)
     async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:
@@ -709,6 +737,7 @@ def create_app(
                 _resolve_websocket_player_viewer(
                     registry=registry,
                     settings=settings,
+                    history_database_url=history_database_url,
                     match_id=match_id,
                     player_id=player_id,
                     token=token,
@@ -717,6 +746,9 @@ def create_app(
                 else None
             )
         except ApiError as exc:
+            if exc.code in {"invalid_websocket_auth", "player_auth_mismatch"}:
+                await _send_websocket_auth_error(websocket, exc)
+                return
             await _close_websocket_for_api_error(websocket, exc)
             return
 
@@ -1111,6 +1143,7 @@ def create_app(
         resolved_player_id = _resolve_match_player_id(
             registry=registry,
             settings=settings,
+            history_database_url=history_database_url,
             match_id=match_id,
             api_key=api_key,
             authorization=authorization,
@@ -1251,6 +1284,7 @@ def create_app(
         resolved_player_id = _resolve_match_player_id(
             registry=registry,
             settings=settings,
+            history_database_url=history_database_url,
             match_id=match_id,
             api_key=api_key,
             authorization=authorization,
@@ -1882,31 +1916,30 @@ def create_app(
     return app
 
 
-def _load_default_match_registry() -> InMemoryMatchRegistry:
-    backend = os.environ.get(MATCH_REGISTRY_BACKEND_VARIABLE, "memory")
-    if backend == "memory":
+def _load_default_match_registry(*, settings: Settings) -> InMemoryMatchRegistry:
+    if settings.match_registry_backend == "memory":
         return InMemoryMatchRegistry()
-    if backend == "db":
-        return load_match_registry_from_database(get_settings().database_url)
+    if settings.match_registry_backend == "db":
+        return load_match_registry_from_database(settings.database_url)
     raise ValueError(
         "Unsupported "
-        f"{MATCH_REGISTRY_BACKEND_VARIABLE} value {backend!r}; "
+        f"IRON_COUNCIL_MATCH_REGISTRY_BACKEND value {settings.match_registry_backend!r}; "
         "expected 'memory' or 'db'."
     )
 
 
 def _load_runtime_tick_persistence(
     *,
+    settings: Settings,
     match_registry: InMemoryMatchRegistry | None,
 ) -> Callable[[AdvancedMatchTick], None] | None:
     if match_registry is not None:
         return None
 
-    backend = os.environ.get(MATCH_REGISTRY_BACKEND_VARIABLE, "memory")
-    if backend != "db":
+    if settings.match_registry_backend != "db":
         return None
 
-    database_url = get_settings().database_url
+    database_url = settings.database_url
 
     def persist_tick(advanced_tick: AdvancedMatchTick) -> None:
         persist_advanced_match_tick(database_url=database_url, advanced_tick=advanced_tick)
@@ -1914,11 +1947,10 @@ def _load_runtime_tick_persistence(
     return persist_tick
 
 
-def _load_history_database_url() -> str | None:
-    backend = os.environ.get(MATCH_REGISTRY_BACKEND_VARIABLE, "memory")
-    if backend != "db":
+def _load_history_database_url(*, settings: Settings) -> str | None:
+    if settings.match_registry_backend != "db":
         return None
-    return get_settings().database_url
+    return settings.database_url
 
 
 def _build_in_memory_public_match_roster(

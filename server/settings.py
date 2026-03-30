@@ -13,12 +13,14 @@ DEFAULT_DATABASE_URL = "postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1
 DEFAULT_ENV_FILE = Path(".env.local")
 ENV_FILE_VARIABLE = "IRON_COUNCIL_ENV_FILE"
 DB_LANE_VARIABLE = "IRON_COUNCIL_DB_LANE"
+MATCH_REGISTRY_BACKEND_VARIABLE = "IRON_COUNCIL_MATCH_REGISTRY_BACKEND"
 _MAX_IDENTIFIER_LENGTH = 63
 
 
 @dataclass(frozen=True)
 class Settings:
     database_url: str
+    match_registry_backend: str = "memory"
     human_jwt_secret: str | None = None
     human_jwt_issuer: str | None = None
     human_jwt_audience: str | None = None
@@ -45,6 +47,7 @@ def get_settings(
     )
     return Settings(
         database_url=database_url,
+        match_registry_backend=current_env.get(MATCH_REGISTRY_BACKEND_VARIABLE, "memory"),
         human_jwt_secret=current_env.get("HUMAN_JWT_SECRET") or file_values.get("HUMAN_JWT_SECRET"),
         human_jwt_issuer=current_env.get("HUMAN_JWT_ISSUER") or file_values.get("HUMAN_JWT_ISSUER"),
         human_jwt_audience=current_env.get("HUMAN_JWT_AUDIENCE")

@@ -202,13 +202,15 @@ def _human_jwt_token(
     user_id: str,
     role: str = "authenticated",
     secret: str = "test-human-secret-key-material-1234",
+    issuer: str = "https://supabase.test/auth/v1",
+    audience: str = "authenticated",
 ) -> str:
     return jwt.encode(
         {
             "sub": user_id,
             "role": role,
-            "iss": "https://supabase.test/auth/v1",
-            "aud": "authenticated",
+            "iss": issuer,
+            "aud": audience,
             "exp": datetime.now(tz=UTC) + timedelta(minutes=5),
         },
         secret,
@@ -1074,6 +1076,126 @@ async def test_human_jwt_state_route_resolves_db_backed_human_player_identity(
 
     assert response.status_code == HTTPStatus.OK
     assert response.json()["player_id"] == "player-1"
+
+
+@pytest.mark.asyncio
+async def test_create_app_settings_override_is_authoritative_for_db_backed_human_auth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    override_database_url = f"sqlite+pysqlite:///{tmp_path / 'override-human-auth.db'}"
+    provision_seeded_database(database_url=override_database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'poisoned.db'}")
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "memory")
+
+    app = create_app(
+        settings_override={
+            "DATABASE_URL": override_database_url,
+            "IRON_COUNCIL_MATCH_REGISTRY_BACKEND": "db",
+            "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+            "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+            "HUMAN_JWT_AUDIENCE": "authenticated",
+            "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+        }
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/state",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000301"),
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["match_id"] == "00000000-0000-0000-0000-000000000101"
+    assert response.json()["player_id"] == "player-1"
+
+
+@pytest.mark.asyncio
+async def test_submit_orders_accepts_human_bearer_auth_from_public_boundary(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+    representative_order_payload: dict[str, Any],
+) -> None:
+    payload = deepcopy(representative_order_payload)
+    payload["match_id"] = "match-alpha"
+    payload["tick"] = 142
+    payload["orders"]["movements"] = [{"army_id": "army-b", "destination": "birmingham"}]
+    payload.pop("player_id", None)
+
+    async with app_client as client:
+        response = await client.post(
+            "/api/v1/matches/match-alpha/orders",
+            json=payload,
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert response.status_code == HTTPStatus.ACCEPTED
+    assert response.json() == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "player_id": "player-2",
+        "tick": 142,
+        "submission_index": 0,
+    }
+    assert seeded_registry.list_order_submissions("match-alpha") == [
+        {
+            **payload,
+            "player_id": "player-2",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("headers", "expected_error"),
+    [
+        (
+            {"Authorization": "Bearer not-a-jwt"},
+            {
+                "code": "invalid_human_token",
+                "message": "A valid human Bearer token is required.",
+            },
+        ),
+        (
+            _auth_headers_for_human(
+                "00000000-0000-0000-0000-000000000302",
+                role="service_role",
+            ),
+            {
+                "code": "invalid_human_token_role",
+                "message": "Human JWT role claim must be 'authenticated'.",
+            },
+        ),
+    ],
+)
+async def test_submit_orders_rejects_invalid_human_bearer_auth_without_mutation(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+    representative_order_payload: dict[str, Any],
+    headers: dict[str, str],
+    expected_error: dict[str, str],
+) -> None:
+    payload = deepcopy(representative_order_payload)
+    payload["match_id"] = "match-alpha"
+    payload["tick"] = 142
+    payload.pop("player_id", None)
+
+    before_state = _match_state_dump(seeded_registry)
+
+    async with app_client as client:
+        response = await client.post(
+            "/api/v1/matches/match-alpha/orders",
+            json=payload,
+            headers=headers,
+        )
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.json() == {"error": expected_error}
+    assert _match_state_dump(seeded_registry) == before_state
+    assert seeded_registry.list_order_submissions("match-alpha") == []
 
 
 @pytest.mark.asyncio
@@ -3870,26 +3992,40 @@ def test_match_websocket_unregisters_connection_on_disconnect(
 def test_match_websocket_rejects_player_connection_when_api_key_does_not_match_player(
     websocket_client: TestClient,
 ) -> None:
-    with pytest.raises(WebSocketDisconnect):
-        with websocket_client.websocket_connect(
-            "/ws/match/match-alpha?viewer=player"
-            "&token="
-            + _human_jwt_token(
-                user_id="00000000-0000-0000-0000-000000000302",
-                role="service_role",
-            )
-        ):
-            pass
+    with websocket_client.websocket_connect(
+        "/ws/match/match-alpha?viewer=player"
+        "&token="
+        + _human_jwt_token(
+            user_id="00000000-0000-0000-0000-000000000302",
+            role="service_role",
+        )
+    ) as websocket:
+        assert websocket.receive_json() == {
+            "error": {
+                "code": "invalid_websocket_auth",
+                "message": "Human JWT role claim must be 'authenticated'.",
+            }
+        }
+        with pytest.raises(WebSocketDisconnect):
+            websocket.receive_json()
 
 
 def test_match_websocket_rejects_player_connection_without_required_auth_query_params(
     websocket_client: TestClient,
 ) -> None:
-    with pytest.raises(WebSocketDisconnect):
-        with websocket_client.websocket_connect(
-            "/ws/match/match-alpha?viewer=player&player_id=player-2"
-        ):
-            pass
+    with websocket_client.websocket_connect(
+        "/ws/match/match-alpha?viewer=player&player_id=player-2"
+    ) as websocket:
+        assert websocket.receive_json() == {
+            "error": {
+                "code": "invalid_websocket_auth",
+                "message": (
+                    "Player websocket connections require a valid human JWT token query parameter."
+                ),
+            }
+        }
+        with pytest.raises(WebSocketDisconnect):
+            websocket.receive_json()
 
 
 def test_match_websocket_resolves_player_from_canonical_token_without_player_id(
@@ -3909,22 +4045,34 @@ def test_match_websocket_resolves_player_from_canonical_token_without_player_id(
 def test_match_websocket_rejects_invalid_and_wrong_role_human_tokens(
     websocket_client: TestClient,
 ) -> None:
-    with pytest.raises(WebSocketDisconnect):
-        with websocket_client.websocket_connect(
-            "/ws/match/match-alpha?viewer=player&token=not-a-jwt"
-        ):
-            pass
+    with websocket_client.websocket_connect(
+        "/ws/match/match-alpha?viewer=player&token=not-a-jwt"
+    ) as websocket:
+        assert websocket.receive_json() == {
+            "error": {
+                "code": "invalid_websocket_auth",
+                "message": "A valid human Bearer token is required.",
+            }
+        }
+        with pytest.raises(WebSocketDisconnect):
+            websocket.receive_json()
 
-    with pytest.raises(WebSocketDisconnect):
-        with websocket_client.websocket_connect(
-            "/ws/match/match-alpha?viewer=player"
-            "&token="
-            + _human_jwt_token(
-                user_id="00000000-0000-0000-0000-000000000302",
-                role="service_role",
-            )
-        ):
-            pass
+    with websocket_client.websocket_connect(
+        "/ws/match/match-alpha?viewer=player"
+        "&token="
+        + _human_jwt_token(
+            user_id="00000000-0000-0000-0000-000000000302",
+            role="service_role",
+        )
+    ) as websocket:
+        assert websocket.receive_json() == {
+            "error": {
+                "code": "invalid_websocket_auth",
+                "message": "Human JWT role claim must be 'authenticated'.",
+            }
+        }
+        with pytest.raises(WebSocketDisconnect):
+            websocket.receive_json()
 
 
 def test_match_websocket_rejects_invalid_viewer_and_unknown_match(

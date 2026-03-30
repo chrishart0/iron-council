@@ -30,6 +30,7 @@ def _human_token(
     issuer: str = "https://supabase.test/auth/v1",
     audience: str = "authenticated",
     secret: str = "test-human-secret-key-material-1234",
+    expires_delta: timedelta = timedelta(minutes=5),
 ) -> str:
     return jwt.encode(
         {
@@ -37,7 +38,7 @@ def _human_token(
             "role": role,
             "iss": issuer,
             "aud": audience,
-            "exp": datetime.now(tz=UTC) + timedelta(minutes=5),
+            "exp": datetime.now(tz=UTC) + expires_delta,
         },
         secret,
         algorithm="HS256",
@@ -73,6 +74,26 @@ def test_validate_human_jwt_rejects_invalid_signature() -> None:
     with pytest.raises(HumanJwtValidationError) as exc_info:
         validate_human_jwt(
             _human_token(secret="wrong-secret-key-material-56789012"),
+            settings=_settings(),
+        )
+
+    assert exc_info.value.code == "invalid_human_token"
+
+
+def test_validate_human_jwt_rejects_issuer_mismatch() -> None:
+    with pytest.raises(HumanJwtValidationError) as exc_info:
+        validate_human_jwt(
+            _human_token(issuer="https://other-issuer.test/auth/v1"),
+            settings=_settings(),
+        )
+
+    assert exc_info.value.code == "invalid_human_token"
+
+
+def test_validate_human_jwt_rejects_expired_token() -> None:
+    with pytest.raises(HumanJwtValidationError) as exc_info:
+        validate_human_jwt(
+            _human_token(expires_delta=timedelta(minutes=-1)),
             settings=_settings(),
         )
 

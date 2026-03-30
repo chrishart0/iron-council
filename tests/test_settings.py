@@ -3,6 +3,7 @@ from pathlib import Path
 from server.settings import (
     DEFAULT_DATABASE_URL,
     ENV_FILE_VARIABLE,
+    MATCH_REGISTRY_BACKEND_VARIABLE,
     derive_worktree_database_url,
     get_settings,
 )
@@ -152,3 +153,12 @@ def test_get_settings_loads_human_jwt_configuration(tmp_path: Path) -> None:
     assert settings.human_jwt_issuer == "https://supabase.test/auth/v1"
     assert settings.human_jwt_audience == "authenticated"
     assert settings.human_jwt_required_role == "authenticated"
+
+
+def test_get_settings_loads_match_registry_backend_from_environment() -> None:
+    settings = get_settings(
+        env={MATCH_REGISTRY_BACKEND_VARIABLE: "db"},
+        worktree_path=Path("/tmp/iron-12-3"),
+    )
+
+    assert settings.match_registry_backend == "db"
