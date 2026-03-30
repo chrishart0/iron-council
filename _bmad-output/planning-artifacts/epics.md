@@ -1086,3 +1086,31 @@ So that I can spin up a browseable game with valid public settings and immediate
 **And Given** the story ships
 **When** focused unit/API/e2e and SDK checks run
 **Then** the authenticated creation contract is proven from the public boundary and the repo quality gate passes.
+
+## Epic 22: Lobby Activation and Match Start
+
+Turn the authenticated lobby funnel into an actually playable DB-backed flow by letting a lobby creator start a created lobby once enough competitors have joined, switching the match into the active runtime path without relying on seeded active matches.
+
+### Story 22.1: Add an authenticated lobby start endpoint
+
+As an authenticated lobby creator,
+I want to start a ready lobby through the API,
+So that a DB-created match can transition from browseable lobby state into a live active match with the real runtime loop.
+
+**Acceptance Criteria:**
+
+**Given** an authenticated creator has a lobby with enough joined players
+**When** `POST /api/v1/matches/{id}/start` is called
+**Then** the server validates creator ownership and readiness rules, transitions the match status from `lobby` to `active`, and returns compact post-start metadata.
+
+**And Given** DB-backed mode is active
+**When** the lobby start succeeds
+**Then** the status transition and any required persisted match metadata updates are stored durably and the running app can observe the match as active without reseeding fixtures.
+
+**And Given** a lobby is not ready, the caller is not the creator, or the match is already active/completed
+**When** the start route is called
+**Then** the server returns structured domain errors and does not partially transition the match.
+
+**And Given** the newly started match enters the runtime flow
+**When** the real-process app is running
+**Then** a focused smoke proves the match becomes active and is eligible for the existing tick/runtime path without regressing public browse/detail reads.
