@@ -177,6 +177,18 @@ class MatchJoinRequest(StrictModel):
     match_id: str
 
 
+class MatchLobbyCreateRequest(StrictModel):
+    map: Literal["britain"]
+    tick_interval_seconds: int = Field(gt=0)
+    max_players: int = Field(gt=0)
+    victory_city_threshold: int = Field(gt=0)
+    starting_cities_per_player: int = Field(ge=0)
+
+
+class MatchLobbyCreateResponse(MatchSummary):
+    creator_player_id: str
+
+
 class MatchJoinResponse(StrictModel):
     status: Literal["accepted"]
     match_id: str
@@ -528,6 +540,28 @@ class IronCouncilClient:
             response_model=AgentProfileResponse,
         )
 
+    def create_match_lobby(
+        self,
+        *,
+        map: Literal["britain"],
+        tick_interval_seconds: int,
+        max_players: int,
+        victory_city_threshold: int,
+        starting_cities_per_player: int,
+    ) -> MatchLobbyCreateResponse:
+        return self._request_json(
+            "POST",
+            "/api/v1/matches",
+            json_body=MatchLobbyCreateRequest(
+                map=map,
+                tick_interval_seconds=tick_interval_seconds,
+                max_players=max_players,
+                victory_city_threshold=victory_city_threshold,
+                starting_cities_per_player=starting_cities_per_player,
+            ),
+            response_model=MatchLobbyCreateResponse,
+        )
+
     def join_match(self, match_id: str) -> MatchJoinResponse:
         return self._request_json(
             "POST",
@@ -844,5 +878,11 @@ class IronCouncilClient:
         return dict(value)
 
 
-for _model in StrictModel.__subclasses__():
-    _model.model_rebuild(_types_namespace=globals())
+def _rebuild_strict_model_tree(root: type[StrictModel]) -> None:
+    for model in root.__subclasses__():
+        model.model_rebuild(_types_namespace=globals())
+        if issubclass(model, StrictModel):
+            _rebuild_strict_model_tree(model)
+
+
+_rebuild_strict_model_tree(StrictModel)

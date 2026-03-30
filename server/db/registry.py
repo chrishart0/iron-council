@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
+from uuid import uuid4
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -16,19 +17,30 @@ from server.agent_registry import (
     MatchAlliance,
     MatchAllianceMember,
     MatchRecord,
+    build_seeded_agent_api_key,
     build_seeded_agent_profiles,
 )
+from server.auth import hash_api_key
 from server.db.models import Alliance, ApiKey, Match, Player, TickLog
+from server.match_initialization import (
+    MatchConfig,
+    MatchInitializationError,
+    MatchRosterEntry,
+    initialize_match_state,
+)
 from server.models.api import (
     AgentProfileHistory,
     AgentProfileRating,
     AgentProfileResponse,
+    AuthenticatedAgentContext,
     CompletedMatchSummary,
     CompletedMatchSummaryListResponse,
     LeaderboardEntry,
     MatchHistoryEntry,
     MatchHistoryResponse,
     MatchListResponse,
+    MatchLobbyCreateRequest,
+    MatchLobbyCreateResponse,
     MatchReplayTickResponse,
     MatchSummary,
     PublicLeaderboardResponse,
@@ -36,7 +48,7 @@ from server.models.api import (
     PublicMatchRosterRow,
 )
 from server.models.domain import MatchStatus
-from server.models.state import MatchState
+from server.models.state import MatchState, ResourceState
 
 
 class MatchHistoryNotFoundError(KeyError):
@@ -51,6 +63,13 @@ class PublicMatchDetailNotFoundError(KeyError):
     pass
 
 
+class MatchLobbyCreationError(Exception):
+    def __init__(self, *, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
 @dataclass
 class _LeaderboardAggregate:
     competitor_key: str
@@ -62,6 +81,21 @@ class _LeaderboardAggregate:
     wins: int = 0
     losses: int = 0
     draws: int = 0
+
+
+@dataclass(frozen=True)
+class CreatedMatchLobby:
+    response: MatchLobbyCreateResponse
+    record: MatchRecord
+
+
+@dataclass(frozen=True)
+class _ResolvedAuthenticatedDbAgent:
+    context: AuthenticatedAgentContext
+    api_key_id: str
+    user_id: str
+    elo_rating: int
+    key_hash: str
 
 
 def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistry:
@@ -85,6 +119,7 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
         agent_profiles_by_match = _load_agent_profiles_by_match(
             matches=matches,
             player_rows=player_rows,
+            api_key_rows=api_key_rows,
         )
         authenticated_keys_by_match = _load_authenticated_agent_keys_by_match(
             matches=matches,
@@ -94,22 +129,30 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
         joined_agents_by_match = _load_joined_agents_by_match(
             matches=matches,
             player_rows=player_rows,
+            api_key_rows=api_key_rows,
         )
 
         for match in matches:
             match_id = str(match.id)
             persisted_alliances = alliances_by_match.get(match_id, [])
             state = MatchState.model_validate(match.state)
+            joined_agents = joined_agents_by_match.get(match_id, {})
             record = MatchRecord(
                 match_id=match_id,
                 status=MatchStatus(match.status),
                 tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
                 state=state,
                 joinable_player_ids=(
-                    sorted(state.players) if match.status == MatchStatus.PAUSED.value else []
+                    sorted(
+                        player_id
+                        for player_id in state.players
+                        if player_id not in joined_agents.values()
+                    )
+                    if match.status in {MatchStatus.LOBBY.value, MatchStatus.PAUSED.value}
+                    else []
                 ),
                 agent_profiles=agent_profiles_by_match.get(match_id, build_seeded_agent_profiles()),
-                joined_agents=joined_agents_by_match.get(match_id, {}),
+                joined_agents=joined_agents,
                 alliances=persisted_alliances,
                 authenticated_agent_keys=authenticated_keys_by_match.get(match_id, []),
             )
@@ -136,6 +179,134 @@ def persist_advanced_match_tick(*, database_url: str, advanced_tick: AdvancedMat
                 events=[event.model_dump(mode="json") for event in advanced_tick.events],
             )
         )
+
+
+def create_match_lobby(
+    *,
+    database_url: str,
+    authenticated_agent_id: str,
+    authenticated_agent_display_name: str,
+    authenticated_api_key_hash: str,
+    request: MatchLobbyCreateRequest,
+) -> CreatedMatchLobby:
+    creator_player_id = "player-1"
+    roster = [
+        MatchRosterEntry(player_id=f"player-{player_index}")
+        for player_index in range(1, request.max_players + 1)
+    ]
+    config = MatchConfig(
+        victory_city_threshold=request.victory_city_threshold,
+        starting_cities_per_player=request.starting_cities_per_player,
+        starting_resources=ResourceState(food=120, production=85, money=200),
+    )
+    try:
+        initial_state = initialize_match_state(config, roster)
+    except MatchInitializationError as exc:
+        raise MatchLobbyCreationError(
+            code="invalid_match_lobby_config",
+            message=str(exc),
+        ) from exc
+
+    match_id = str(uuid4())
+    creator_api_key_id: str | None = None
+    creator_user_id: str | None = None
+    creator_elo_rating = 0
+    resolved_authenticated_agent: AuthenticatedAgentContext | None = None
+    engine = create_engine(database_url)
+    with Session(engine) as session, session.begin():
+        authenticated_agent_resolution = _resolve_authenticated_agent_from_db_key_hash(
+            session=session,
+            key_hash=authenticated_api_key_hash,
+        )
+        if authenticated_agent_resolution is None:
+            raise MatchLobbyCreationError(
+                code="invalid_api_key",
+                message="A valid active X-API-Key header is required.",
+            )
+        resolved_authenticated_agent = authenticated_agent_resolution.context
+        creator_api_key_id = authenticated_agent_resolution.api_key_id
+        creator_user_id = authenticated_agent_resolution.user_id
+        creator_elo_rating = authenticated_agent_resolution.elo_rating
+
+        session.add(
+            Match(
+                id=match_id,
+                config={
+                    "map": request.map,
+                    "max_players": request.max_players,
+                    "turn_seconds": request.tick_interval_seconds,
+                    "victory_city_threshold": request.victory_city_threshold,
+                    "starting_cities_per_player": request.starting_cities_per_player,
+                },
+                status=MatchStatus.LOBBY.value,
+                current_tick=initial_state.tick,
+                state=initial_state.model_dump(mode="json"),
+                winner_alliance=None,
+            )
+        )
+        session.add(
+            Player(
+                id=str(uuid4()),
+                user_id=creator_user_id,
+                match_id=match_id,
+                display_name=resolved_authenticated_agent.display_name,
+                is_agent=True,
+                api_key_id=creator_api_key_id,
+                elo_rating=creator_elo_rating,
+                alliance_id=None,
+                alliance_joined_tick=None,
+                eliminated_at=None,
+            )
+        )
+
+    creator_profile = AgentProfileResponse(
+        agent_id=resolved_authenticated_agent.agent_id
+        if resolved_authenticated_agent is not None
+        else authenticated_agent_id,
+        display_name=resolved_authenticated_agent.display_name
+        if resolved_authenticated_agent is not None
+        else authenticated_agent_display_name,
+        is_seeded=resolved_authenticated_agent.is_seeded
+        if resolved_authenticated_agent is not None
+        else True,
+        rating=AgentProfileRating(elo=creator_elo_rating, provisional=True),
+        history=AgentProfileHistory(matches_played=0, wins=0, losses=0, draws=0),
+    )
+
+    return CreatedMatchLobby(
+        response=MatchLobbyCreateResponse(
+            match_id=match_id,
+            status=MatchStatus.LOBBY,
+            map=request.map,
+            tick=initial_state.tick,
+            tick_interval_seconds=request.tick_interval_seconds,
+            current_player_count=1,
+            max_player_count=request.max_players,
+            open_slot_count=max(request.max_players - 1, 0),
+            creator_player_id=creator_player_id,
+        ),
+        record=MatchRecord(
+            match_id=match_id,
+            status=MatchStatus.LOBBY,
+            tick_interval_seconds=request.tick_interval_seconds,
+            state=initial_state,
+            map_id=request.map,
+            max_player_count=request.max_players,
+            current_player_count=1,
+            joinable_player_ids=[
+                f"player-{player_index}" for player_index in range(2, request.max_players + 1)
+            ],
+            agent_profiles=[creator_profile],
+            joined_agents={creator_profile.agent_id: creator_player_id},
+            authenticated_agent_keys=[
+                AuthenticatedAgentKeyRecord(
+                    agent_id=creator_profile.agent_id,
+                    key_hash=authenticated_api_key_hash,
+                    is_active=True,
+                )
+            ],
+        ),
+    )
 
 
 def get_match_history(*, database_url: str, match_id: str) -> MatchHistoryResponse:
@@ -490,65 +661,45 @@ def _load_agent_profiles_by_match(
     *,
     matches: Sequence[Match],
     player_rows: Sequence[Player],
+    api_key_rows: Sequence[ApiKey],
 ) -> dict[str, list[AgentProfileResponse]]:
     players_by_match: dict[str, list[Player]] = defaultdict(list)
-    persisted_agent_ids: set[str] = set()
+    api_keys_by_id = {str(api_key.id): api_key for api_key in api_key_rows}
+    seeded_profiles_by_key_hash = {
+        hash_api_key(build_seeded_agent_api_key(profile.agent_id)): profile
+        for profile in build_seeded_agent_profiles()
+    }
     for player in player_rows:
         players_by_match[str(player.match_id)].append(player)
 
-    for match in matches:
-        state = MatchState.model_validate(match.state)
-        persisted_player_mapping = _build_persisted_player_mapping(
-            canonical_player_ids=sorted(state.players),
-            persisted_players=players_by_match.get(str(match.id), []),
-        )
-        for player in players_by_match.get(str(match.id), []):
-            if not player.is_agent:
-                continue
-            canonical_player_id = persisted_player_mapping.get(str(player.id))
-            if canonical_player_id is not None:
-                persisted_agent_ids.add(f"agent-{canonical_player_id}")
-
-    fallback_profiles_by_agent_id = {
-        profile.agent_id: profile
-        for profile in build_seeded_agent_profiles()
-        if profile.agent_id in persisted_agent_ids
-    }
     profiles_by_match: dict[str, list[AgentProfileResponse]] = {}
     for match in matches:
         match_id = str(match.id)
-        state = MatchState.model_validate(match.state)
-        persisted_player_mapping = _build_persisted_player_mapping(
-            canonical_player_ids=sorted(state.players),
-            persisted_players=players_by_match.get(match_id, []),
-        )
-        loaded_profiles = [
-            AgentProfileResponse(
-                agent_id=f"agent-{canonical_player_id}",
+        loaded_profiles: dict[str, AgentProfileResponse] = {}
+        for player in sorted(
+            players_by_match.get(match_id, []), key=lambda persisted: str(persisted.id)
+        ):
+            if not player.is_agent:
+                continue
+            api_key = (
+                api_keys_by_id.get(str(player.api_key_id))
+                if player.api_key_id is not None
+                else None
+            )
+            agent_identity = _resolve_loaded_agent_identity(
+                player=player,
+                api_key=api_key,
+                seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
+            )
+            loaded_profiles[agent_identity.agent_id] = AgentProfileResponse(
+                agent_id=agent_identity.agent_id,
                 display_name=player.display_name,
-                is_seeded=True,
+                is_seeded=agent_identity.is_seeded,
                 rating=AgentProfileRating(elo=int(player.elo_rating), provisional=True),
-                history=AgentProfileHistory(
-                    matches_played=0,
-                    wins=0,
-                    losses=0,
-                    draws=0,
-                ),
+                history=AgentProfileHistory(matches_played=0, wins=0, losses=0, draws=0),
             )
-            for player in sorted(
-                players_by_match.get(match_id, []),
-                key=lambda persisted: str(persisted.id),
-            )
-            if player.is_agent
-            and (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None
-        ]
-        merged_profiles = {
-            profile.agent_id: profile for profile in fallback_profiles_by_agent_id.values()
-        }
-        for profile in loaded_profiles:
-            merged_profiles[profile.agent_id] = profile
         profiles_by_match[match_id] = [
-            merged_profiles[agent_id] for agent_id in sorted(merged_profiles)
+            loaded_profiles[agent_id] for agent_id in sorted(loaded_profiles)
         ]
 
     return profiles_by_match
@@ -590,6 +741,10 @@ def _load_authenticated_agent_keys_by_match(
 ) -> dict[str, list[AuthenticatedAgentKeyRecord]]:
     players_by_match: dict[str, list[Player]] = defaultdict(list)
     api_keys_by_id = {str(api_key.id): api_key for api_key in api_key_rows}
+    seeded_profiles_by_key_hash = {
+        hash_api_key(build_seeded_agent_api_key(profile.agent_id)): profile
+        for profile in build_seeded_agent_profiles()
+    }
     for player in player_rows:
         players_by_match[str(player.match_id)].append(player)
 
@@ -603,7 +758,11 @@ def _load_authenticated_agent_keys_by_match(
         )
         authenticated_keys = [
             AuthenticatedAgentKeyRecord(
-                agent_id=f"agent-{canonical_player_id}",
+                agent_id=_resolve_loaded_agent_identity(
+                    player=player,
+                    api_key=api_key,
+                    seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
+                ).agent_id,
                 key_hash=api_key.key_hash,
                 is_active=bool(api_key.is_active),
             )
@@ -614,7 +773,7 @@ def _load_authenticated_agent_keys_by_match(
             if player.is_agent
             and player.api_key_id is not None
             and (api_key := api_keys_by_id.get(str(player.api_key_id))) is not None
-            and (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None
+            and persisted_player_mapping.get(str(player.id)) is not None
         ]
         if authenticated_keys:
             authenticated_keys_by_match[match_id] = authenticated_keys
@@ -626,8 +785,14 @@ def _load_joined_agents_by_match(
     *,
     matches: Sequence[Match],
     player_rows: Sequence[Player],
+    api_key_rows: Sequence[ApiKey],
 ) -> dict[str, dict[str, str]]:
     players_by_match: dict[str, list[Player]] = defaultdict(list)
+    api_keys_by_id = {str(api_key.id): api_key for api_key in api_key_rows}
+    seeded_profiles_by_key_hash = {
+        hash_api_key(build_seeded_agent_api_key(profile.agent_id)): profile
+        for profile in build_seeded_agent_profiles()
+    }
     for player in player_rows:
         players_by_match[str(player.match_id)].append(player)
 
@@ -640,7 +805,15 @@ def _load_joined_agents_by_match(
             persisted_players=players_by_match.get(match_id, []),
         )
         joined_agents = {
-            f"agent-{canonical_player_id}": canonical_player_id
+            _resolve_loaded_agent_identity(
+                player=player,
+                api_key=(
+                    api_keys_by_id.get(str(player.api_key_id))
+                    if player.api_key_id is not None
+                    else None
+                ),
+                seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
+            ).agent_id: canonical_player_id
             for player in players_by_match.get(match_id, [])
             if player.is_agent
             and (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None
@@ -663,6 +836,103 @@ def _build_persisted_player_mapping(
     return {
         str(player.id): canonical_player_ids[index] for index, player in enumerate(sorted_players)
     }
+
+
+@dataclass(frozen=True)
+class _LoadedAgentIdentity:
+    agent_id: str
+    is_seeded: bool
+
+
+def resolve_authenticated_agent_context_from_db(
+    *, database_url: str, api_key: str
+) -> AuthenticatedAgentContext | None:
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        resolved = _resolve_authenticated_agent_from_db_key_hash(
+            session=session,
+            key_hash=hash_api_key(api_key),
+        )
+    return resolved.context if resolved is not None else None
+
+
+def _resolve_loaded_agent_identity(
+    *,
+    player: Player,
+    api_key: ApiKey | None,
+    seeded_profiles_by_key_hash: dict[str, AgentProfileResponse],
+) -> _LoadedAgentIdentity:
+    seeded_profile = (
+        seeded_profiles_by_key_hash.get(api_key.key_hash) if api_key is not None else None
+    )
+    if seeded_profile is not None:
+        return _LoadedAgentIdentity(agent_id=seeded_profile.agent_id, is_seeded=True)
+    return _LoadedAgentIdentity(
+        agent_id=_build_non_seeded_agent_id(str(api_key.id))
+        if api_key is not None
+        else f"agent-{player.display_name.casefold()}",
+        is_seeded=False,
+    )
+
+
+def _resolve_authenticated_agent_from_db_key_hash(
+    *, session: Session, key_hash: str
+) -> _ResolvedAuthenticatedDbAgent | None:
+    api_key = session.scalar(select(ApiKey).where(ApiKey.key_hash == key_hash))
+    if api_key is None or not api_key.is_active:
+        return None
+
+    persisted_players = session.scalars(
+        select(Player).where(Player.api_key_id == api_key.id).order_by(Player.match_id, Player.id)
+    ).all()
+    existing_agent_player = next((player for player in persisted_players if player.is_agent), None)
+    if persisted_players and existing_agent_player is None:
+        return None
+
+    seeded_profile = _build_seeded_profiles_by_key_hash().get(api_key.key_hash)
+    if seeded_profile is not None:
+        return _ResolvedAuthenticatedDbAgent(
+            context=AuthenticatedAgentContext(
+                agent_id=seeded_profile.agent_id,
+                display_name=seeded_profile.display_name,
+                is_seeded=True,
+            ),
+            api_key_id=str(api_key.id),
+            user_id=str(api_key.user_id),
+            elo_rating=int(api_key.elo_rating),
+            key_hash=api_key.key_hash,
+        )
+
+    return _ResolvedAuthenticatedDbAgent(
+        context=AuthenticatedAgentContext(
+            agent_id=_build_non_seeded_agent_id(str(api_key.id)),
+            display_name=(
+                existing_agent_player.display_name
+                if existing_agent_player is not None
+                else _build_non_seeded_display_name(str(api_key.id))
+            ),
+            is_seeded=False,
+        ),
+        api_key_id=str(api_key.id),
+        user_id=str(api_key.user_id),
+        elo_rating=int(api_key.elo_rating),
+        key_hash=api_key.key_hash,
+    )
+
+
+def _build_seeded_profiles_by_key_hash() -> dict[str, AgentProfileResponse]:
+    return {
+        hash_api_key(build_seeded_agent_api_key(profile.agent_id)): profile
+        for profile in build_seeded_agent_profiles()
+    }
+
+
+def _build_non_seeded_agent_id(api_key_id: str) -> str:
+    return f"agent-api-key-{api_key_id}"
+
+
+def _build_non_seeded_display_name(api_key_id: str) -> str:
+    return f"Agent {api_key_id[:8]}"
 
 
 def _merge_persisted_alliance_metadata(

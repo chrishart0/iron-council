@@ -415,6 +415,55 @@ def test_agent_join_and_profile_smoke_flow_runs_through_real_process(
     assert repeat_join_response.json() == join_response.json()
 
 
+def test_create_match_lobby_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        create_response = client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_headers(),
+        )
+        assert create_response.status_code == HTTPStatus.CREATED
+        created_payload = create_response.json()
+
+        browse_response = client.get("/api/v1/matches")
+        detail_response = client.get(f"/api/v1/matches/{created_payload['match_id']}")
+        state_response = client.get(
+            f"/api/v1/matches/{created_payload['match_id']}/state",
+            headers=_headers(),
+        )
+
+    assert created_payload == {
+        "match_id": created_payload["match_id"],
+        "status": "lobby",
+        "map": "britain",
+        "tick": 0,
+        "tick_interval_seconds": 20,
+        "current_player_count": 1,
+        "max_player_count": 4,
+        "open_slot_count": 3,
+        "creator_player_id": "player-1",
+    }
+    assert browse_response.status_code == HTTPStatus.OK
+    assert browse_response.json()["matches"][0]["match_id"] == created_payload["match_id"]
+    assert browse_response.json()["matches"][0]["current_player_count"] == 1
+    assert browse_response.json()["matches"][0]["open_slot_count"] == 3
+    assert detail_response.status_code == HTTPStatus.OK
+    assert detail_response.json()["roster"] == [
+        {"display_name": "Morgana", "competitor_kind": "agent"}
+    ]
+    assert "api_key" not in detail_response.text.lower()
+    assert state_response.status_code == HTTPStatus.OK
+    assert state_response.json()["player_id"] == "player-1"
+
+
 def test_authenticated_current_agent_profile_smoke_flow_runs_through_real_process(
     running_seeded_app: RunningApp,
 ) -> None:

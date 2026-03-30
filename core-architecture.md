@@ -464,6 +464,7 @@ This keeps resolution deterministic and eliminates player-order-dependent outcom
 
 ```
 GET  /api/v1/matches                        List compact public browse summaries for lobby/active/paused matches
+POST /api/v1/matches                        Create an authenticated public match lobby and return compact lobby metadata
 GET  /api/v1/matches/{id}                   Get one compact public lobby/live match detail with visible roster rows
 GET  /api/v1/leaderboard                   List public leaderboard standings from persisted completed matches
 GET  /api/v1/matches/completed             List compact completed-match browse summaries

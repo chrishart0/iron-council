@@ -103,4 +103,4 @@ development_status:
   20-2-add-a-public-match-lobby-detail-read: done
 
   epic-21: in_progress
-  21-1-add-an-authenticated-match-lobby-creation-endpoint: in_progress
+  21-1-add-an-authenticated-match-lobby-creation-endpoint: done

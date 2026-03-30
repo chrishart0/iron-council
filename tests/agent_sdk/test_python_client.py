@@ -120,6 +120,42 @@ def test_sdk_profile_and_match_methods_return_typed_authenticated_contracts(
     assert state.player_id == "player-1"
 
 
+def test_sdk_create_match_lobby_returns_typed_authenticated_contract(
+    sdk_module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'sdk-create-match-lobby.db'}"
+    from server.db.testing import provision_seeded_database
+
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+    with TestClient(app, base_url="http://testserver") as session:
+        client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=build_seeded_agent_api_key("agent-player-2"),
+            session=session,
+        )
+        created = client.create_match_lobby(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=4,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        )
+        state = client.get_match_state(created.match_id)
+
+    assert created.status == "lobby"
+    assert created.current_player_count == 1
+    assert created.open_slot_count == 3
+    assert created.creator_player_id == "player-1"
+    assert state.match_id == created.match_id
+    assert state.player_id == "player-1"
+
+
 def test_sdk_workflow_methods_cover_orders_messages_treaties_and_alliances(
     client: Any,
     representative_order_payload: dict[str, Any],

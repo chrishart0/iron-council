@@ -109,6 +109,18 @@ class MatchJoinRequest(StrictModel):
     match_id: str
 
 
+class MatchLobbyCreateRequest(StrictModel):
+    map: Literal["britain"]
+    tick_interval_seconds: int = Field(gt=0)
+    max_players: int = Field(gt=0)
+    victory_city_threshold: int = Field(gt=0)
+    starting_cities_per_player: int = Field(ge=0)
+
+
+class MatchLobbyCreateResponse(MatchSummary):
+    creator_player_id: str
+
+
 class AuthenticatedOrderSubmissionRequest(StrictModel):
     match_id: str
     tick: TickDuration

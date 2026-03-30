@@ -32,10 +32,13 @@ from server.agent_registry import (
     MatchRecord,
     TreatyTransitionError,
 )
+from server.auth import hash_api_key
 from server.db.registry import (
     MatchHistoryNotFoundError,
+    MatchLobbyCreationError,
     PublicMatchDetailNotFoundError,
     TickHistoryNotFoundError,
+    create_match_lobby,
     get_completed_match_summaries,
     get_match_history,
     get_match_replay_tick,
@@ -44,6 +47,7 @@ from server.db.registry import (
     get_public_match_summaries,
     load_match_registry_from_database,
     persist_advanced_match_tick,
+    resolve_authenticated_agent_context_from_db,
 )
 from server.fog import project_agent_state
 from server.models.api import (
@@ -69,6 +73,8 @@ from server.models.api import (
     MatchJoinRequest,
     MatchJoinResponse,
     MatchListResponse,
+    MatchLobbyCreateRequest,
+    MatchLobbyCreateResponse,
     MatchMessageCreateRequest,
     MatchMessageInboxResponse,
     MatchReplayTickResponse,
@@ -292,6 +298,27 @@ def _join_validation_error_response(exc: RequestValidationError) -> JSONResponse
     )
 
 
+def _create_match_validation_error_response(exc: RequestValidationError) -> JSONResponse:
+    for error in exc.errors():
+        location = list(error.get("loc", ()))
+        error_type = error.get("type")
+        if location and location[0] == "body" and error_type == "missing":
+            return _build_validation_error_response(
+                code="invalid_match_lobby_request",
+                message="Match lobby request is missing required fields.",
+            )
+        if location == ["body", "map"] and error_type == "literal_error":
+            return _build_validation_error_response(
+                code="invalid_match_map",
+                message="Match map must be 'britain'.",
+            )
+
+    return _build_validation_error_response(
+        code="invalid_match_lobby_request",
+        message="Match lobby request validation failed.",
+    )
+
+
 def _command_validation_error_response(exc: RequestValidationError) -> JSONResponse:
     for error in exc.errors():
         location = list(error.get("loc", ()))
@@ -387,6 +414,11 @@ def get_authenticated_agent(
         )
 
     authenticated_agent = registry.resolve_authenticated_agent(api_key)
+    if authenticated_agent is None and (database_url := _load_history_database_url()) is not None:
+        authenticated_agent = resolve_authenticated_agent_context_from_db(
+            database_url=database_url,
+            api_key=api_key,
+        )
     if authenticated_agent is None:
         raise ApiError(
             status_code=HTTPStatus.UNAUTHORIZED,
@@ -522,6 +554,8 @@ def create_app(
         request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
+        if request.method == "POST" and request.url.path == "/api/v1/matches":
+            return _create_match_validation_error_response(exc)
         if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
             ("/command", "/commands")
         ):
@@ -682,6 +716,56 @@ def create_app(
                 )
             ]
         )
+
+    @api_router.post(
+        "/matches",
+        response_model=MatchLobbyCreateResponse,
+        status_code=HTTPStatus.CREATED,
+        responses=_authenticated_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+        ),
+    )
+    async def create_match_lobby_route(
+        request: MatchLobbyCreateRequest,
+        registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+        api_key: ApiKeyHeader = None,
+    ) -> MatchLobbyCreateResponse:
+        if history_database_url is None:
+            raise ApiError(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                code="match_lobby_creation_unavailable",
+                message="Authenticated match lobby creation is only available in DB-backed mode.",
+            )
+        if api_key is None:
+            raise ApiError(
+                status_code=HTTPStatus.UNAUTHORIZED,
+                code="invalid_api_key",
+                message="A valid active X-API-Key header is required.",
+            )
+
+        try:
+            created_lobby = create_match_lobby(
+                database_url=history_database_url,
+                authenticated_agent_id=authenticated_agent.agent_id,
+                authenticated_agent_display_name=authenticated_agent.display_name,
+                authenticated_api_key_hash=hash_api_key(api_key),
+                request=request,
+            )
+        except MatchLobbyCreationError as exc:
+            raise ApiError(
+                status_code=(
+                    HTTPStatus.UNAUTHORIZED
+                    if exc.code == "invalid_api_key"
+                    else HTTPStatus.BAD_REQUEST
+                ),
+                code=exc.code,
+                message=exc.message,
+            ) from exc
+
+        registry.seed_match(created_lobby.record)
+        return created_lobby.response
 
     def require_history_database_url() -> str:
         if history_database_url is None:

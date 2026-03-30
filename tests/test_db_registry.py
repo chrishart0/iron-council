@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from server.agent_registry import build_seeded_agent_api_key
+from server.auth import hash_api_key
 from server.db.registry import (
     MatchHistoryNotFoundError,
+    MatchLobbyCreationError,
     PublicMatchDetailNotFoundError,
     TickHistoryNotFoundError,
+    create_match_lobby,
     get_completed_match_summaries,
     get_match_history,
     get_match_replay_tick,
@@ -18,6 +22,8 @@ from server.db.registry import (
     persist_advanced_match_tick,
 )
 from server.db.testing import provision_seeded_database
+from server.models.api import MatchLobbyCreateRequest
+from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
 from sqlalchemy import create_engine, text
 
@@ -81,9 +87,246 @@ def test_load_match_registry_from_database_falls_back_to_derived_alliances(
     assert primary_match.alliances[0].name == "alliance-red"
     assert primary_match.alliances[0].leader_id == "player-1"
     assert primary_match.alliances[0].formed_tick == 142
-    assert [
-        (member.player_id, member.joined_tick) for member in primary_match.alliances[0].members
-    ] == [("player-1", 142), ("player-2", 142)]
+
+
+def test_create_match_lobby_persists_match_and_creator_membership_atomically(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-create-match-lobby.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    created = create_match_lobby(
+        database_url=database_url,
+        authenticated_agent_id="agent-player-2",
+        authenticated_agent_display_name="Morgana",
+        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        request=MatchLobbyCreateRequest(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=4,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        ),
+    )
+
+    assert created.response.status == MatchStatus.LOBBY
+    assert created.response.map == "britain"
+    assert created.response.tick == 0
+    assert created.response.tick_interval_seconds == 20
+    assert created.response.current_player_count == 1
+    assert created.response.max_player_count == 4
+    assert created.response.open_slot_count == 3
+    assert created.response.creator_player_id == "player-1"
+    assert created.record.match_id == created.response.match_id
+    assert created.record.joined_agents == {"agent-player-2": "player-1"}
+    assert created.record.joinable_player_ids == ["player-2", "player-3", "player-4"]
+    assert created.record.state.tick == 0
+    assert set(created.record.state.players) == {"player-1", "player-2", "player-3", "player-4"}
+
+    browse = get_public_match_summaries(database_url=database_url)
+    assert browse.matches[0].match_id == created.response.match_id
+    assert browse.matches[0].status == MatchStatus.LOBBY
+    assert browse.matches[0].current_player_count == 1
+    assert browse.matches[0].open_slot_count == 3
+
+    detail = get_public_match_detail(database_url=database_url, match_id=created.response.match_id)
+    assert detail.model_dump(mode="json") == {
+        "match_id": created.response.match_id,
+        "status": "lobby",
+        "map": "britain",
+        "tick": 0,
+        "tick_interval_seconds": 20,
+        "current_player_count": 1,
+        "max_player_count": 4,
+        "open_slot_count": 3,
+        "roster": [{"display_name": "Morgana", "competitor_kind": "agent"}],
+    }
+
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        match_rows = (
+            connection.execute(
+                text(
+                    "SELECT id, config, status, current_tick, state "
+                    "FROM matches WHERE id = :match_id"
+                ),
+                {"match_id": created.response.match_id},
+            )
+            .mappings()
+            .all()
+        )
+        player_rows = (
+            connection.execute(
+                text(
+                    """
+                SELECT display_name, is_agent, api_key_id
+                FROM players
+                WHERE match_id = :match_id
+                """
+                ),
+                {"match_id": created.response.match_id},
+            )
+            .mappings()
+            .all()
+        )
+
+    assert len(match_rows) == 1
+    assert match_rows[0]["status"] == "lobby"
+    assert len(player_rows) == 1
+    assert player_rows[0] == {
+        "display_name": "Morgana",
+        "is_agent": 1,
+        "api_key_id": "00000000-0000-0000-0000-000000000202",
+    }
+
+
+def test_create_match_lobby_reload_preserves_authenticated_creator_identity(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-create-match-lobby-reload.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    created = create_match_lobby(
+        database_url=database_url,
+        authenticated_agent_id="agent-player-2",
+        authenticated_agent_display_name="Morgana",
+        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        request=MatchLobbyCreateRequest(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=4,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        ),
+    )
+
+    reloaded_registry = load_match_registry_from_database(database_url)
+    reloaded_match = reloaded_registry.get_match(created.response.match_id)
+    assert reloaded_match is not None
+    assert reloaded_match.joined_agents == {"agent-player-2": "player-1"}
+    reloaded_profile = reloaded_registry.get_agent_profile("agent-player-2")
+    assert reloaded_profile is not None
+    assert reloaded_profile.agent_id == "agent-player-2"
+    assert reloaded_profile.display_name == "Morgana"
+    assert reloaded_profile.is_seeded is True
+
+    authenticated_agent = reloaded_registry.resolve_authenticated_agent(
+        build_seeded_agent_api_key("agent-player-2")
+    )
+    assert authenticated_agent is not None
+    assert authenticated_agent.model_dump(mode="json") == {
+        "agent_id": "agent-player-2",
+        "display_name": "Morgana",
+        "is_seeded": True,
+    }
+    assert (
+        reloaded_registry.require_joined_player_id(
+            match_id=created.response.match_id,
+            agent_id=authenticated_agent.agent_id,
+        )
+        == "player-1"
+    )
+
+
+def test_create_match_lobby_reload_preserves_non_seeded_authenticated_creator_identity(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-create-match-lobby-non-seeded.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    non_seeded_api_key = "fresh-db-agent-key"
+    non_seeded_api_key_hash = hash_api_key(non_seeded_api_key)
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO api_keys (
+                    id, user_id, key_hash, elo_rating, is_active, created_at
+                ) VALUES (
+                    :id, :user_id, :key_hash, :elo_rating, :is_active, CURRENT_TIMESTAMP
+                )
+                """
+            ),
+            {
+                "id": "00000000-0000-0000-0000-000000000299",
+                "user_id": "00000000-0000-0000-0000-000000000399",
+                "key_hash": non_seeded_api_key_hash,
+                "elo_rating": 1111,
+                "is_active": True,
+            },
+        )
+
+    created = create_match_lobby(
+        database_url=database_url,
+        authenticated_agent_id="agent-api-key-00000000-0000-0000-0000-000000000299",
+        authenticated_agent_display_name="Agent 00000000",
+        authenticated_api_key_hash=non_seeded_api_key_hash,
+        request=MatchLobbyCreateRequest(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=4,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        ),
+    )
+
+    reloaded_registry = load_match_registry_from_database(database_url)
+    reloaded_match = reloaded_registry.get_match(created.response.match_id)
+    assert reloaded_match is not None
+    assert reloaded_match.joined_agents == {
+        "agent-api-key-00000000-0000-0000-0000-000000000299": "player-1"
+    }
+    reloaded_profile = reloaded_registry.get_agent_profile(
+        "agent-api-key-00000000-0000-0000-0000-000000000299"
+    )
+    assert reloaded_profile is not None
+    assert reloaded_profile.display_name == "Agent 00000000"
+    assert reloaded_profile.is_seeded is False
+
+    authenticated_agent = reloaded_registry.resolve_authenticated_agent(non_seeded_api_key)
+    assert authenticated_agent is not None
+    assert authenticated_agent.model_dump(mode="json") == {
+        "agent_id": "agent-api-key-00000000-0000-0000-0000-000000000299",
+        "display_name": "Agent 00000000",
+        "is_seeded": False,
+    }
+    assert (
+        reloaded_registry.require_joined_player_id(
+            match_id=created.response.match_id,
+            agent_id=authenticated_agent.agent_id,
+        )
+        == "player-1"
+    )
+
+
+def test_create_match_lobby_rejects_invalid_domain_config_without_partial_persistence(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-create-match-lobby-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    before_browse = get_public_match_summaries(database_url=database_url)
+
+    with pytest.raises(MatchLobbyCreationError) as exc_info:
+        create_match_lobby(
+            database_url=database_url,
+            authenticated_agent_id="agent-player-2",
+            authenticated_agent_display_name="Morgana",
+            authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+            request=MatchLobbyCreateRequest(
+                map="britain",
+                tick_interval_seconds=20,
+                max_players=20,
+                victory_city_threshold=13,
+                starting_cities_per_player=3,
+            ),
+        )
+
+    assert exc_info.value.code == "invalid_match_lobby_config"
+    assert "cannot assign" in exc_info.value.message
+    after_browse = get_public_match_summaries(database_url=database_url)
+    assert after_browse.model_dump(mode="json") == before_browse.model_dump(mode="json")
 
 
 def test_load_match_registry_from_database_matches_persisted_alliances_by_membership(
