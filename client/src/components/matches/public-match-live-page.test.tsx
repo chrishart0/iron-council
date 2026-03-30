@@ -1,0 +1,305 @@
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PublicMatchLivePage } from "./public-match-live-page";
+import { SessionProvider } from "../session/session-provider";
+import { SESSION_STORAGE_KEY } from "../../lib/session-storage";
+
+class MockWebSocket {
+  static instances: MockWebSocket[] = [];
+
+  onopen: (() => void) | null = null;
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onerror: (() => void) | null = null;
+  onclose: (() => void) | null = null;
+  readyState = 0;
+
+  constructor(readonly url: string) {
+    MockWebSocket.instances.push(this);
+  }
+
+  emitOpen() {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+
+  emitMessage(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) } as MessageEvent<string>);
+  }
+
+  emitError() {
+    this.onerror?.();
+  }
+
+  emitClose() {
+    this.readyState = 3;
+    this.onclose?.();
+  }
+
+  close() {
+    this.readyState = 3;
+  }
+}
+
+function makeEnvelope(tick: number) {
+  return {
+    type: "tick_update",
+    data: {
+      match_id: "match-alpha",
+      viewer_role: "spectator" as const,
+      player_id: null,
+      state: {
+        match_id: "match-alpha",
+        tick,
+        cities: {
+          birmingham: {
+            owner: "player-1",
+            population: 12,
+            resources: {
+              food: 3,
+              production: 2,
+              money: 8
+            },
+            upgrades: {
+              economy: 2,
+              military: 1,
+              fortification: 0
+            },
+            garrison: 7,
+            building_queue: []
+          }
+        },
+        armies: [
+          {
+            id: "army-1",
+            owner: "player-2",
+            troops: 5,
+            location: tick === 143 ? "manchester" : "leeds",
+            destination: null,
+            path: null,
+            ticks_remaining: 0
+          }
+        ],
+        players: {
+          "player-1": {
+            resources: {
+              food: 120,
+              production: 85,
+              money: 200
+            },
+            cities_owned: ["birmingham"],
+            alliance_id: null,
+            is_eliminated: false
+          }
+        },
+        victory: {
+          leading_alliance: null,
+          cities_held: 1,
+          threshold: 13,
+          countdown_ticks_remaining: null
+        }
+      },
+      world_messages: [
+        {
+          message_id: tick,
+          channel: "world" as const,
+          sender_id: "player-1",
+          recipient_id: null,
+          tick,
+          content: tick === 143 ? "War drums." : "Advance at dawn."
+        }
+      ],
+      direct_messages: [],
+      group_chats: [],
+      group_messages: [],
+      treaties: [],
+      alliances: []
+    }
+  };
+}
+
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+  vi.restoreAllMocks();
+  MockWebSocket.instances = [];
+});
+
+beforeEach(() => {
+  vi.stubGlobal("WebSocket", MockWebSocket);
+});
+
+describe("PublicMatchLivePage", () => {
+  it("waits for session hydration before connecting to the spectator websocket", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "https://hydrated.example/",
+        bearerToken: null
+      })
+    );
+
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        match_id: "match-alpha",
+        status: "active",
+        map: "britain",
+        tick: 142,
+        tick_interval_seconds: 30,
+        current_player_count: 3,
+        max_player_count: 5,
+        open_slot_count: 2,
+        roster: []
+      })
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <PublicMatchLivePage matchId="match-alpha" />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith("https://hydrated.example/api/v1/matches/match-alpha", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json"
+      }
+    });
+    expect(MockWebSocket.instances[0]?.url).toBe(
+      "wss://hydrated.example/ws/match/match-alpha?viewer=spectator"
+    );
+  });
+
+  it("renders the initial spectator payload and deterministic tick updates", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        match_id: "match-alpha",
+        status: "active",
+        map: "britain",
+        tick: 142,
+        tick_interval_seconds: 30,
+        current_player_count: 3,
+        max_player_count: 5,
+        open_slot_count: 2,
+        roster: []
+      })
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <PublicMatchLivePage matchId="match-alpha" />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket?.emitOpen();
+    socket?.emitMessage(makeEnvelope(143));
+
+    await waitFor(() => {
+      expect(screen.getByText("143")).toBeVisible();
+    });
+
+    expect(screen.getByText("War drums.")).toBeVisible();
+    expect(screen.getByText("manchester")).toBeVisible();
+
+    socket?.emitMessage(makeEnvelope(144));
+
+    await waitFor(() => {
+      expect(screen.getByText("144")).toBeVisible();
+    });
+
+    expect(screen.getByText("Advance at dawn.")).toBeVisible();
+    expect(screen.getByText("leeds")).toBeVisible();
+  });
+
+  it("shows an inactive state for non-active matches and skips the websocket connection", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        match_id: "match-alpha",
+        status: "paused",
+        map: "britain",
+        tick: 142,
+        tick_interval_seconds: 30,
+        current_player_count: 3,
+        max_player_count: 5,
+        open_slot_count: 2,
+        roster: []
+      })
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <PublicMatchLivePage matchId="match-alpha" />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("Live updates unavailable");
+    });
+
+    expect(screen.getByText("This match is paused, so the spectator live page is not active.")).toBeVisible();
+    expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  it("marks the view as not live after the socket disconnects or errors", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        match_id: "match-alpha",
+        status: "active",
+        map: "britain",
+        tick: 142,
+        tick_interval_seconds: 30,
+        current_player_count: 3,
+        max_player_count: 5,
+        open_slot_count: 2,
+        roster: []
+      })
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <PublicMatchLivePage matchId="match-alpha" />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket?.emitOpen();
+    socket?.emitMessage(makeEnvelope(143));
+
+    await waitFor(() => {
+      expect(screen.getByText("143")).toBeVisible();
+    });
+
+    socket?.emitError();
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("Live connection lost");
+    });
+
+    expect(screen.getByText("Showing the last spectator update. Reconnect to resume live viewing.")).toBeVisible();
+    expect(screen.getAllByText("Not live").length).toBeGreaterThan(0);
+  });
+});

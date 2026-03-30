@@ -27,8 +27,11 @@ export function MatchDetail({ match }: MatchDetailProps) {
       <section className="hero">
         <h2>{`Public Match ${match.match_id}`}</h2>
         <p>Read-only public match metadata from the live server.</p>
-        <p>Spectator live view coming next. This page intentionally stays browse-only for now.</p>
+        <p>Browse the public summary here, or open the spectator live page for realtime updates.</p>
         <div className="actions">
+          <Link className="button-link" href={`/matches/${match.match_id}/live`}>
+            Watch live spectator view
+          </Link>
           <Link className="button-link secondary" href="/matches">
             Back to matches
           </Link>

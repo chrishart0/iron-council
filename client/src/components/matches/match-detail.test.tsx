@@ -34,6 +34,10 @@ describe("MatchDetail", () => {
 
     expect(screen.getByRole("heading", { name: "Public Match match-alpha" })).toBeVisible();
     expect(screen.getByText("Read-only public match metadata from the live server.")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Watch live spectator view" })).toHaveAttribute(
+      "href",
+      "/matches/match-alpha/live"
+    );
     expect(screen.getByText("Match ID")).toBeVisible();
     expect(screen.getByText("match-alpha")).toBeVisible();
     expect(screen.getByText("active")).toBeVisible();

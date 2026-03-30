@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildSpectatorMatchWebSocketUrl,
   fetchPublicMatchDetail,
   fetchPublicMatches,
+  parseSpectatorMatchEnvelope,
   PublicMatchDetailError,
   PublicMatchesError
 } from "./api";
@@ -216,5 +218,188 @@ describe("fetchPublicMatchDetail", () => {
     ).rejects.toEqual(
       new PublicMatchDetailError("Unable to load this public match right now.", "unavailable")
     );
+  });
+});
+
+describe("spectator realtime helpers", () => {
+  it("parses a valid spectator tick update envelope", () => {
+    expect(
+      parseSpectatorMatchEnvelope({
+        type: "tick_update",
+        data: {
+          match_id: "match-alpha",
+          viewer_role: "spectator",
+          player_id: null,
+          state: {
+            match_id: "match-alpha",
+            tick: 143,
+            cities: {
+              birmingham: {
+                owner: "player-1",
+                population: 12,
+                resources: {
+                  food: 3,
+                  production: 2,
+                  money: 8
+                },
+                upgrades: {
+                  economy: 2,
+                  military: 1,
+                  fortification: 0
+                },
+                garrison: 7,
+                building_queue: []
+              }
+            },
+            armies: [
+              {
+                id: "army-1",
+                owner: "player-2",
+                troops: 5,
+                location: "manchester",
+                destination: null,
+                path: null,
+                ticks_remaining: 0
+              }
+            ],
+            players: {
+              "player-1": {
+                resources: {
+                  food: 120,
+                  production: 85,
+                  money: 200
+                },
+                cities_owned: ["birmingham"],
+                alliance_id: null,
+                is_eliminated: false
+              }
+            },
+            victory: {
+              leading_alliance: null,
+              cities_held: 1,
+              threshold: 13,
+              countdown_ticks_remaining: null
+            }
+          },
+          world_messages: [
+            {
+              message_id: 2,
+              channel: "world",
+              sender_id: "player-1",
+              recipient_id: null,
+              tick: 143,
+              content: "War drums."
+            }
+          ],
+          direct_messages: [],
+          group_chats: [],
+          group_messages: [],
+          treaties: [],
+          alliances: []
+        }
+      })
+    ).toEqual({
+      type: "tick_update",
+      data: {
+        match_id: "match-alpha",
+        viewer_role: "spectator",
+        player_id: null,
+        state: {
+          match_id: "match-alpha",
+          tick: 143,
+          cities: {
+            birmingham: {
+              owner: "player-1",
+              population: 12,
+              resources: {
+                food: 3,
+                production: 2,
+                money: 8
+              },
+              upgrades: {
+                economy: 2,
+                military: 1,
+                fortification: 0
+              },
+              garrison: 7,
+              building_queue: []
+            }
+          },
+          armies: [
+            {
+              id: "army-1",
+              owner: "player-2",
+              troops: 5,
+              location: "manchester",
+              destination: null,
+              path: null,
+              ticks_remaining: 0
+            }
+          ],
+          players: {
+            "player-1": {
+              resources: {
+                food: 120,
+                production: 85,
+                money: 200
+              },
+              cities_owned: ["birmingham"],
+              alliance_id: null,
+              is_eliminated: false
+            }
+          },
+          victory: {
+            leading_alliance: null,
+            cities_held: 1,
+            threshold: 13,
+            countdown_ticks_remaining: null
+          }
+        },
+        world_messages: [
+          {
+            message_id: 2,
+            channel: "world",
+            sender_id: "player-1",
+            recipient_id: null,
+            tick: 143,
+            content: "War drums."
+          }
+        ],
+        direct_messages: [],
+        group_chats: [],
+        group_messages: [],
+        treaties: [],
+        alliances: []
+      }
+    });
+  });
+
+  it("rejects malformed spectator realtime payloads deterministically", () => {
+    expect(() =>
+      parseSpectatorMatchEnvelope({
+        type: "tick_update",
+        data: {
+          match_id: "match-alpha",
+          viewer_role: "spectator",
+          state: {
+            tick: "143"
+          }
+        }
+      })
+    ).toThrowError("Unable to parse spectator live match update.");
+  });
+
+  it("builds the shipped spectator websocket URL from the configured API base URL", () => {
+    expect(
+      buildSpectatorMatchWebSocketUrl("match alpha", {
+        apiBaseUrl: "https://session.example/"
+      })
+    ).toBe("wss://session.example/ws/match/match%20alpha?viewer=spectator");
+  });
+
+  it("preserves a configured base-path prefix when building the spectator websocket URL", () => {
+    expect(
+      buildSpectatorMatchWebSocketUrl("match-alpha", { apiBaseUrl: "https://session.example/game-api" })
+    ).toBe("wss://session.example/game-api/ws/match/match-alpha?viewer=spectator");
   });
 });
