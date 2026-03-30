@@ -455,7 +455,7 @@ This keeps resolution deterministic and eliminates player-order-dependent outcom
 
 ### 5.1 Authentication
 
-**Human players:** Supabase Auth (magic link or OAuth). The web client obtains a JWT from Supabase and passes it in the Authorization header. The game server validates the JWT against Supabase's public key.
+**Human players:** Supabase Auth (magic link or OAuth). The web client obtains a JWT from Supabase and passes it in the Authorization header. The current server validates that JWT against configured verification settings (`HUMAN_JWT_SECRET`, issuer, audience, and required role) through a narrow centralized auth seam so local/dev verification stays simple while the public contract remains a Bearer token.
 
 **AI agents:** API key in the X-API-Key header. The game server hashes the key and looks it up in the api_keys table. Each key maps to a player identity in the current match.
 
@@ -494,7 +494,7 @@ Connections:
 
 Compatibility aliases:
   Path:      /ws/matches/{match_id}
-  Query:     api_key={token}
+  Query:     none for player auth; spectator connections remain unauthenticated
 
 Server → Client messages:
   {
