@@ -95,6 +95,28 @@ def build_match_realtime_envelope(
             player_id=player_id,
             state=projected_state,
             world_messages=_list_world_messages(record=record),
+            direct_messages=(
+                _list_direct_messages(
+                    registry=registry,
+                    match_id=match_id,
+                    player_id=player_id or "",
+                )
+                if viewer_role == "player"
+                else []
+            ),
+            group_chats=(
+                registry.list_visible_group_chats(match_id=match_id, player_id=player_id or "")
+                if viewer_role == "player"
+                else []
+            ),
+            group_messages=(
+                registry.list_visible_group_chat_messages(
+                    match_id=match_id,
+                    player_id=player_id or "",
+                )
+                if viewer_role == "player"
+                else []
+            ),
             treaties=registry.list_treaties(match_id=match_id),
             alliances=registry.list_alliances(match_id=match_id),
         ),
@@ -150,4 +172,17 @@ def _list_world_messages(*, record: MatchRecord) -> list[MatchMessageRecord]:
         )
         for message in record.messages
         if message.channel == "world"
+    ]
+
+
+def _list_direct_messages(
+    *,
+    registry: InMemoryMatchRegistry,
+    match_id: str,
+    player_id: str,
+) -> list[MatchMessageRecord]:
+    return [
+        message
+        for message in registry.list_visible_messages(match_id=match_id, player_id=player_id)
+        if message.channel == "direct"
     ]

@@ -2442,6 +2442,9 @@ def test_match_websocket_registers_player_connection_and_sends_initial_fog_filte
         assert payload["data"]["state"]["cities"]["manchester"]["visibility"] == "full"
         assert payload["data"]["state"]["cities"]["birmingham"]["visibility"] == "partial"
         assert payload["data"]["state"]["cities"]["birmingham"]["garrison"] == "unknown"
+        assert payload["data"]["direct_messages"] == []
+        assert payload["data"]["group_chats"] == []
+        assert payload["data"]["group_messages"] == []
         assert payload["data"]["alliances"] == [
             {
                 "alliance_id": "alliance-red",
@@ -2472,6 +2475,9 @@ def test_match_websocket_registers_spectator_connection_and_sends_full_visibilit
     assert payload["data"]["state"]["cities"]["birmingham"]["garrison"] == 7
     assert payload["data"]["state"]["players"]["player-2"]["resources"]["money"] == 110
     assert payload["data"]["state"]["armies"][0]["id"] == "army-a"
+    assert payload["data"]["direct_messages"] == []
+    assert payload["data"]["group_chats"] == []
+    assert payload["data"]["group_messages"] == []
 
 
 def test_match_websocket_unregisters_connection_on_disconnect(
@@ -2546,6 +2552,177 @@ def test_world_message_broadcasts_refresh_to_connected_player_and_spectator(
     assert response.status_code == HTTPStatus.ACCEPTED
     assert player_update["data"]["world_messages"][-1]["content"] == "War drums."
     assert spectator_update["data"]["world_messages"][-1]["content"] == "War drums."
+
+
+def test_private_chat_events_broadcast_player_refresh_without_leaking_to_spectator(
+    websocket_client: TestClient,
+) -> None:
+    with (
+        websocket_client.websocket_connect(
+            "/ws/matches/match-alpha?viewer=player&player_id=player-1"
+            f"&api_key={build_seeded_agent_api_key('agent-player-1')}"
+        ) as player_one_socket,
+        websocket_client.websocket_connect(
+            "/ws/matches/match-alpha?viewer=player&player_id=player-2"
+            f"&api_key={build_seeded_agent_api_key('agent-player-2')}"
+        ) as player_two_socket,
+        websocket_client.websocket_connect(
+            "/ws/matches/match-alpha?viewer=spectator"
+        ) as spectator_socket,
+    ):
+        player_one_socket.receive_json()
+        player_two_socket.receive_json()
+        spectator_socket.receive_json()
+
+        direct_response = websocket_client.post(
+            "/api/v1/matches/match-alpha/messages",
+            json=_message_payload(
+                channel="direct",
+                recipient_id="player-2",
+                content="Quiet flank update.",
+            ),
+            headers=_auth_headers_for_player("player-1"),
+        )
+
+        player_one_direct_update = player_one_socket.receive_json()
+        player_two_direct_update = player_two_socket.receive_json()
+        spectator_direct_update = spectator_socket.receive_json()
+
+        create_response = websocket_client.post(
+            "/api/v1/matches/match-alpha/group-chats",
+            json=_group_chat_create_payload(member_ids=["player-2"]),
+            headers=_auth_headers_for_player("player-1"),
+        )
+
+        player_one_group_create_update = player_one_socket.receive_json()
+        player_two_group_create_update = player_two_socket.receive_json()
+        spectator_group_create_update = spectator_socket.receive_json()
+
+        group_message_response = websocket_client.post(
+            "/api/v1/matches/match-alpha/group-chats/group-chat-1/messages",
+            json={
+                "match_id": "match-alpha",
+                "tick": 142,
+                "content": "Advance at dawn.",
+            },
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+        player_one_group_message_update = player_one_socket.receive_json()
+        player_two_group_message_update = player_two_socket.receive_json()
+        spectator_group_message_update = spectator_socket.receive_json()
+
+    assert direct_response.status_code == HTTPStatus.ACCEPTED
+    assert (
+        player_one_direct_update["data"]["direct_messages"][-1]["content"] == "Quiet flank update."
+    )
+    assert (
+        player_two_direct_update["data"]["direct_messages"][-1]["content"] == "Quiet flank update."
+    )
+    assert spectator_direct_update["data"]["direct_messages"] == []
+    assert spectator_direct_update["data"]["group_chats"] == []
+    assert spectator_direct_update["data"]["group_messages"] == []
+
+    assert create_response.status_code == HTTPStatus.ACCEPTED
+    assert player_one_group_create_update["data"]["group_chats"] == [
+        {
+            "group_chat_id": "group-chat-1",
+            "name": "War Council",
+            "member_ids": ["player-1", "player-2"],
+            "created_by": "player-1",
+            "created_tick": 142,
+        }
+    ]
+    assert player_two_group_create_update["data"]["group_chats"] == [
+        {
+            "group_chat_id": "group-chat-1",
+            "name": "War Council",
+            "member_ids": ["player-1", "player-2"],
+            "created_by": "player-1",
+            "created_tick": 142,
+        }
+    ]
+    assert spectator_group_create_update["data"]["group_chats"] == []
+
+    assert group_message_response.status_code == HTTPStatus.ACCEPTED
+    assert player_one_group_message_update["data"]["group_messages"] == [
+        {
+            "message_id": 0,
+            "group_chat_id": "group-chat-1",
+            "sender_id": "player-2",
+            "tick": 142,
+            "content": "Advance at dawn.",
+        }
+    ]
+    assert player_two_group_message_update["data"]["group_messages"] == [
+        {
+            "message_id": 0,
+            "group_chat_id": "group-chat-1",
+            "sender_id": "player-2",
+            "tick": 142,
+            "content": "Advance at dawn.",
+        }
+    ]
+    assert spectator_group_message_update["data"]["group_messages"] == []
+
+
+def test_command_envelope_message_writes_broadcast_private_chat_refresh(
+    websocket_client: TestClient,
+) -> None:
+    websocket_client.post(
+        "/api/v1/matches/match-alpha/group-chats",
+        json=_group_chat_create_payload(member_ids=["player-2"]),
+        headers=_auth_headers_for_player("player-1"),
+    )
+
+    with (
+        websocket_client.websocket_connect(
+            "/ws/matches/match-alpha?viewer=player&player_id=player-1"
+            f"&api_key={build_seeded_agent_api_key('agent-player-1')}"
+        ) as player_one_socket,
+        websocket_client.websocket_connect(
+            "/ws/matches/match-alpha?viewer=player&player_id=player-2"
+            f"&api_key={build_seeded_agent_api_key('agent-player-2')}"
+        ) as player_two_socket,
+        websocket_client.websocket_connect(
+            "/ws/matches/match-alpha?viewer=spectator"
+        ) as spectator_socket,
+    ):
+        player_one_socket.receive_json()
+        player_two_socket.receive_json()
+        spectator_socket.receive_json()
+
+        response = websocket_client.post(
+            "/api/v1/matches/match-alpha/command",
+            json=_command_envelope_payload(
+                messages=[
+                    {
+                        "channel": "direct",
+                        "recipient_id": "player-2",
+                        "content": "Envelope direct update.",
+                    },
+                    {
+                        "channel": "group",
+                        "group_chat_id": "group-chat-1",
+                        "content": "Envelope group update.",
+                    },
+                ]
+            ),
+            headers=_auth_headers_for_player("player-1"),
+        )
+
+        player_one_update = player_one_socket.receive_json()
+        player_two_update = player_two_socket.receive_json()
+        spectator_update = spectator_socket.receive_json()
+
+    assert response.status_code == HTTPStatus.ACCEPTED
+    assert player_one_update["data"]["direct_messages"][-1]["content"] == "Envelope direct update."
+    assert player_two_update["data"]["direct_messages"][-1]["content"] == "Envelope direct update."
+    assert player_one_update["data"]["group_messages"][-1]["content"] == "Envelope group update."
+    assert player_two_update["data"]["group_messages"][-1]["content"] == "Envelope group update."
+    assert spectator_update["data"]["direct_messages"] == []
+    assert spectator_update["data"]["group_messages"] == []
+    assert spectator_update["data"]["group_chats"] == []
 
 
 def test_runtime_broadcasts_post_tick_payload_to_connected_player_and_spectator(

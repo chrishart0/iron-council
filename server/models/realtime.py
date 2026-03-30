@@ -4,7 +4,13 @@ from typing import Literal
 
 from pydantic import Field
 
-from server.models.api import AllianceRecord, MatchMessageRecord, TreatyRecord
+from server.models.api import (
+    AllianceRecord,
+    GroupChatMessageRecord,
+    GroupChatRecord,
+    MatchMessageRecord,
+    TreatyRecord,
+)
 from server.models.domain import StrictModel
 from server.models.fog import AgentStateProjection
 from server.models.state import ArmyState, CityState, PlayerState, VictoryState
@@ -27,6 +33,9 @@ class MatchRealtimePayload(StrictModel):
     player_id: str | None = None
     state: AgentStateProjection | SpectatorStateProjection
     world_messages: list[MatchMessageRecord] = Field(default_factory=list)
+    direct_messages: list[MatchMessageRecord] = Field(default_factory=list)
+    group_chats: list[GroupChatRecord] = Field(default_factory=list)
+    group_messages: list[GroupChatMessageRecord] = Field(default_factory=list)
     treaties: list[TreatyRecord] = Field(default_factory=list)
     alliances: list[AllianceRecord] = Field(default_factory=list)
 

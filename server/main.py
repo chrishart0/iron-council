@@ -879,11 +879,7 @@ def create_app(
                 message=exc.message,
             ) from exc
 
-        if (
-            command.alliance is not None
-            or command.treaties
-            or any(message.channel == "world" for message in command.messages)
-        ):
+        if command.alliance is not None or command.treaties or command.messages:
             await broadcast_current_match(match_id)
         return response
 
@@ -1012,6 +1008,7 @@ def create_app(
             request=group_chat,
             creator_id=resolved_player_id,
         )
+        await broadcast_current_match(match_id)
         return GroupChatCreateAcceptanceResponse(
             status="accepted",
             match_id=match_id,
@@ -1128,6 +1125,7 @@ def create_app(
                 message=exc.message,
             ) from exc
 
+        await broadcast_current_match(match_id)
         return GroupChatMessageAcceptanceResponse(
             status="accepted",
             match_id=match_id,
@@ -1202,8 +1200,7 @@ def create_app(
             message=message,
             sender_id=resolved_player_id,
         )
-        if accepted_message.channel == "world":
-            await broadcast_current_match(match_id)
+        await broadcast_current_match(match_id)
         return MessageAcceptanceResponse(
             status="accepted",
             match_id=match_id,

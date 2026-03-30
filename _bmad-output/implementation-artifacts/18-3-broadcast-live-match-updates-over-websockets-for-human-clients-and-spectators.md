@@ -31,6 +31,7 @@ GPT-5 Codex
 ### Debug Log References
 
 - `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'websocket or realtime'`
+- `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'registers_player_connection_and_sends_initial_fog_filtered_payload or registers_spectator_connection_and_sends_full_visibility_payload or world_message_broadcasts_refresh or private_chat_events_broadcast or command_envelope_message_writes_broadcast'`
 - `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py`
 - `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/e2e/test_api_smoke.py -k websocket`
 - `make format`
@@ -44,7 +45,10 @@ GPT-5 Codex
 - Chose the narrowest auth contract that fits current repo reality: spectator websockets are open, while player websockets authenticate with the existing active API key via websocket query params plus an explicit `player_id`. This keeps the route shape stable for later JWT replacement without introducing a broader auth system in Story 18.3.
 - Wired runtime tick broadcasts after successful tick persistence, preserving Story 18.2's durability/rollback path. The runtime does not broadcast a post-tick payload until the authoritative state advance and optional persistence step have succeeded.
 - Reused the same realtime payload builder for initial sends and live fanout, and triggered refresh broadcasts for public world-message, treaty, and alliance writes so browser clients do not need to reconnect to observe public/chat-visible changes.
+- Follow-up fix: expanded player websocket payloads to include direct messages, visible group chats, and visible group-chat messages, while keeping spectator payloads public-only with empty private-chat fields.
+- Follow-up fix: triggered websocket refresh broadcasts for direct message writes, group-chat creation, group-chat message writes, and command-envelope message writes so connected players stay current without REST polling after chat-visible events.
 - Added API-level websocket tests for initial payload shape, connection lifecycle, invalid viewer/auth cases, and public-event refresh, plus a real-process websocket smoke that proves both a player and a spectator receive a live tick-driven update.
+- Added API-level regressions that prove private direct/group chat refresh reaches connected player viewers and does not leak private chat state to spectators.
 
 ### File List
 
