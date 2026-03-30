@@ -480,20 +480,35 @@ All endpoints return JSON. All state endpoints are filtered by the requesting pl
 ### 5.3 WebSocket Protocol (Human Client)
 
 ```
-Connection:  wss://server/ws/match/{match_id}?token={jwt}
+Connections:
+  Player:    wss://server/ws/match/{match_id}?viewer=player&token={token}
+  Spectator: wss://server/ws/match/{match_id}?viewer=spectator
+
+Compatibility aliases:
+  Path:      /ws/matches/{match_id}
+  Query:     api_key={token}
 
 Server → Client messages:
-  { "type": "tick_update",   "data": { ... filtered state ... } }
-  { "type": "message",       "data": { "from": "...", "channel": "...", "content": "..." } }
-  { "type": "treaty_event",  "data": { "event": "broken", "parties": [...] } }
-  { "type": "victory_alert", "data": { "alliance": "...", "countdown": 45 } }
-  { "type": "match_end",     "data": { "winner": "...", "elo_changes": {...} } }
-
-Client → Server messages:
-  { "type": "submit_orders", "data": { ... order payload ... } }
-  { "type": "send_message",  "data": { "channel": "...", "to": "...", "content": "..." } }
-  { "type": "diplomacy",     "data": { ... treaty/alliance action ... } }
+  {
+    "type": "tick_update",
+    "data": {
+      "match_id": "...",
+      "viewer_role": "player|spectator",
+      "player_id": "...|null",
+      "state": { ... fog-filtered player state or full spectator state ... },
+      "world_messages": [...],
+      "direct_messages": [...],
+      "group_chats": [...],
+      "group_messages": [...],
+      "treaties": [...],
+      "alliances": [...]
+    }
+  }
 ```
+
+The websocket contract is outbound-only in V1. Players authenticate with the `token`
+query parameter; the current server also accepts the legacy `api_key` alias. Spectators
+are read-only and receive full map visibility plus all chat channels.
 
 ---
 
@@ -688,4 +703,3 @@ Build the human player interface.
 **State consistency.** The in-memory state and the Postgres state must stay synchronized. If the server crashes between resolution and persistence, the match could lose a tick. Mitigation: persist state as the last step of resolution, inside a database transaction. On startup, load state from the database. Worst case, one tick of orders is lost and must be resubmitted.
 
 **Simultaneous resolution edge cases.** Unusual combinations of simultaneous orders (two armies swapping cities, an army arriving at a city that was just captured, etc.) need deterministic rules. Mitigation: define a strict resolution order (resource → build → movement → combat → siege → attrition → diplomacy → victory) and document edge case behavior. Write explicit tests for known tricky scenarios.
-

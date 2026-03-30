@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -7,7 +8,7 @@ from fastapi import WebSocket
 
 from server.agent_registry import InMemoryMatchRegistry, MatchRecord
 from server.fog import project_agent_state
-from server.models.api import MatchMessageRecord
+from server.models.api import GroupChatMessageRecord, GroupChatRecord, MatchMessageRecord
 from server.models.realtime import (
     MatchRealtimeEnvelope,
     MatchRealtimePayload,
@@ -24,8 +25,15 @@ class MatchWebSocketSubscription:
 
 
 class MatchWebSocketManager:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        send_timeout_seconds: float = 0.1,
+        max_concurrent_sends: int = 16,
+    ) -> None:
         self._connections: dict[str, list[MatchWebSocketSubscription]] = {}
+        self._send_timeout_seconds = send_timeout_seconds
+        self._max_concurrent_sends = max_concurrent_sends
 
     def register(
         self,
@@ -63,12 +71,27 @@ class MatchWebSocketManager:
         match_id: str,
         payload_factory: Callable[[MatchWebSocketSubscription], MatchRealtimeEnvelope],
     ) -> None:
-        for subscription in list(self._connections.get(match_id, [])):
+        subscriptions = list(self._connections.get(match_id, []))
+        if not subscriptions:
+            return
+
+        semaphore = asyncio.Semaphore(self._max_concurrent_sends)
+
+        async def send_to_subscription(subscription: MatchWebSocketSubscription) -> None:
             try:
                 payload = payload_factory(subscription)
-                await subscription.websocket.send_json(payload.model_dump(mode="json"))
+                async with semaphore:
+                    await asyncio.wait_for(
+                        subscription.websocket.send_json(payload.model_dump(mode="json")),
+                        timeout=self._send_timeout_seconds,
+                    )
             except Exception:
                 self.unregister(match_id=match_id, websocket=subscription.websocket)
+
+        await asyncio.gather(
+            *(send_to_subscription(subscription) for subscription in subscriptions),
+            return_exceptions=True,
+        )
 
 
 def build_match_realtime_envelope(
@@ -102,12 +125,12 @@ def build_match_realtime_envelope(
                     player_id=player_id or "",
                 )
                 if viewer_role == "player"
-                else []
+                else _list_all_direct_messages(record=record)
             ),
             group_chats=(
                 registry.list_visible_group_chats(match_id=match_id, player_id=player_id or "")
                 if viewer_role == "player"
-                else []
+                else _list_all_group_chats(record=record)
             ),
             group_messages=(
                 registry.list_visible_group_chat_messages(
@@ -115,7 +138,7 @@ def build_match_realtime_envelope(
                     player_id=player_id or "",
                 )
                 if viewer_role == "player"
-                else []
+                else _list_all_group_chat_messages(record=record)
             ),
             treaties=registry.list_treaties(match_id=match_id),
             alliances=registry.list_alliances(match_id=match_id),
@@ -186,3 +209,51 @@ def _list_direct_messages(
         for message in registry.list_visible_messages(match_id=match_id, player_id=player_id)
         if message.channel == "direct"
     ]
+
+
+def _list_all_direct_messages(*, record: MatchRecord) -> list[MatchMessageRecord]:
+    return [
+        MatchMessageRecord(
+            message_id=message.message_id,
+            channel=message.channel,
+            sender_id=message.sender_id,
+            recipient_id=message.recipient_id,
+            tick=message.tick,
+            content=message.content,
+        )
+        for message in record.messages
+        if message.channel == "direct"
+    ]
+
+
+def _list_all_group_chats(*, record: MatchRecord) -> list[GroupChatRecord]:
+    return [
+        GroupChatRecord(
+            group_chat_id=group_chat.group_chat_id,
+            name=group_chat.name,
+            member_ids=list(group_chat.member_ids),
+            created_by=group_chat.created_by,
+            created_tick=group_chat.created_tick,
+        )
+        for group_chat in sorted(
+            record.group_chats, key=lambda group_chat: group_chat.group_chat_id
+        )
+    ]
+
+
+def _list_all_group_chat_messages(*, record: MatchRecord) -> list[GroupChatMessageRecord]:
+    visible_messages = [
+        GroupChatMessageRecord(
+            message_id=message.message_id,
+            group_chat_id=group_chat.group_chat_id,
+            sender_id=message.sender_id,
+            tick=message.tick,
+            content=message.content,
+        )
+        for group_chat in record.group_chats
+        for message in group_chat.messages
+    ]
+    return sorted(
+        visible_messages,
+        key=lambda message: (message.tick, message.group_chat_id, message.message_id),
+    )

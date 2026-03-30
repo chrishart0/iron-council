@@ -34,6 +34,9 @@ GPT-5 Codex
 - `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'registers_player_connection_and_sends_initial_fog_filtered_payload or registers_spectator_connection_and_sends_full_visibility_payload or world_message_broadcasts_refresh or private_chat_events_broadcast or command_envelope_message_writes_broadcast'`
 - `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py`
 - `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/e2e/test_api_smoke.py -k websocket`
+- `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'match_websocket or websocket_manager_drops_failed_and_slow_connections_and_realtime_builder_requires_match or private_chat_events_broadcast_refresh_with_full_spectator_visibility or command_envelope_message_writes_broadcast_private_chat_refresh or runtime_broadcasts_post_tick_payload_to_connected_player_and_spectator or world_message_broadcasts_refresh_to_connected_player_and_spectator'`
+- `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'canonical_token_without_player_id or match_websocket_accepts_legacy_path_and_api_key_alias'`
+- `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/e2e/test_api_smoke.py -k websocket`
 - `make format`
 - `uv sync --extra dev`
 - `make quality`
@@ -47,17 +50,19 @@ GPT-5 Codex
 - Reused the same realtime payload builder for initial sends and live fanout, and triggered refresh broadcasts for public world-message, treaty, and alliance writes so browser clients do not need to reconnect to observe public/chat-visible changes.
 - Follow-up fix: expanded player websocket payloads to include direct messages, visible group chats, and visible group-chat messages, while keeping spectator payloads public-only with empty private-chat fields.
 - Follow-up fix: triggered websocket refresh broadcasts for direct message writes, group-chat creation, group-chat message writes, and command-envelope message writes so connected players stay current without REST polling after chat-visible events.
+- Follow-up fix: added the documented canonical websocket route `/ws/match/{match_id}` and `token` query support while preserving `/ws/matches/{match_id}` and `api_key` as compatibility aliases; player identity now resolves from the auth token and only uses `player_id` as an optional consistency check.
+- Follow-up fix: aligned spectator payloads with the source architecture by exposing full map visibility and all chat channels, including direct messages, group-chat metadata, and group-chat messages.
+- Follow-up fix: changed websocket fanout from sequential awaits to bounded concurrent sends with per-socket timeout-based laggard eviction so one slow client does not stall the runtime broadcast path.
 - Added API-level websocket tests for initial payload shape, connection lifecycle, invalid viewer/auth cases, and public-event refresh, plus a real-process websocket smoke that proves both a player and a spectator receive a live tick-driven update.
-- Added API-level regressions that prove private direct/group chat refresh reaches connected player viewers and does not leak private chat state to spectators.
+- Added API-level regressions that prove private direct/group chat refresh reaches connected player viewers, remains fully visible to spectators per the architecture docs, and keeps legacy websocket compatibility working.
 
 ### File List
 
 - _bmad-output/implementation-artifacts/18-3-broadcast-live-match-updates-over-websockets-for-human-clients-and-spectators.md
 - _bmad-output/implementation-artifacts/sprint-status.yaml
-- server/agent_registry.py
+- _bmad-output/planning-artifacts/architecture.md
+- core-architecture.md
 - server/main.py
-- server/models/realtime.py
-- server/runtime.py
 - server/websocket.py
 - tests/api/test_agent_api.py
 - tests/e2e/test_api_smoke.py

@@ -390,21 +390,29 @@ def _resolve_websocket_player_viewer(
     registry: InMemoryMatchRegistry,
     match_id: str,
     player_id: str | None,
+    token: str | None,
     api_key: str | None,
 ) -> str:
-    if player_id is None or api_key is None:
+    credential = token or api_key
+    if credential is None:
         raise ApiError(
             status_code=HTTPStatus.UNAUTHORIZED,
             code="invalid_websocket_auth",
-            message="Player websocket connections require player_id and api_key query parameters.",
+            message=(
+                "Player websocket connections require a valid token query parameter. "
+                "The legacy api_key alias is also accepted."
+            ),
         )
 
-    authenticated_agent = registry.resolve_authenticated_agent(api_key)
+    authenticated_agent = registry.resolve_authenticated_agent(credential)
     if authenticated_agent is None:
         raise ApiError(
             status_code=HTTPStatus.UNAUTHORIZED,
             code="invalid_websocket_auth",
-            message="Player websocket connections require a valid active api_key.",
+            message=(
+                "Player websocket connections require a valid active token. "
+                "The legacy api_key alias is also accepted."
+            ),
         )
 
     resolved_player_id = _require_joined_player_id(
@@ -412,7 +420,7 @@ def _resolve_websocket_player_viewer(
         match_id=match_id,
         authenticated_agent=authenticated_agent,
     )
-    if resolved_player_id != player_id:
+    if player_id is not None and resolved_player_id != player_id:
         raise ApiError(
             status_code=HTTPStatus.FORBIDDEN,
             code="player_auth_mismatch",
@@ -517,12 +525,12 @@ def create_app(
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.websocket("/ws/matches/{match_id}")
-    async def match_websocket(
+    async def _handle_match_websocket(
         websocket: WebSocket,
         match_id: str,
         viewer: str = Query(default="spectator"),
         player_id: str | None = Query(default=None),
+        token: str | None = Query(default=None),
         api_key: str | None = Query(default=None),
     ) -> None:
         record = registry.get_match(match_id)
@@ -543,6 +551,7 @@ def create_app(
                     registry=registry,
                     match_id=match_id,
                     player_id=player_id,
+                    token=token,
                     api_key=api_key,
                 )
                 if viewer_role == "player"
@@ -574,6 +583,42 @@ def create_app(
             pass
         finally:
             websocket_manager.unregister(match_id=match_id, websocket=websocket)
+
+    @app.websocket("/ws/match/{match_id}")
+    async def match_websocket(
+        websocket: WebSocket,
+        match_id: str,
+        viewer: str = Query(default="spectator"),
+        player_id: str | None = Query(default=None),
+        token: str | None = Query(default=None),
+        api_key: str | None = Query(default=None),
+    ) -> None:
+        await _handle_match_websocket(
+            websocket=websocket,
+            match_id=match_id,
+            viewer=viewer,
+            player_id=player_id,
+            token=token,
+            api_key=api_key,
+        )
+
+    @app.websocket("/ws/matches/{match_id}")
+    async def legacy_match_websocket(
+        websocket: WebSocket,
+        match_id: str,
+        viewer: str = Query(default="spectator"),
+        player_id: str | None = Query(default=None),
+        token: str | None = Query(default=None),
+        api_key: str | None = Query(default=None),
+    ) -> None:
+        await _handle_match_websocket(
+            websocket=websocket,
+            match_id=match_id,
+            viewer=viewer,
+            player_id=player_id,
+            token=token,
+            api_key=api_key,
+        )
 
     api_router = APIRouter(prefix="/api/v1")
 

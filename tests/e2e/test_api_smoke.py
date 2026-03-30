@@ -119,11 +119,11 @@ def test_match_websocket_smoke_broadcasts_initial_and_tick_updates_for_player_an
     websocket_base_url = running_fast_tick_app.base_url.replace("http://", "ws://", 1)
     player_api_key = build_seeded_agent_api_key("agent-player-2")
     player_url = (
-        f"{websocket_base_url}/ws/matches/{running_fast_tick_app.primary_match_id}"
-        f"?viewer=player&player_id=player-2&api_key={player_api_key}"
+        f"{websocket_base_url}/ws/match/{running_fast_tick_app.primary_match_id}"
+        f"?viewer=player&player_id=player-2&token={player_api_key}"
     )
     spectator_url = (
-        f"{websocket_base_url}/ws/matches/{running_fast_tick_app.primary_match_id}?viewer=spectator"
+        f"{websocket_base_url}/ws/match/{running_fast_tick_app.primary_match_id}?viewer=spectator"
     )
 
     with (

@@ -2430,8 +2430,8 @@ def test_match_websocket_registers_player_connection_and_sends_initial_fog_filte
     manager = websocket_app.state.match_websocket_manager
 
     with websocket_client.websocket_connect(
-        "/ws/matches/match-alpha?viewer=player&player_id=player-2"
-        f"&api_key={build_seeded_agent_api_key('agent-player-2')}"
+        "/ws/match/match-alpha?viewer=player&player_id=player-2"
+        f"&token={build_seeded_agent_api_key('agent-player-2')}"
     ) as websocket:
         payload = websocket.receive_json()
 
@@ -2461,11 +2461,39 @@ def test_match_websocket_registers_player_connection_and_sends_initial_fog_filte
 
 
 def test_match_websocket_registers_spectator_connection_and_sends_full_visibility_payload(
+    seeded_registry: InMemoryMatchRegistry,
     websocket_client: TestClient,
 ) -> None:
-    with websocket_client.websocket_connect(
-        "/ws/matches/match-alpha?viewer=spectator"
-    ) as websocket:
+    seeded_registry.record_message(
+        match_id="match-alpha",
+        message=MatchMessageCreateRequest.model_validate(
+            _message_payload(
+                tick=142,
+                channel="direct",
+                recipient_id="player-2",
+                content="Fresh direct ping.",
+            )
+        ),
+        sender_id="player-1",
+    )
+    created_group_chat = seeded_registry.create_group_chat(
+        match_id="match-alpha",
+        request=GroupChatCreateRequest.model_validate(
+            _group_chat_create_payload(member_ids=["player-2"])
+        ),
+        creator_id="player-1",
+    )
+    seeded_registry.record_group_chat_message(
+        match_id="match-alpha",
+        group_chat_id=created_group_chat.group_chat_id,
+        message=GroupChatMessageCreateRequest(
+            match_id="match-alpha",
+            tick=142,
+            content="Fresh group note.",
+        ),
+        sender_id="player-2",
+    )
+    with websocket_client.websocket_connect("/ws/match/match-alpha?viewer=spectator") as websocket:
         payload = websocket.receive_json()
 
     assert payload["type"] == "tick_update"
@@ -2475,9 +2503,34 @@ def test_match_websocket_registers_spectator_connection_and_sends_full_visibilit
     assert payload["data"]["state"]["cities"]["birmingham"]["garrison"] == 7
     assert payload["data"]["state"]["players"]["player-2"]["resources"]["money"] == 110
     assert payload["data"]["state"]["armies"][0]["id"] == "army-a"
-    assert payload["data"]["direct_messages"] == []
-    assert payload["data"]["group_chats"] == []
-    assert payload["data"]["group_messages"] == []
+    assert payload["data"]["direct_messages"] == [
+        {
+            "message_id": 0,
+            "channel": "direct",
+            "sender_id": "player-1",
+            "recipient_id": "player-2",
+            "tick": 142,
+            "content": "Fresh direct ping.",
+        }
+    ]
+    assert payload["data"]["group_chats"] == [
+        {
+            "group_chat_id": "group-chat-1",
+            "name": "War Council",
+            "member_ids": ["player-1", "player-2"],
+            "created_by": "player-1",
+            "created_tick": 142,
+        }
+    ]
+    assert payload["data"]["group_messages"] == [
+        {
+            "message_id": 0,
+            "group_chat_id": "group-chat-1",
+            "sender_id": "player-2",
+            "tick": 142,
+            "content": "Fresh group note.",
+        }
+    ]
 
 
 def test_match_websocket_unregisters_connection_on_disconnect(
@@ -2486,7 +2539,7 @@ def test_match_websocket_unregisters_connection_on_disconnect(
 ) -> None:
     manager = websocket_app.state.match_websocket_manager
 
-    with websocket_client.websocket_connect("/ws/matches/match-alpha?viewer=spectator"):
+    with websocket_client.websocket_connect("/ws/match/match-alpha?viewer=spectator"):
         assert manager.connection_count("match-alpha") == 1
 
     assert manager.connection_count("match-alpha") == 0
@@ -2497,8 +2550,8 @@ def test_match_websocket_rejects_player_connection_when_api_key_does_not_match_p
 ) -> None:
     with pytest.raises(WebSocketDisconnect):
         with websocket_client.websocket_connect(
-            "/ws/matches/match-alpha?viewer=player&player_id=player-2"
-            f"&api_key={build_seeded_agent_api_key('agent-player-3')}"
+            "/ws/match/match-alpha?viewer=player&player_id=player-2"
+            f"&token={build_seeded_agent_api_key('agent-player-3')}"
         ):
             pass
 
@@ -2508,20 +2561,47 @@ def test_match_websocket_rejects_player_connection_without_required_auth_query_p
 ) -> None:
     with pytest.raises(WebSocketDisconnect):
         with websocket_client.websocket_connect(
-            "/ws/matches/match-alpha?viewer=player&player_id=player-2"
+            "/ws/match/match-alpha?viewer=player&player_id=player-2"
         ):
             pass
+
+
+def test_match_websocket_resolves_player_from_canonical_token_without_player_id(
+    websocket_client: TestClient,
+) -> None:
+    with websocket_client.websocket_connect(
+        f"/ws/match/match-alpha?viewer=player&token={build_seeded_agent_api_key('agent-player-2')}"
+    ) as websocket:
+        payload = websocket.receive_json()
+
+    assert payload["type"] == "tick_update"
+    assert payload["data"]["viewer_role"] == "player"
+    assert payload["data"]["player_id"] == "player-2"
+
+
+def test_match_websocket_accepts_legacy_path_and_api_key_alias(
+    websocket_client: TestClient,
+) -> None:
+    with websocket_client.websocket_connect(
+        "/ws/matches/match-alpha?viewer=player&player_id=player-2"
+        f"&api_key={build_seeded_agent_api_key('agent-player-2')}"
+    ) as websocket:
+        payload = websocket.receive_json()
+
+    assert payload["type"] == "tick_update"
+    assert payload["data"]["viewer_role"] == "player"
+    assert payload["data"]["player_id"] == "player-2"
 
 
 def test_match_websocket_rejects_invalid_viewer_and_unknown_match(
     websocket_client: TestClient,
 ) -> None:
     with pytest.raises(WebSocketDisconnect):
-        with websocket_client.websocket_connect("/ws/matches/match-alpha?viewer=marshal"):
+        with websocket_client.websocket_connect("/ws/match/match-alpha?viewer=marshal"):
             pass
 
     with pytest.raises(WebSocketDisconnect):
-        with websocket_client.websocket_connect("/ws/matches/match-missing?viewer=spectator"):
+        with websocket_client.websocket_connect("/ws/match/match-missing?viewer=spectator"):
             pass
 
 
@@ -2530,11 +2610,11 @@ def test_world_message_broadcasts_refresh_to_connected_player_and_spectator(
 ) -> None:
     with (
         websocket_client.websocket_connect(
-            "/ws/matches/match-alpha?viewer=player&player_id=player-2"
-            f"&api_key={build_seeded_agent_api_key('agent-player-2')}"
+            "/ws/match/match-alpha?viewer=player&player_id=player-2"
+            f"&token={build_seeded_agent_api_key('agent-player-2')}"
         ) as player_socket,
         websocket_client.websocket_connect(
-            "/ws/matches/match-alpha?viewer=spectator"
+            "/ws/match/match-alpha?viewer=spectator"
         ) as spectator_socket,
     ):
         player_socket.receive_json()
@@ -2554,20 +2634,20 @@ def test_world_message_broadcasts_refresh_to_connected_player_and_spectator(
     assert spectator_update["data"]["world_messages"][-1]["content"] == "War drums."
 
 
-def test_private_chat_events_broadcast_player_refresh_without_leaking_to_spectator(
+def test_private_chat_events_broadcast_refresh_with_full_spectator_visibility(
     websocket_client: TestClient,
 ) -> None:
     with (
         websocket_client.websocket_connect(
-            "/ws/matches/match-alpha?viewer=player&player_id=player-1"
-            f"&api_key={build_seeded_agent_api_key('agent-player-1')}"
+            "/ws/match/match-alpha?viewer=player&player_id=player-1"
+            f"&token={build_seeded_agent_api_key('agent-player-1')}"
         ) as player_one_socket,
         websocket_client.websocket_connect(
-            "/ws/matches/match-alpha?viewer=player&player_id=player-2"
-            f"&api_key={build_seeded_agent_api_key('agent-player-2')}"
+            "/ws/match/match-alpha?viewer=player&player_id=player-2"
+            f"&token={build_seeded_agent_api_key('agent-player-2')}"
         ) as player_two_socket,
         websocket_client.websocket_connect(
-            "/ws/matches/match-alpha?viewer=spectator"
+            "/ws/match/match-alpha?viewer=spectator"
         ) as spectator_socket,
     ):
         player_one_socket.receive_json()
@@ -2619,9 +2699,9 @@ def test_private_chat_events_broadcast_player_refresh_without_leaking_to_spectat
     assert (
         player_two_direct_update["data"]["direct_messages"][-1]["content"] == "Quiet flank update."
     )
-    assert spectator_direct_update["data"]["direct_messages"] == []
-    assert spectator_direct_update["data"]["group_chats"] == []
-    assert spectator_direct_update["data"]["group_messages"] == []
+    assert (
+        spectator_direct_update["data"]["direct_messages"][-1]["content"] == "Quiet flank update."
+    )
 
     assert create_response.status_code == HTTPStatus.ACCEPTED
     assert player_one_group_create_update["data"]["group_chats"] == [
@@ -2642,7 +2722,15 @@ def test_private_chat_events_broadcast_player_refresh_without_leaking_to_spectat
             "created_tick": 142,
         }
     ]
-    assert spectator_group_create_update["data"]["group_chats"] == []
+    assert spectator_group_create_update["data"]["group_chats"] == [
+        {
+            "group_chat_id": "group-chat-1",
+            "name": "War Council",
+            "member_ids": ["player-1", "player-2"],
+            "created_by": "player-1",
+            "created_tick": 142,
+        }
+    ]
 
     assert group_message_response.status_code == HTTPStatus.ACCEPTED
     assert player_one_group_message_update["data"]["group_messages"] == [
@@ -2663,7 +2751,15 @@ def test_private_chat_events_broadcast_player_refresh_without_leaking_to_spectat
             "content": "Advance at dawn.",
         }
     ]
-    assert spectator_group_message_update["data"]["group_messages"] == []
+    assert spectator_group_message_update["data"]["group_messages"] == [
+        {
+            "message_id": 0,
+            "group_chat_id": "group-chat-1",
+            "sender_id": "player-2",
+            "tick": 142,
+            "content": "Advance at dawn.",
+        }
+    ]
 
 
 def test_command_envelope_message_writes_broadcast_private_chat_refresh(
@@ -2677,15 +2773,15 @@ def test_command_envelope_message_writes_broadcast_private_chat_refresh(
 
     with (
         websocket_client.websocket_connect(
-            "/ws/matches/match-alpha?viewer=player&player_id=player-1"
-            f"&api_key={build_seeded_agent_api_key('agent-player-1')}"
+            "/ws/match/match-alpha?viewer=player&player_id=player-1"
+            f"&token={build_seeded_agent_api_key('agent-player-1')}"
         ) as player_one_socket,
         websocket_client.websocket_connect(
-            "/ws/matches/match-alpha?viewer=player&player_id=player-2"
-            f"&api_key={build_seeded_agent_api_key('agent-player-2')}"
+            "/ws/match/match-alpha?viewer=player&player_id=player-2"
+            f"&token={build_seeded_agent_api_key('agent-player-2')}"
         ) as player_two_socket,
         websocket_client.websocket_connect(
-            "/ws/matches/match-alpha?viewer=spectator"
+            "/ws/match/match-alpha?viewer=spectator"
         ) as spectator_socket,
     ):
         player_one_socket.receive_json()
@@ -2720,9 +2816,17 @@ def test_command_envelope_message_writes_broadcast_private_chat_refresh(
     assert player_two_update["data"]["direct_messages"][-1]["content"] == "Envelope direct update."
     assert player_one_update["data"]["group_messages"][-1]["content"] == "Envelope group update."
     assert player_two_update["data"]["group_messages"][-1]["content"] == "Envelope group update."
-    assert spectator_update["data"]["direct_messages"] == []
-    assert spectator_update["data"]["group_messages"] == []
-    assert spectator_update["data"]["group_chats"] == []
+    assert spectator_update["data"]["direct_messages"][-1]["content"] == "Envelope direct update."
+    assert spectator_update["data"]["group_messages"][-1]["content"] == "Envelope group update."
+    assert spectator_update["data"]["group_chats"] == [
+        {
+            "group_chat_id": "group-chat-1",
+            "name": "War Council",
+            "member_ids": ["player-1", "player-2"],
+            "created_by": "player-1",
+            "created_tick": 142,
+        }
+    ]
 
 
 def test_runtime_broadcasts_post_tick_payload_to_connected_player_and_spectator(
@@ -2737,12 +2841,10 @@ def test_runtime_broadcasts_post_tick_payload_to_connected_player_and_spectator(
     ) as client:
         with (
             client.websocket_connect(
-                "/ws/matches/match-alpha?viewer=player&player_id=player-2"
-                f"&api_key={build_seeded_agent_api_key('agent-player-2')}"
+                "/ws/match/match-alpha?viewer=player&player_id=player-2"
+                f"&token={build_seeded_agent_api_key('agent-player-2')}"
             ) as player_socket,
-            client.websocket_connect(
-                "/ws/matches/match-alpha?viewer=spectator"
-            ) as spectator_socket,
+            client.websocket_connect("/ws/match/match-alpha?viewer=spectator") as spectator_socket,
         ):
             initial_player = player_socket.receive_json()
             initial_spectator = spectator_socket.receive_json()
@@ -2781,21 +2883,32 @@ def test_runtime_broadcasts_post_tick_payload_to_connected_player_and_spectator(
 
 
 @pytest.mark.asyncio
-async def test_websocket_manager_drops_failed_connections_and_realtime_builder_requires_match(
+async def test_websocket_manager_drops_failed_and_slow_connections(
     seeded_registry: InMemoryMatchRegistry,
 ) -> None:
     class FailingSocket:
         async def send_json(self, _: dict[str, Any]) -> None:
             raise RuntimeError("disconnect")
 
+    class SlowSocket:
+        async def send_json(self, _: dict[str, Any]) -> None:
+            await asyncio.sleep(0.2)
+
     manager = MatchWebSocketManager()
     socket = FailingSocket()
+    slow_socket = SlowSocket()
     manager.register(
         match_id="match-alpha",
         websocket=socket,  # type: ignore[arg-type]
         viewer_role="spectator",
     )
+    manager.register(
+        match_id="match-alpha",
+        websocket=slow_socket,  # type: ignore[arg-type]
+        viewer_role="spectator",
+    )
 
+    started = asyncio.get_running_loop().time()
     await manager.broadcast(
         match_id="match-alpha",
         payload_factory=lambda _: build_match_realtime_envelope(
@@ -2804,8 +2917,10 @@ async def test_websocket_manager_drops_failed_connections_and_realtime_builder_r
             viewer_role="spectator",
         ),
     )
+    elapsed = asyncio.get_running_loop().time() - started
 
     assert manager.connection_count("match-alpha") == 0
+    assert elapsed < 0.2
     with pytest.raises(ValueError, match="match-missing"):
         build_match_realtime_envelope(
             registry=seeded_registry,
