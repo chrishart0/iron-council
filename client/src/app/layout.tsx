@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AppShell } from "../components/navigation/app-shell";
+import { SessionProvider } from "../components/session/session-provider";
 
 export const metadata: Metadata = {
   title: "Iron Council Client",
-  description: "Public match browser for Iron Council"
+  description: "Client session bootstrap and public match browser for Iron Council"
 };
 
 export default function RootLayout({
@@ -13,7 +15,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <SessionProvider>
+          <AppShell>{children}</AppShell>
+        </SessionProvider>
+      </body>
     </html>
   );
 }

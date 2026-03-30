@@ -1,6 +1,6 @@
 import type { MatchListResponse, MatchSummary } from "./types";
+import { DEFAULT_API_BASE_URL, normalizeApiBaseUrl } from "./session-storage";
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 const PUBLIC_MATCHES_ERROR_MESSAGE = "Unable to load public matches right now.";
 
 export class PublicMatchesError extends Error {
@@ -11,9 +11,10 @@ export class PublicMatchesError extends Error {
 }
 
 export async function fetchPublicMatches(
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
 ): Promise<MatchListResponse> {
-  const response = await fetchImpl(`${resolveApiBaseUrl()}/api/v1/matches`, {
+  const response = await fetchImpl(`${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches`, {
     cache: "no-store",
     headers: {
       accept: "application/json"
@@ -33,12 +34,12 @@ export async function fetchPublicMatches(
   return payload;
 }
 
-function resolveApiBaseUrl(): string {
-  const configuredBaseUrl = process.env.IRON_COUNCIL_API_BASE_URL?.trim();
+function resolveApiBaseUrl(explicitBaseUrl?: string): string {
+  if (explicitBaseUrl) {
+    return normalizeApiBaseUrl(explicitBaseUrl);
+  }
 
-  return configuredBaseUrl && configuredBaseUrl.length > 0
-    ? configuredBaseUrl.replace(/\/$/, "")
-    : DEFAULT_API_BASE_URL;
+  return DEFAULT_API_BASE_URL;
 }
 
 function isMatchListResponse(payload: unknown): payload is MatchListResponse {

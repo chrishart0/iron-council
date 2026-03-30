@@ -27,6 +27,75 @@ a {
   padding: 2rem 0 3rem;
 }
 
+.app-shell {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.app-shell-body {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.9fr);
+  align-items: start;
+}
+
+.app-shell-main,
+.app-shell-sidebar {
+  min-width: 0;
+}
+
+.site-header {
+  padding: 1.25rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+  color: #6d5a3f;
+}
+
+.site-header h1 {
+  margin: 0;
+}
+
+.nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.nav-links a {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.session-summary {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.session-summary div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.session-summary dt {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6d5a3f;
+}
+
+.session-summary dd {
+  margin: 0;
+  word-break: break-word;
+}
+
 .hero {
   display: grid;
   gap: 1rem;
@@ -74,6 +143,51 @@ a {
   background: rgba(255, 252, 247, 0.9);
   box-shadow: 0 18px 45px rgba(80, 58, 24, 0.08);
   overflow: hidden;
+}
+
+.panel-section {
+  padding: 1.25rem 1.25rem 0;
+}
+
+.panel-section h2 {
+  margin: 0 0 0.5rem;
+}
+
+.panel-section p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.session-form {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.field span {
+  font-weight: 600;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(80, 58, 24, 0.2);
+  border-radius: 0.75rem;
+  background: #fffdfa;
+  color: inherit;
+  font: inherit;
+}
+
+.helper-text {
+  margin: 0;
+  line-height: 1.5;
+  color: #503a18;
 }
 
 .table-wrap {
@@ -132,6 +246,10 @@ a {
   .shell {
     width: min(100%, calc(100% - 1rem));
     padding-top: 1rem;
+  }
+
+  .app-shell-body {
+    grid-template-columns: 1fr;
   }
 
   .matches-table th,

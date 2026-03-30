@@ -1,6 +1,6 @@
 # Story 24.3: Add client-side auth/session bootstrap for future human flows
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -16,16 +16,16 @@ So that later browse, lobby, and live-match pages can reuse one simple session s
 
 ## Tasks / Subtasks
 
-- [ ] Add a narrow client session/bootstrap seam for runtime config and auth state. (AC: 1)
-  - [ ] Keep the session shape small: API base URL, auth token presence/state, and a minimal signed-in label.
-  - [ ] Persist the configured browser state in the simplest boring way that survives refreshes.
-- [ ] Add public vs authenticated navigation and a reusable guard helper. (AC: 1, 2)
-  - [ ] Keep `/` and `/matches` public.
-  - [ ] Introduce a clearly-marked authenticated-only route shell for later stories rather than implementing lobby actions now.
-- [ ] Document and verify the new client bootstrap flow. (AC: 3)
-  - [ ] Add behavior-first client tests for session persistence/guard behavior.
-  - [ ] Update local run docs with the exact setup flow.
-  - [ ] Re-run the repo quality gate after the story lands.
+- [x] Add a narrow client session/bootstrap seam for runtime config and auth state. (AC: 1)
+  - [x] Keep the session shape small: API base URL, auth token presence/state, and a minimal signed-in label.
+  - [x] Persist the configured browser state in the simplest boring way that survives refreshes.
+- [x] Add public vs authenticated navigation and a reusable guard helper. (AC: 1, 2)
+  - [x] Keep `/` and `/matches` public.
+  - [x] Introduce a clearly-marked authenticated-only route shell for later stories rather than implementing lobby actions now.
+- [x] Document and verify the new client bootstrap flow. (AC: 3)
+  - [x] Add behavior-first client tests for session persistence/guard behavior.
+  - [x] Update local run docs with the exact setup flow.
+  - [x] Re-run the repo quality gate after the story lands.
 
 ## Dev Notes
 
@@ -53,16 +53,54 @@ So that later browse, lobby, and live-match pages can reuse one simple session s
 
 ### Agent Model Used
 
-Pending
+GPT-5 Codex
 
 ### Debug Log References
 
-- Pending
+- 2026-03-30: `cd client && npm test` (red phase: expected failures for missing session/bootstrap modules and explicit API base URL override behavior)
+- 2026-03-30: `cd client && npm test -- --run src/lib/api.test.ts src/components/session/session-provider.test.tsx src/components/navigation/protected-route.test.tsx` (red phase follow-up: expected failures for browser env removal and protected-route hydration gating)
+- 2026-03-30: `cd client && npm test -- --run src/components/matches/public-matches-page.test.tsx` (follow-up regression: proves `/matches` waits for session hydration so the first public request uses the stored browser API base URL)
+- 2026-03-30: `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_local_dev_docs.py` (red phase follow-up: expected README/env contract failure before docs sync)
+- 2026-03-30: `make client-install`
+- 2026-03-30: `make client-lint`
+- 2026-03-30: `make client-test`
+- 2026-03-30: `make client-build`
+- 2026-03-30: `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_local_dev_docs.py`
+- 2026-03-30: `make install` (required to sync the locked dev environment before rerunning the full quality gate)
+- 2026-03-30: `make quality`
 
 ### Completion Notes List
 
-- Pending
+- Added a small localStorage-backed browser session seam for API base URL, optional human bearer token, and derived auth status, exposed through a shared provider/context in the root client layout.
+- Kept `/` and `/matches` public while adding a clearly labeled `/lobby` authenticated placeholder route that reuses the same shared session shell instead of page-local auth logic.
+- Moved public match loading onto a tiny client component so the stored browser API base URL actually drives the public browse request path.
+- Added behavior-first client tests for session rehydration/persistence, protected-route rendering, config form behavior, and the explicit API base URL override path.
+- Follow-up fix: removed unsupported browser reads of `IRON_COUNCIL_API_BASE_URL`, so the shipped client now defaults to `http://127.0.0.1:8000` unless the browser session form stores an override.
+- Follow-up fix: exposed explicit session hydration state and gated `ProtectedRoute` on it so a stored bearer token no longer flashes the unauthenticated guard during localStorage rehydration.
+- Follow-up fix: gated the `/matches` public fetch on session hydration so a saved browser API base URL controls the very first browse request instead of allowing an initial fetch against the baked-in default URL.
+- Updated the README and local client env example with the exact browser-session bootstrap flow for public pages and future authenticated human routes, matching the no-browser-env contract exactly.
+- Synced the locked Python dev environment with `make install` after the initial `make quality` attempt failed because `mypy` was not yet installed in the worktree `.venv`, then reran `make quality` successfully.
 
 ### File List
 
-- Pending
+- `README.md`
+- `client/.env.example`
+- `client/src/app/globals.css`
+- `client/src/app/layout.tsx`
+- `client/src/app/lobby/page.tsx`
+- `client/src/app/matches/page.tsx`
+- `client/src/app/page.tsx`
+- `client/src/components/matches/public-matches-page.tsx`
+- `client/src/components/matches/public-matches-page.test.tsx`
+- `client/src/components/navigation/app-shell.tsx`
+- `client/src/components/navigation/protected-route.test.tsx`
+- `client/src/components/navigation/protected-route.tsx`
+- `client/src/components/session/session-config-panel.test.tsx`
+- `client/src/components/session/session-config-panel.tsx`
+- `client/src/components/session/session-context.ts`
+- `client/src/components/session/session-provider.test.tsx`
+- `client/src/components/session/session-provider.tsx`
+- `client/src/lib/api.test.ts`
+- `client/src/lib/api.ts`
+- `client/src/lib/session-storage.ts`
+- `tests/test_local_dev_docs.py`

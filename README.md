@@ -154,13 +154,21 @@ Then run the client in another shell:
 
 ```bash
 cd client
-cp .env.example .env.local
 npm run dev
 ```
 
-Visit `http://127.0.0.1:3000/matches` to browse the live public match list. The
-client reads `IRON_COUNCIL_API_BASE_URL` from `client/.env.local`; the default local
-server target is `http://127.0.0.1:8000`.
+Visit `http://127.0.0.1:3000/matches` to browse the live public match list, or
+`http://127.0.0.1:3000/lobby` to see the authenticated placeholder shell. No client env vars are required.
+The browser defaults to the local server target `http://127.0.0.1:8000`.
+
+The browser session panel stores the API base URL and optional token in local
+storage:
+
+- the API base URL for public and future authenticated requests
+- an optional human bearer token for later human-only lobby/gameplay flows
+
+Public pages stay available without auth. Save a human bearer token in the browser
+session panel only when you want to exercise the authenticated placeholder flow.
 
 The repo quality gate now includes the client checks:
 

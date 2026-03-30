@@ -48,11 +48,17 @@ def test_readme_documents_real_process_api_targets_and_db_registry_mode() -> Non
 
 def test_readme_documents_public_match_browser_client_workflow() -> None:
     readme = (REPO_ROOT / "README.md").read_text()
+    client_env_example = (REPO_ROOT / "client" / ".env.example").read_text()
 
     assert "make client-install" in readme
     assert "npm run dev" in readme
     assert "http://127.0.0.1:3000/matches" in readme
-    assert "IRON_COUNCIL_API_BASE_URL" in readme
+    assert "http://127.0.0.1:3000/lobby" in readme
+    assert "No client env vars are required" in readme
+    assert "browser session panel stores the API base URL" in readme
+    assert "human bearer token" in readme
+    assert "Public pages stay available without auth" in readme
     assert "make client-lint" in readme
     assert "make client-test" in readme
     assert "make client-build" in readme
+    assert "No client environment variables are required for this story." in client_env_example
