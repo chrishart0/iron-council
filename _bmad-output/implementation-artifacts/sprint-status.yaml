@@ -1,4 +1,4 @@
-generated: 2026-03-30 00:00 UTC
+generated: 2026-03-30 01:45 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
@@ -93,3 +93,7 @@ development_status:
   18-1-launch-an-in-process-async-tick-loop-for-active-matches: done
   18-2-persist-live-tick-advancement-and-write-tick-log-history: done
   18-3-broadcast-live-match-updates-over-websockets-for-human-clients-and-spectators: done
+
+  epic-19: in_progress
+  19-1-expose-persisted-tick-history-and-replay-snapshots: in_progress
+  19-2-add-public-leaderboard-and-completed-match-summary-reads: backlog

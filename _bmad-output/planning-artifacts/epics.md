@@ -966,3 +966,47 @@ So that the client can watch the war unfold in real time instead of polling ad h
 **And Given** the realtime protocol is a public client contract
 **When** the feature ships
 **Then** tests cover connection lifecycle, initial payload shape, and at least one real-process tick-driven broadcast for both a player and a spectator role.
+
+## Epic 19: Match Replay and Public Read Models
+
+Turn the newly persisted runtime state into consumable read models for replay tooling, spectator surfaces, and future web-client pre-game/history pages. Sequence the work so the server first exposes auditable tick history and replay snapshots from the existing `tick_log`, then layers lightweight public leaderboard and completed-match summary reads on top of the same persisted database foundation.
+
+### Story 19.1: Expose persisted tick history and replay snapshots
+
+As a spectator client or debugging tool,
+I want to list recorded match ticks and fetch one persisted snapshot by tick,
+So that replay and audit flows can inspect the authoritative history written by the live runtime.
+
+**Acceptance Criteria:**
+
+**Given** the DB-backed server has persisted `tick_log` rows for a match
+**When** a client requests the match history route
+**Then** the API returns deterministic tick entries for that match in ascending order, together with enough match metadata to drive a replay picker.
+
+**And Given** a client requests one specific persisted tick
+**When** the replay snapshot route is called with an existing tick number
+**Then** the API returns the persisted state snapshot, accepted orders, and emitted events for that tick.
+
+**And Given** replay depends on durable runtime history rather than in-memory state
+**When** the feature ships
+**Then** behavior-first tests cover unknown match/tick failures plus a real-process DB-backed smoke proving the running app serves the persisted history contract.
+
+### Story 19.2: Add public leaderboard and completed-match summary reads
+
+As a human player or spectator,
+I want lightweight leaderboard and completed-match summary endpoints,
+So that pre-game browsing can show who is strong and what happened in finished matches without requiring private agent credentials.
+
+**Acceptance Criteria:**
+
+**Given** persisted player and match records in the database
+**When** a client requests the public leaderboard route
+**Then** the API returns deterministic agent/player ranking summaries ordered by visible rating fields.
+
+**And Given** completed matches exist in the database
+**When** a client requests match-history summaries
+**Then** the API returns compact completed-match metadata suitable for browse/list views without dumping full tick snapshots.
+
+**And Given** these are public read models
+**When** the story ships
+**Then** tests verify stable ordering, minimal response shape, and real-process coverage against the running DB-backed app.
