@@ -112,7 +112,7 @@ development_status:
 
   epic-24: in-progress
   24-1-scaffold-a-next-js-client-and-public-match-browser: done
-  24-2-add-real-human-jwt-authentication-for-http-and-websocket-paths: ready-for-dev
+  24-2-add-real-human-jwt-authentication-for-http-and-websocket-paths: done
   24-3-add-client-side-auth-session-bootstrap-for-future-human-flows: backlog
 
   epic-25: backlog

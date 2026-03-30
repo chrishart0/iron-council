@@ -135,3 +135,20 @@ def test_get_settings_normalizes_legacy_postgresql_scheme_to_psycopg(tmp_path: P
     assert settings.database_url.startswith(
         "postgresql+psycopg://legacy-user:legacy-password@127.0.0.1:54321/legacy_db_iron_12_3_"
     )
+
+
+def test_get_settings_loads_human_jwt_configuration(tmp_path: Path) -> None:
+    env_file = tmp_path / "env.local"
+    env_file.write_text(
+        "HUMAN_JWT_SECRET=test-human-secret-key-material-1234\n"
+        "HUMAN_JWT_ISSUER=https://supabase.test/auth/v1\n"
+        "HUMAN_JWT_AUDIENCE=authenticated\n"
+        "HUMAN_JWT_REQUIRED_ROLE=authenticated\n"
+    )
+
+    settings = get_settings(env={}, env_file=env_file, worktree_path=Path("/tmp/iron-12-3"))
+
+    assert settings.human_jwt_secret == "test-human-secret-key-material-1234"
+    assert settings.human_jwt_issuer == "https://supabase.test/auth/v1"
+    assert settings.human_jwt_audience == "authenticated"
+    assert settings.human_jwt_required_role == "authenticated"

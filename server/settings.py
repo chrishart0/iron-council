@@ -19,6 +19,10 @@ _MAX_IDENTIFIER_LENGTH = 63
 @dataclass(frozen=True)
 class Settings:
     database_url: str
+    human_jwt_secret: str | None = None
+    human_jwt_issuer: str | None = None
+    human_jwt_audience: str | None = None
+    human_jwt_required_role: str = "authenticated"
 
 
 def get_settings(
@@ -39,7 +43,16 @@ def get_settings(
         worktree_path=worktree_path or Path.cwd(),
         lane=current_env.get(DB_LANE_VARIABLE),
     )
-    return Settings(database_url=database_url)
+    return Settings(
+        database_url=database_url,
+        human_jwt_secret=current_env.get("HUMAN_JWT_SECRET") or file_values.get("HUMAN_JWT_SECRET"),
+        human_jwt_issuer=current_env.get("HUMAN_JWT_ISSUER") or file_values.get("HUMAN_JWT_ISSUER"),
+        human_jwt_audience=current_env.get("HUMAN_JWT_AUDIENCE")
+        or file_values.get("HUMAN_JWT_AUDIENCE"),
+        human_jwt_required_role=current_env.get("HUMAN_JWT_REQUIRED_ROLE")
+        or file_values.get("HUMAN_JWT_REQUIRED_ROLE")
+        or "authenticated",
+    )
 
 
 def derive_worktree_database_url(

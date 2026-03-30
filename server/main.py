@@ -32,7 +32,12 @@ from server.agent_registry import (
     MatchRecord,
     TreatyTransitionError,
 )
-from server.auth import hash_api_key
+from server.auth import (
+    HumanJwtValidationError,
+    extract_bearer_token,
+    hash_api_key,
+    validate_human_jwt,
+)
 from server.db.registry import (
     MatchHistoryNotFoundError,
     MatchLobbyCreationError,
@@ -49,6 +54,7 @@ from server.db.registry import (
     load_match_registry_from_database,
     persist_advanced_match_tick,
     resolve_authenticated_agent_context_from_db,
+    resolve_human_player_id_from_db,
     start_match_lobby,
 )
 from server.db.registry import (
@@ -99,7 +105,7 @@ from server.models.fog import AgentStateProjection
 from server.models.orders import OrderEnvelope
 from server.models.realtime import RealtimeViewerRole
 from server.runtime import MatchRuntime
-from server.settings import get_settings
+from server.settings import Settings, get_settings
 from server.websocket import (
     MatchWebSocketManager,
     broadcast_match_update,
@@ -125,6 +131,7 @@ MatchRegistryDependency = Annotated[InMemoryMatchRegistry, Depends(get_match_reg
 TickPersistence = Callable[[AdvancedMatchTick], None]
 _DEFAULT_TICK_PERSISTENCE: Final = object()
 ApiKeyHeader = Annotated[str | None, Header(alias="X-API-Key")]
+AuthorizationHeader = Annotated[str | None, Header(alias="Authorization")]
 API_ERROR_RESPONSE_SCHEMA: dict[str, Any] = {"model": ApiErrorResponse}
 AUTHENTICATED_API_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
@@ -453,40 +460,114 @@ def _require_joined_player_id(
         ) from exc
 
 
-def _resolve_websocket_player_viewer(
+def _require_joined_human_player_id(
     *,
     registry: InMemoryMatchRegistry,
     match_id: str,
-    player_id: str | None,
-    token: str | None,
-    api_key: str | None,
+    user_id: str,
 ) -> str:
-    credential = token or api_key
-    if credential is None:
+    try:
+        return registry.require_joined_human_player_id(match_id=match_id, user_id=user_id)
+    except MatchAccessError as exc:
         raise ApiError(
-            status_code=HTTPStatus.UNAUTHORIZED,
-            code="invalid_websocket_auth",
-            message=(
-                "Player websocket connections require a valid token query parameter. "
-                "The legacy api_key alias is also accepted."
-            ),
-        )
+            status_code=HTTPStatus.BAD_REQUEST,
+            code=exc.code,
+            message=exc.message,
+        ) from exc
 
-    authenticated_agent = registry.resolve_authenticated_agent(credential)
-    if authenticated_agent is None:
+
+def _resolve_human_player_id(
+    *,
+    registry: InMemoryMatchRegistry,
+    match_id: str,
+    user_id: str,
+) -> str:
+    resolved_player_id = registry.get_match(match_id)
+    if resolved_player_id is None:
         raise ApiError(
-            status_code=HTTPStatus.UNAUTHORIZED,
-            code="invalid_websocket_auth",
-            message=(
-                "Player websocket connections require a valid active token. "
-                "The legacy api_key alias is also accepted."
-            ),
+            status_code=HTTPStatus.NOT_FOUND,
+            code="match_not_found",
+            message=f"Match '{match_id}' was not found.",
         )
-
-    resolved_player_id = _require_joined_player_id(
+    if history_database_url := _load_history_database_url():
+        db_player_id = resolve_human_player_id_from_db(
+            database_url=history_database_url,
+            match_id=match_id,
+            user_id=user_id,
+        )
+        if db_player_id is not None:
+            return db_player_id
+    return _require_joined_human_player_id(
         registry=registry,
         match_id=match_id,
-        authenticated_agent=authenticated_agent,
+        user_id=user_id,
+    )
+
+
+def _resolve_match_player_id(
+    *,
+    registry: InMemoryMatchRegistry,
+    settings: Settings,
+    match_id: str,
+    api_key: str | None,
+    authorization: str | None,
+) -> str:
+    if api_key is not None:
+        authenticated_agent = get_authenticated_agent(registry=registry, api_key=api_key)
+        return _require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=authenticated_agent,
+        )
+    if authorization is None:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code="invalid_player_auth",
+            message="Player routes require a valid Bearer token or active X-API-Key header.",
+        )
+    try:
+        token = extract_bearer_token(authorization)
+        human_context = validate_human_jwt(token, settings=settings)
+    except HumanJwtValidationError as exc:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code=exc.code,
+            message=exc.message,
+        ) from exc
+    return _resolve_human_player_id(
+        registry=registry,
+        match_id=match_id,
+        user_id=human_context.user_id,
+    )
+
+
+def _resolve_websocket_player_viewer(
+    *,
+    registry: InMemoryMatchRegistry,
+    settings: Settings,
+    match_id: str,
+    player_id: str | None,
+    token: str | None,
+) -> str:
+    if token is None:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code="invalid_websocket_auth",
+            message="Player websocket connections require a valid human JWT token query parameter.",
+        )
+    try:
+        human_context = validate_human_jwt(token, settings=settings)
+    except HumanJwtValidationError as exc:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code="invalid_websocket_auth",
+            message=exc.message,
+        ) from exc
+
+    resolved_player_id = _resolve_human_player_id(
+        registry=registry,
+        match_id=match_id,
+        user_id=human_context.user_id,
     )
     if player_id is not None and resolved_player_id != player_id:
         raise ApiError(
@@ -511,7 +592,12 @@ def create_app(
     *,
     match_registry: InMemoryMatchRegistry | None = None,
     tick_persistence: TickPersistence | None | object = _DEFAULT_TICK_PERSISTENCE,
+    settings_override: dict[str, str] | None = None,
 ) -> FastAPI:
+    settings_env = dict(os.environ)
+    if settings_override is not None:
+        settings_env.update(settings_override)
+    settings = get_settings(env=settings_env)
     registry = match_registry or _load_default_match_registry()
     websocket_manager = MatchWebSocketManager()
     runtime_tick_persistence = (
@@ -605,7 +691,6 @@ def create_app(
         viewer: str = Query(default="spectator"),
         player_id: str | None = Query(default=None),
         token: str | None = Query(default=None),
-        api_key: str | None = Query(default=None),
     ) -> None:
         record = registry.get_match(match_id)
         if record is None:
@@ -623,10 +708,10 @@ def create_app(
             resolved_player_id = (
                 _resolve_websocket_player_viewer(
                     registry=registry,
+                    settings=settings,
                     match_id=match_id,
                     player_id=player_id,
                     token=token,
-                    api_key=api_key,
                 )
                 if viewer_role == "player"
                 else None
@@ -665,7 +750,6 @@ def create_app(
         viewer: str = Query(default="spectator"),
         player_id: str | None = Query(default=None),
         token: str | None = Query(default=None),
-        api_key: str | None = Query(default=None),
     ) -> None:
         await _handle_match_websocket(
             websocket=websocket,
@@ -673,7 +757,6 @@ def create_app(
             viewer=viewer,
             player_id=player_id,
             token=token,
-            api_key=api_key,
         )
 
     @app.websocket("/ws/matches/{match_id}")
@@ -683,7 +766,6 @@ def create_app(
         viewer: str = Query(default="spectator"),
         player_id: str | None = Query(default=None),
         token: str | None = Query(default=None),
-        api_key: str | None = Query(default=None),
     ) -> None:
         await _handle_match_websocket(
             websocket=websocket,
@@ -691,7 +773,6 @@ def create_app(
             viewer=viewer,
             player_id=player_id,
             token=token,
-            api_key=api_key,
         )
 
     api_router = APIRouter(prefix="/api/v1")
@@ -1017,7 +1098,8 @@ def create_app(
     async def get_match_state(
         match_id: str,
         registry: MatchRegistryDependency,
-        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+        api_key: ApiKeyHeader = None,
+        authorization: AuthorizationHeader = None,
     ) -> AgentStateProjection:
         record = registry.get_match(match_id)
         if record is None:
@@ -1026,10 +1108,12 @@ def create_app(
                 code="match_not_found",
                 message=f"Match '{match_id}' was not found.",
             )
-        resolved_player_id = _require_joined_player_id(
+        resolved_player_id = _resolve_match_player_id(
             registry=registry,
+            settings=settings,
             match_id=match_id,
-            authenticated_agent=authenticated_agent,
+            api_key=api_key,
+            authorization=authorization,
         )
 
         return project_agent_state(record.state, player_id=resolved_player_id, match_id=match_id)
@@ -1145,7 +1229,8 @@ def create_app(
         match_id: str,
         submission: AuthenticatedOrderSubmissionRequest,
         registry: MatchRegistryDependency,
-        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+        api_key: ApiKeyHeader = None,
+        authorization: AuthorizationHeader = None,
     ) -> OrderAcceptanceResponse:
         record = registry.get_match(match_id)
         if record is None:
@@ -1163,10 +1248,12 @@ def create_app(
                     f"'{match_id}'."
                 ),
             )
-        resolved_player_id = _require_joined_player_id(
+        resolved_player_id = _resolve_match_player_id(
             registry=registry,
+            settings=settings,
             match_id=match_id,
-            authenticated_agent=authenticated_agent,
+            api_key=api_key,
+            authorization=authorization,
         )
         if submission.tick != record.state.tick:
             raise ApiError(

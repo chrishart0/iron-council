@@ -1080,6 +1080,36 @@ def resolve_authenticated_agent_context_from_db(
     return resolved.context if resolved is not None else None
 
 
+def resolve_human_player_id_from_db(
+    *, database_url: str, match_id: str, user_id: str
+) -> str | None:
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        match = session.get(Match, match_id)
+        if match is None:
+            return None
+
+        persisted_players = session.scalars(
+            select(Player).where(Player.match_id == match_id).order_by(Player.id)
+        ).all()
+        state = MatchState.model_validate(match.state)
+        persisted_player_mapping = _build_persisted_player_mapping(
+            canonical_player_ids=sorted(state.players),
+            persisted_players=persisted_players,
+        )
+        resolved_player = next(
+            (
+                player
+                for player in persisted_players
+                if str(player.user_id) == user_id and not player.is_agent
+            ),
+            None,
+        )
+        if resolved_player is None:
+            return None
+        return persisted_player_mapping.get(str(resolved_player.id))
+
+
 def _resolve_loaded_agent_identity(
     *,
     player: Player,

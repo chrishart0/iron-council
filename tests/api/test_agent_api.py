@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
+import jwt
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -195,6 +197,29 @@ def _auth_headers_for_player(player_id: str) -> dict[str, str]:
     return _auth_headers_for_agent(_agent_id_for_player(player_id))
 
 
+def _human_jwt_token(
+    *,
+    user_id: str,
+    role: str = "authenticated",
+    secret: str = "test-human-secret-key-material-1234",
+) -> str:
+    return jwt.encode(
+        {
+            "sub": user_id,
+            "role": role,
+            "iss": "https://supabase.test/auth/v1",
+            "aud": "authenticated",
+            "exp": datetime.now(tz=UTC) + timedelta(minutes=5),
+        },
+        secret,
+        algorithm="HS256",
+    )
+
+
+def _auth_headers_for_human(user_id: str, *, role: str = "authenticated") -> dict[str, str]:
+    return {"Authorization": f"Bearer {_human_jwt_token(user_id=user_id, role=role)}"}
+
+
 @pytest.fixture
 def seeded_registry() -> InMemoryMatchRegistry:
     registry = InMemoryMatchRegistry()
@@ -205,7 +230,15 @@ def seeded_registry() -> InMemoryMatchRegistry:
 
 @pytest.fixture
 def app_client(seeded_registry: InMemoryMatchRegistry) -> AsyncClient:
-    app = create_app(match_registry=seeded_registry)
+    app = create_app(
+        match_registry=seeded_registry,
+        settings_override={
+            "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+            "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+            "HUMAN_JWT_AUDIENCE": "authenticated",
+            "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+        },
+    )
     return AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://testserver",
@@ -214,7 +247,15 @@ def app_client(seeded_registry: InMemoryMatchRegistry) -> AsyncClient:
 
 @pytest.fixture
 def websocket_app(seeded_registry: InMemoryMatchRegistry) -> FastAPI:
-    return create_app(match_registry=seeded_registry)
+    return create_app(
+        match_registry=seeded_registry,
+        settings_override={
+            "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+            "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+            "HUMAN_JWT_AUDIENCE": "authenticated",
+            "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+        },
+    )
 
 
 @pytest.fixture
@@ -891,8 +932,8 @@ async def test_get_match_state_requires_auth_and_returns_fog_filtered_payload(
     assert missing_auth_response.status_code == HTTPStatus.UNAUTHORIZED
     assert missing_auth_response.json() == {
         "error": {
-            "code": "invalid_api_key",
-            "message": "A valid active X-API-Key header is required.",
+            "code": "invalid_player_auth",
+            "message": "Player routes require a valid Bearer token or active X-API-Key header.",
         }
     }
     assert response.status_code == HTTPStatus.OK
@@ -913,6 +954,126 @@ async def test_get_match_state_requires_auth_and_returns_fog_filtered_payload(
     assert _army_by_id(payload, "army-c")["visibility"] == "partial"
     assert _army_by_id(payload, "army-c")["troops"] == "unknown"
     assert not any(army["id"] == "army-z" for army in payload["visible_armies"])
+
+
+@pytest.mark.asyncio
+async def test_human_jwt_state_route_accepts_valid_bearer_and_rejects_missing_invalid_and_wrong_role(  # noqa: E501
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        missing_auth_response = await client.get("/api/v1/matches/match-alpha/state")
+        valid_response = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+        invalid_response = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            headers={"Authorization": "Bearer not-a-jwt"},
+        )
+        wrong_role_response = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            headers=_auth_headers_for_human(
+                "00000000-0000-0000-0000-000000000302",
+                role="service_role",
+            ),
+        )
+
+    assert missing_auth_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_auth_response.json() == {
+        "error": {
+            "code": "invalid_player_auth",
+            "message": "Player routes require a valid Bearer token or active X-API-Key header.",
+        }
+    }
+    assert valid_response.status_code == HTTPStatus.OK
+    assert valid_response.json()["player_id"] == "player-2"
+    assert invalid_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert invalid_response.json() == {
+        "error": {
+            "code": "invalid_human_token",
+            "message": "A valid human Bearer token is required.",
+        }
+    }
+    assert wrong_role_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert wrong_role_response.json() == {
+        "error": {
+            "code": "invalid_human_token_role",
+            "message": "Human JWT role claim must be 'authenticated'.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_human_jwt_state_route_rejects_malformed_bearer_unjoined_human_and_missing_match(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        malformed_bearer_response = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            headers={"Authorization": "Token nope"},
+        )
+        unjoined_human_response = await client.get(
+            "/api/v1/matches/match-alpha/state",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000304"),
+        )
+        missing_match_response = await client.get(
+            "/api/v1/matches/match-missing/state",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert malformed_bearer_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert malformed_bearer_response.json() == {
+        "error": {
+            "code": "invalid_human_token",
+            "message": "A valid human Bearer token is required.",
+        }
+    }
+    assert unjoined_human_response.status_code == HTTPStatus.BAD_REQUEST
+    assert unjoined_human_response.json() == {
+        "error": {
+            "code": "human_not_joined",
+            "message": (
+                "Human user '00000000-0000-0000-0000-000000000304' has not joined match "
+                "'match-alpha' as a player."
+            ),
+        }
+    }
+    assert missing_match_response.status_code == HTTPStatus.NOT_FOUND
+    assert missing_match_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match 'match-missing' was not found.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_human_jwt_state_route_resolves_db_backed_human_player_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'human-jwt-state.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/state",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000301"),
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["player_id"] == "player-1"
 
 
 @pytest.mark.asyncio
@@ -3591,8 +3752,8 @@ def test_match_websocket_registers_player_connection_and_sends_initial_fog_filte
     manager = websocket_app.state.match_websocket_manager
 
     with websocket_client.websocket_connect(
-        "/ws/match/match-alpha?viewer=player&player_id=player-2"
-        f"&token={build_seeded_agent_api_key('agent-player-2')}"
+        "/ws/match/match-alpha?viewer=player"
+        f"&token={_human_jwt_token(user_id='00000000-0000-0000-0000-000000000302')}"
     ) as websocket:
         payload = websocket.receive_json()
 
@@ -3711,8 +3872,12 @@ def test_match_websocket_rejects_player_connection_when_api_key_does_not_match_p
 ) -> None:
     with pytest.raises(WebSocketDisconnect):
         with websocket_client.websocket_connect(
-            "/ws/match/match-alpha?viewer=player&player_id=player-2"
-            f"&token={build_seeded_agent_api_key('agent-player-3')}"
+            "/ws/match/match-alpha?viewer=player"
+            "&token="
+            + _human_jwt_token(
+                user_id="00000000-0000-0000-0000-000000000302",
+                role="service_role",
+            )
         ):
             pass
 
@@ -3731,7 +3896,8 @@ def test_match_websocket_resolves_player_from_canonical_token_without_player_id(
     websocket_client: TestClient,
 ) -> None:
     with websocket_client.websocket_connect(
-        f"/ws/match/match-alpha?viewer=player&token={build_seeded_agent_api_key('agent-player-2')}"
+        "/ws/match/match-alpha?viewer=player"
+        f"&token={_human_jwt_token(user_id='00000000-0000-0000-0000-000000000302')}"
     ) as websocket:
         payload = websocket.receive_json()
 
@@ -3740,18 +3906,25 @@ def test_match_websocket_resolves_player_from_canonical_token_without_player_id(
     assert payload["data"]["player_id"] == "player-2"
 
 
-def test_match_websocket_accepts_legacy_path_and_api_key_alias(
+def test_match_websocket_rejects_invalid_and_wrong_role_human_tokens(
     websocket_client: TestClient,
 ) -> None:
-    with websocket_client.websocket_connect(
-        "/ws/matches/match-alpha?viewer=player&player_id=player-2"
-        f"&api_key={build_seeded_agent_api_key('agent-player-2')}"
-    ) as websocket:
-        payload = websocket.receive_json()
+    with pytest.raises(WebSocketDisconnect):
+        with websocket_client.websocket_connect(
+            "/ws/match/match-alpha?viewer=player&token=not-a-jwt"
+        ):
+            pass
 
-    assert payload["type"] == "tick_update"
-    assert payload["data"]["viewer_role"] == "player"
-    assert payload["data"]["player_id"] == "player-2"
+    with pytest.raises(WebSocketDisconnect):
+        with websocket_client.websocket_connect(
+            "/ws/match/match-alpha?viewer=player"
+            "&token="
+            + _human_jwt_token(
+                user_id="00000000-0000-0000-0000-000000000302",
+                role="service_role",
+            )
+        ):
+            pass
 
 
 def test_match_websocket_rejects_invalid_viewer_and_unknown_match(
@@ -3771,8 +3944,8 @@ def test_world_message_broadcasts_refresh_to_connected_player_and_spectator(
 ) -> None:
     with (
         websocket_client.websocket_connect(
-            "/ws/match/match-alpha?viewer=player&player_id=player-2"
-            f"&token={build_seeded_agent_api_key('agent-player-2')}"
+            "/ws/match/match-alpha?viewer=player"
+            f"&token={_human_jwt_token(user_id='00000000-0000-0000-0000-000000000302')}"
         ) as player_socket,
         websocket_client.websocket_connect(
             "/ws/match/match-alpha?viewer=spectator"
@@ -3800,12 +3973,12 @@ def test_private_chat_events_broadcast_refresh_with_full_spectator_visibility(
 ) -> None:
     with (
         websocket_client.websocket_connect(
-            "/ws/match/match-alpha?viewer=player&player_id=player-1"
-            f"&token={build_seeded_agent_api_key('agent-player-1')}"
+            "/ws/match/match-alpha?viewer=player"
+            f"&token={_human_jwt_token(user_id='00000000-0000-0000-0000-000000000301')}"
         ) as player_one_socket,
         websocket_client.websocket_connect(
-            "/ws/match/match-alpha?viewer=player&player_id=player-2"
-            f"&token={build_seeded_agent_api_key('agent-player-2')}"
+            "/ws/match/match-alpha?viewer=player"
+            f"&token={_human_jwt_token(user_id='00000000-0000-0000-0000-000000000302')}"
         ) as player_two_socket,
         websocket_client.websocket_connect(
             "/ws/match/match-alpha?viewer=spectator"
@@ -3934,12 +4107,12 @@ def test_command_envelope_message_writes_broadcast_private_chat_refresh(
 
     with (
         websocket_client.websocket_connect(
-            "/ws/match/match-alpha?viewer=player&player_id=player-1"
-            f"&token={build_seeded_agent_api_key('agent-player-1')}"
+            "/ws/match/match-alpha?viewer=player"
+            f"&token={_human_jwt_token(user_id='00000000-0000-0000-0000-000000000301')}"
         ) as player_one_socket,
         websocket_client.websocket_connect(
-            "/ws/match/match-alpha?viewer=player&player_id=player-2"
-            f"&token={build_seeded_agent_api_key('agent-player-2')}"
+            "/ws/match/match-alpha?viewer=player"
+            f"&token={_human_jwt_token(user_id='00000000-0000-0000-0000-000000000302')}"
         ) as player_two_socket,
         websocket_client.websocket_connect(
             "/ws/match/match-alpha?viewer=spectator"
@@ -3998,12 +4171,21 @@ def test_runtime_broadcasts_post_tick_payload_to_connected_player_and_spectator(
     seeded_match.tick_interval_seconds = 1
 
     with TestClient(
-        create_app(match_registry=seeded_registry), base_url="http://testserver"
+        create_app(
+            match_registry=seeded_registry,
+            settings_override={
+                "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+                "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+                "HUMAN_JWT_AUDIENCE": "authenticated",
+                "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+            },
+        ),
+        base_url="http://testserver",
     ) as client:
         with (
             client.websocket_connect(
-                "/ws/match/match-alpha?viewer=player&player_id=player-2"
-                f"&token={build_seeded_agent_api_key('agent-player-2')}"
+                "/ws/match/match-alpha?viewer=player"
+                f"&token={_human_jwt_token(user_id='00000000-0000-0000-0000-000000000302')}"
             ) as player_socket,
             client.websocket_connect("/ws/match/match-alpha?viewer=spectator") as spectator_socket,
         ):

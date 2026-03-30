@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import time
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
 
 import httpx
+import jwt
 from server.agent_registry import build_seeded_agent_api_key
 from server.db.registry import load_match_registry_from_database
 from server.models.domain import MatchStatus
@@ -15,6 +17,20 @@ from websockets.sync.client import connect as connect_websocket
 
 def _headers(agent_id: str = "agent-player-2") -> dict[str, str]:
     return {"X-API-Key": build_seeded_agent_api_key(agent_id)}
+
+
+def _human_jwt_token(user_id: str) -> str:
+    return jwt.encode(
+        {
+            "sub": user_id,
+            "role": "authenticated",
+            "iss": "https://supabase.test/auth/v1",
+            "aud": "authenticated",
+            "exp": datetime.now(tz=UTC) + timedelta(minutes=5),
+        },
+        "test-human-secret-key-material-1234",
+        algorithm="HS256",
+    )
 
 
 def test_agent_api_smoke_flow_runs_through_real_process_and_seeded_database(
@@ -315,10 +331,10 @@ def test_match_websocket_smoke_broadcasts_initial_and_tick_updates_for_player_an
     running_fast_tick_app: RunningApp,
 ) -> None:
     websocket_base_url = running_fast_tick_app.base_url.replace("http://", "ws://", 1)
-    player_api_key = build_seeded_agent_api_key("agent-player-2")
     player_url = (
         f"{websocket_base_url}/ws/match/{running_fast_tick_app.primary_match_id}"
-        f"?viewer=player&player_id=player-2&token={player_api_key}"
+        "?viewer=player"
+        f"&token={_human_jwt_token('00000000-0000-0000-0000-000000000301')}"
     )
     spectator_url = (
         f"{websocket_base_url}/ws/match/{running_fast_tick_app.primary_match_id}?viewer=spectator"

@@ -516,8 +516,8 @@ Server → Client messages:
 ```
 
 The websocket contract is outbound-only in V1. Players authenticate with the `token`
-query parameter; the current server also accepts the legacy `api_key` alias. Spectators
-are read-only and receive full map visibility plus all chat channels.
+query parameter carrying a valid human JWT. Spectators are read-only and receive full
+map visibility plus all chat channels without authentication.
 
 ---
 

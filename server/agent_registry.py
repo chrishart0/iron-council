@@ -149,6 +149,7 @@ class MatchRecord:
     joinable_player_ids: list[str] = field(default_factory=list)
     agent_profiles: list[AgentProfileResponse] = field(default_factory=list)
     joined_agents: dict[str, str] = field(default_factory=dict)
+    joined_humans: dict[str, str] = field(default_factory=dict)
     order_submissions: list[OrderEnvelope] = field(default_factory=list)
     messages: list[MatchMessage] = field(default_factory=list)
     group_chats: list[MatchGroupChat] = field(default_factory=list)
@@ -226,6 +227,7 @@ class InMemoryMatchRegistry:
             joinable_player_ids=list(record.joinable_player_ids),
             agent_profiles=[],
             joined_agents=dict(record.joined_agents),
+            joined_humans=dict(record.joined_humans),
             order_submissions=[
                 submission.model_copy(deep=True) for submission in record.order_submissions
             ],
@@ -406,6 +408,22 @@ class InMemoryMatchRegistry:
             raise MatchAccessError(
                 code="agent_not_joined",
                 message=f"Agent '{agent_id}' has not joined match '{match_id}' as a player.",
+            )
+        return player_id
+
+    def require_joined_human_player_id(self, *, match_id: str, user_id: str) -> str:
+        record = self._matches.get(match_id)
+        if record is None:
+            raise MatchAccessError(
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+
+        player_id = record.joined_humans.get(user_id)
+        if player_id is None:
+            raise MatchAccessError(
+                code="human_not_joined",
+                message=f"Human user '{user_id}' has not joined match '{match_id}' as a player.",
             )
         return player_id
 
@@ -1383,6 +1401,11 @@ def build_seeded_match_records(
             joined_agents={
                 f"agent-{player_id}": player_id
                 for player_id in _seeded_match_state_payload()["players"]
+            },
+            joined_humans={
+                "00000000-0000-0000-0000-000000000301": "player-1",
+                "00000000-0000-0000-0000-000000000302": "player-2",
+                "00000000-0000-0000-0000-000000000303": "player-3",
             },
             authenticated_agent_keys=seeded_authenticated_keys,
         ),
