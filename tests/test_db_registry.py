@@ -20,6 +20,7 @@ from server.db.registry import (
     get_public_match_summaries,
     load_match_registry_from_database,
     persist_advanced_match_tick,
+    resolve_authenticated_agent_context_from_db,
 )
 from server.db.testing import provision_seeded_database
 from server.models.api import MatchLobbyCreateRequest
@@ -1199,4 +1200,94 @@ def test_load_match_registry_from_database_exposes_authenticated_join_mapping_fo
             agent_id="agent-player-2",
         )
         == "player-2"
+    )
+
+
+def test_resolve_authenticated_agent_context_from_db_rejects_inactive_api_keys(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-db-auth-inactive.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE api_keys
+                SET is_active = 0
+                WHERE id = :api_key_id
+                """
+            ),
+            {"api_key_id": "00000000-0000-0000-0000-000000000202"},
+        )
+
+    assert (
+        resolve_authenticated_agent_context_from_db(
+            database_url=database_url,
+            api_key=build_seeded_agent_api_key("agent-player-2"),
+        )
+        is None
+    )
+
+
+def test_resolve_authenticated_agent_context_from_db_rejects_non_agent_key_owners(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-db-auth-non-agent.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    fresh_api_key = "fresh-non-agent-key"
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO api_keys (
+                    id, user_id, key_hash, elo_rating, is_active, created_at
+                ) VALUES (
+                    :id, :user_id, :key_hash, :elo_rating, :is_active, CURRENT_TIMESTAMP
+                )
+                """
+            ),
+            {
+                "id": "00000000-0000-0000-0000-000000000299",
+                "user_id": "00000000-0000-0000-0000-000000000399",
+                "key_hash": hash_api_key(fresh_api_key),
+                "elo_rating": 1111,
+                "is_active": True,
+            },
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO players (
+                    id, user_id, match_id, display_name, is_agent, api_key_id, elo_rating,
+                    alliance_id, alliance_joined_tick, eliminated_at
+                ) VALUES (
+                    :id, :user_id, :match_id, :display_name, :is_agent, :api_key_id, :elo_rating,
+                    :alliance_id, :alliance_joined_tick, :eliminated_at
+                )
+                """
+            ),
+            {
+                "id": "00000000-0000-0000-0000-000000000899",
+                "user_id": "00000000-0000-0000-0000-000000000399",
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "display_name": "Human With Key",
+                "is_agent": False,
+                "api_key_id": "00000000-0000-0000-0000-000000000299",
+                "elo_rating": 1111,
+                "alliance_id": None,
+                "alliance_joined_tick": None,
+                "eliminated_at": None,
+            },
+        )
+
+    assert (
+        resolve_authenticated_agent_context_from_db(
+            database_url=database_url,
+            api_key=fresh_api_key,
+        )
+        is None
     )
