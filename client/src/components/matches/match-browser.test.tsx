@@ -38,6 +38,30 @@ describe("MatchBrowser", () => {
     expect(row).toHaveTextContent("2");
   });
 
+  it("links each public browse row to the read-only detail page", () => {
+    render(
+      <MatchBrowser
+        matches={[
+          {
+            match_id: "match-alpha",
+            status: "active",
+            map: "britain",
+            tick: 142,
+            tick_interval_seconds: 30,
+            current_player_count: 3,
+            max_player_count: 5,
+            open_slot_count: 2
+          }
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("link", { name: /view details for match-alpha/i })).toHaveAttribute(
+      "href",
+      "/matches/match-alpha"
+    );
+  });
+
   it("renders a deterministic empty state when no public matches exist", () => {
     render(<MatchBrowser matches={[]} />);
 

@@ -53,6 +53,7 @@ def test_readme_documents_public_match_browser_client_workflow() -> None:
     assert "make client-install" in readme
     assert "npm run dev" in readme
     assert "http://127.0.0.1:3000/matches" in readme
+    assert "http://127.0.0.1:3000/matches/<match_id>" in readme
     assert "http://127.0.0.1:3000/lobby" in readme
     assert "No client env vars are required" in readme
     assert "browser session panel stores the API base URL" in readme

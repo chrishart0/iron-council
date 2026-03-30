@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { MatchSummary } from "../../lib/types";
 
 type MatchBrowserProps = {
@@ -50,7 +51,11 @@ export function MatchBrowser({ matches = [], errorMessage }: MatchBrowserProps) 
         <tbody>
           {matches.map((match) => (
             <tr key={match.match_id}>
-              <td>{match.match_id}</td>
+              <td>
+                <Link href={`/matches/${match.match_id}`} aria-label={`View details for ${match.match_id}`}>
+                  {match.match_id}
+                </Link>
+              </td>
               <td>
                 <span className="status-pill">{match.status}</span>
               </td>

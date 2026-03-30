@@ -194,6 +194,10 @@ a {
   overflow-x: auto;
 }
 
+.table-wrap a {
+  font-weight: 600;
+}
+
 .matches-table {
   width: 100%;
   border-collapse: collapse;
@@ -240,6 +244,52 @@ a {
 .state-card strong {
   display: block;
   margin-bottom: 0.35rem;
+}
+
+.panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.metadata-row {
+  padding: 1.25rem;
+  border-bottom: 1px solid rgba(80, 58, 24, 0.1);
+}
+
+.metadata-row dt {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6d5a3f;
+}
+
+.metadata-row dd {
+  margin: 0;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.roster-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 1.25rem 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.roster-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(80, 58, 24, 0.1);
+}
+
+.roster-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 @media (max-width: 640px) {

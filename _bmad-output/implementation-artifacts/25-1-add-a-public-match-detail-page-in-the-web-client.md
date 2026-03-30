@@ -1,6 +1,6 @@
 # Story 25.1: Add a public match-detail page in the web client
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -15,15 +15,15 @@ So that I can inspect a lobby or running match before deciding to watch or join.
 
 ## Tasks / Subtasks
 
-- [ ] Add typed client access to the existing public match-detail API contract. (AC: 1, 2)
-  - [ ] Mirror only the public fields already exposed by `GET /api/v1/matches/{match_id}`.
-  - [ ] Preserve deterministic parsing and transport-safe error handling.
-- [ ] Build a public match detail page and link into it from the existing browser. (AC: 1)
-  - [ ] Show match metadata and roster entries with competitor-kind labels.
-  - [ ] Keep the route public and read-only.
-- [ ] Add deterministic empty/error/not-found handling and verification. (AC: 2)
-  - [ ] Add behavior-first client tests for success and not-found/error states.
-  - [ ] Re-run client checks plus the repo quality gate after the story lands.
+- [x] Add typed client access to the existing public match-detail API contract. (AC: 1, 2)
+  - [x] Mirror only the public fields already exposed by `GET /api/v1/matches/{match_id}`.
+  - [x] Preserve deterministic parsing and transport-safe error handling.
+- [x] Build a public match detail page and link into it from the existing browser. (AC: 1)
+  - [x] Show match metadata and roster entries with competitor-kind labels.
+  - [x] Keep the route public and read-only.
+- [x] Add deterministic empty/error/not-found handling and verification. (AC: 2)
+  - [x] Add behavior-first client tests for success and not-found/error states.
+  - [x] Re-run client checks plus the repo quality gate after the story lands.
 
 ## Dev Notes
 
@@ -49,16 +49,39 @@ So that I can inspect a lobby or running match before deciding to watch or join.
 
 ### Agent Model Used
 
-Pending
+GPT-5 Codex
 
 ### Debug Log References
 
-- Pending
+- RED: `cd client && npm test` failed before implementation because `fetchPublicMatchDetail`, `match-detail`, `public-match-detail-page`, and browse-to-detail links did not exist yet.
+- Follow-up RED/GREEN: `cd client && npm test -- --run src/components/matches/match-detail.test.tsx`
+- Verification: `make client-lint`
+- Verification: `make client-test`
+- Verification: `make client-build`
+- Verification: `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_local_dev_docs.py`
+- Verification: `make quality`
 
 ### Completion Notes List
 
-- Pending
+- Added a typed public match-detail client contract and fetch helper that consume only `GET /api/v1/matches/{match_id}` and map `match_not_found` into deterministic public not-found messaging.
+- Added a public read-only `/matches/[matchId]` page that reuses the existing client session/bootstrap shell without requiring auth.
+- Linked the existing public match browser rows into the new detail page and kept the UI text-first with visible roster metadata only.
+- Added behavior-first client coverage for detail parsing, detail rendering, not-found/error handling, hydration behavior, and browse-to-detail linking.
+- Follow-up fix: wrapped match metadata in a semantic `<dl>` matching the existing app-shell pattern and made public roster row keys collision-safe for duplicate display names and competitor kinds.
+- Updated local-dev docs to mention navigating from `/matches` into `/matches/<match_id>`.
 
 ### File List
 
-- Pending
+- `client/src/app/matches/[matchId]/page.tsx`
+- `client/src/app/globals.css`
+- `client/src/components/matches/match-browser.tsx`
+- `client/src/components/matches/match-browser.test.tsx`
+- `client/src/components/matches/match-detail.tsx`
+- `client/src/components/matches/match-detail.test.tsx`
+- `client/src/components/matches/public-match-detail-page.tsx`
+- `client/src/lib/api.ts`
+- `client/src/lib/api.test.ts`
+- `client/src/lib/types.ts`
+- `README.md`
+- `tests/test_local_dev_docs.py`
+- `_bmad-output/implementation-artifacts/25-1-add-a-public-match-detail-page-in-the-web-client.md`

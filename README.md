@@ -157,9 +157,11 @@ cd client
 npm run dev
 ```
 
-Visit `http://127.0.0.1:3000/matches` to browse the live public match list, or
-`http://127.0.0.1:3000/lobby` to see the authenticated placeholder shell. No client env vars are required.
-The browser defaults to the local server target `http://127.0.0.1:8000`.
+Visit `http://127.0.0.1:3000/matches` to browse the live public match list, then
+follow a match row into `http://127.0.0.1:3000/matches/<match_id>` for the
+read-only public detail page. `http://127.0.0.1:3000/lobby` remains the
+authenticated placeholder shell. No client env vars are required. The browser
+defaults to the local server target `http://127.0.0.1:8000`.
 
 The browser session panel stores the API base URL and optional token in local
 storage:

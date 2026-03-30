@@ -12,3 +12,14 @@ export type MatchSummary = {
 export type MatchListResponse = {
   matches: MatchSummary[];
 };
+
+export type CompetitorKind = "human" | "agent";
+
+export type PublicMatchRosterRow = {
+  display_name: string;
+  competitor_kind: CompetitorKind;
+};
+
+export type PublicMatchDetailResponse = MatchSummary & {
+  roster: PublicMatchRosterRow[];
+};
