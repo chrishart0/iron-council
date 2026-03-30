@@ -17,6 +17,59 @@ class RunningApp:
     database_url: str
 
 
+_SEEDED_AGENT_PLAYER_ROWS = {
+    "agent-player-2": {
+        "user_id": "00000000-0000-0000-0000-000000000302",
+        "display_name": "Morgana",
+        "api_key_id": "00000000-0000-0000-0000-000000000202",
+        "elo_rating": 1190,
+    },
+    "agent-player-3": {
+        "user_id": "00000000-0000-0000-0000-000000000303",
+        "display_name": "Gawain",
+        "api_key_id": "00000000-0000-0000-0000-000000000203",
+        "elo_rating": 1175,
+    },
+}
+
+
+def insert_seeded_agent_player(
+    *,
+    database_url: str,
+    match_id: str,
+    agent_id: str,
+    persisted_player_id: str,
+) -> None:
+    seeded_player = _SEEDED_AGENT_PLAYER_ROWS[agent_id]
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO players (
+                    id, user_id, match_id, display_name, is_agent, api_key_id, elo_rating,
+                    alliance_id, alliance_joined_tick, eliminated_at
+                ) VALUES (
+                    :id, :user_id, :match_id, :display_name, :is_agent, :api_key_id, :elo_rating,
+                    :alliance_id, :alliance_joined_tick, :eliminated_at
+                )
+                """
+            ),
+            {
+                "id": persisted_player_id,
+                "user_id": seeded_player["user_id"],
+                "match_id": match_id,
+                "display_name": seeded_player["display_name"],
+                "is_agent": True,
+                "api_key_id": seeded_player["api_key_id"],
+                "elo_rating": seeded_player["elo_rating"],
+                "alliance_id": None,
+                "alliance_joined_tick": None,
+                "eliminated_at": None,
+            },
+        )
+
+
 def insert_completed_match_fixture(database_url: str) -> None:
     engine = create_engine(database_url)
     with engine.begin() as connection:

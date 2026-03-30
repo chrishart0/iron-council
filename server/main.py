@@ -36,6 +36,7 @@ from server.auth import hash_api_key
 from server.db.registry import (
     MatchHistoryNotFoundError,
     MatchLobbyCreationError,
+    MatchLobbyStartError,
     PublicMatchDetailNotFoundError,
     TickHistoryNotFoundError,
     create_match_lobby,
@@ -48,6 +49,7 @@ from server.db.registry import (
     load_match_registry_from_database,
     persist_advanced_match_tick,
     resolve_authenticated_agent_context_from_db,
+    start_match_lobby,
 )
 from server.fog import project_agent_state
 from server.models.api import (
@@ -75,6 +77,7 @@ from server.models.api import (
     MatchListResponse,
     MatchLobbyCreateRequest,
     MatchLobbyCreateResponse,
+    MatchLobbyStartResponse,
     MatchMessageCreateRequest,
     MatchMessageInboxResponse,
     MatchReplayTickResponse,
@@ -525,24 +528,27 @@ def create_app(
     async def broadcast_advanced_tick(advanced_tick: AdvancedMatchTick) -> None:
         await broadcast_current_match(advanced_tick.match_id)
 
+    match_runtime = MatchRuntime(
+        registry,
+        tick_persistence=runtime_tick_persistence,
+        tick_broadcast=broadcast_advanced_tick,
+    )
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         app.state.match_registry = registry
         app.state.match_websocket_manager = websocket_manager
-        app.state.match_runtime = MatchRuntime(
-            registry,
-            tick_persistence=runtime_tick_persistence,
-            tick_broadcast=broadcast_advanced_tick,
-        )
-        await app.state.match_runtime.start()
+        app.state.match_runtime = match_runtime
+        await match_runtime.start()
         try:
             yield
         finally:
-            await app.state.match_runtime.stop()
+            await match_runtime.stop()
 
     app = FastAPI(title="iron-counsil-server", version=__version__, lifespan=lifespan)
     app.state.match_registry = registry
     app.state.match_websocket_manager = websocket_manager
+    app.state.match_runtime = match_runtime
 
     @app.exception_handler(ApiError)
     async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:
@@ -766,6 +772,68 @@ def create_app(
 
         registry.seed_match(created_lobby.record)
         return created_lobby.response
+
+    @api_router.post(
+        "/matches/{match_id}/start",
+        response_model=MatchLobbyStartResponse,
+        responses=_authenticated_route_responses(
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.FORBIDDEN,
+            HTTPStatus.CONFLICT,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+        ),
+    )
+    async def start_match_lobby_route(
+        match_id: str,
+        request: Request,
+        registry: MatchRegistryDependency,
+        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+        api_key: ApiKeyHeader = None,
+    ) -> MatchLobbyStartResponse:
+        del authenticated_agent
+        if history_database_url is None:
+            raise ApiError(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                code="match_lobby_start_unavailable",
+                message="Authenticated lobby start is only available in DB-backed mode.",
+            )
+        if api_key is None:
+            raise ApiError(
+                status_code=HTTPStatus.UNAUTHORIZED,
+                code="invalid_api_key",
+                message="A valid active X-API-Key header is required.",
+            )
+
+        try:
+            started_lobby = start_match_lobby(
+                database_url=history_database_url,
+                match_id=match_id,
+                authenticated_api_key_hash=hash_api_key(api_key),
+            )
+        except MatchLobbyStartError as exc:
+            status_code = HTTPStatus.BAD_REQUEST
+            if exc.code == "invalid_api_key":
+                status_code = HTTPStatus.UNAUTHORIZED
+            elif exc.code == "match_not_found":
+                status_code = HTTPStatus.NOT_FOUND
+            elif exc.code == "match_start_forbidden":
+                status_code = HTTPStatus.FORBIDDEN
+            elif exc.code in {
+                "match_lobby_not_ready",
+                "match_already_active",
+                "match_already_completed",
+                "match_not_startable",
+            }:
+                status_code = HTTPStatus.CONFLICT
+            raise ApiError(
+                status_code=status_code,
+                code=exc.code,
+                message=exc.message,
+            ) from exc
+
+        registry.seed_match(started_lobby.record)
+        await request.app.state.match_runtime.ensure_match_running(match_id)
+        return started_lobby.response
 
     def require_history_database_url() -> str:
         if history_database_url is None:

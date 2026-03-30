@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from server.agent_registry import (
@@ -41,6 +41,7 @@ from server.models.api import (
     MatchListResponse,
     MatchLobbyCreateRequest,
     MatchLobbyCreateResponse,
+    MatchLobbyStartResponse,
     MatchReplayTickResponse,
     MatchSummary,
     PublicLeaderboardResponse,
@@ -70,6 +71,13 @@ class MatchLobbyCreationError(Exception):
         super().__init__(message)
 
 
+class MatchLobbyStartError(Exception):
+    def __init__(self, *, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
 @dataclass
 class _LeaderboardAggregate:
     competitor_key: str
@@ -86,6 +94,12 @@ class _LeaderboardAggregate:
 @dataclass(frozen=True)
 class CreatedMatchLobby:
     response: MatchLobbyCreateResponse
+    record: MatchRecord
+
+
+@dataclass(frozen=True)
+class StartedMatchLobby:
+    response: MatchLobbyStartResponse
     record: MatchRecord
 
 
@@ -237,6 +251,7 @@ def create_match_lobby(
                     "turn_seconds": request.tick_interval_seconds,
                     "victory_city_threshold": request.victory_city_threshold,
                     "starting_cities_per_player": request.starting_cities_per_player,
+                    "creator_api_key_id": creator_api_key_id,
                 },
                 status=MatchStatus.LOBBY.value,
                 current_tick=initial_state.tick,
@@ -306,6 +321,129 @@ def create_match_lobby(
                 )
             ],
         ),
+    )
+
+
+def start_match_lobby(
+    *,
+    database_url: str,
+    match_id: str,
+    authenticated_api_key_hash: str,
+) -> StartedMatchLobby:
+    engine = create_engine(database_url)
+    with Session(engine) as session, session.begin():
+        authenticated_agent_resolution = _resolve_authenticated_agent_from_db_key_hash(
+            session=session,
+            key_hash=authenticated_api_key_hash,
+        )
+        if authenticated_agent_resolution is None:
+            raise MatchLobbyStartError(
+                code="invalid_api_key",
+                message="A valid active X-API-Key header is required.",
+            )
+
+        match = session.get(Match, match_id)
+        if match is None:
+            raise MatchLobbyStartError(
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+
+        if match.status == MatchStatus.ACTIVE.value:
+            raise MatchLobbyStartError(
+                code="match_already_active",
+                message=f"Match '{match_id}' is already active.",
+            )
+        if match.status == MatchStatus.COMPLETED.value:
+            raise MatchLobbyStartError(
+                code="match_already_completed",
+                message=f"Match '{match_id}' is already completed.",
+            )
+        if match.status != MatchStatus.LOBBY.value:
+            raise MatchLobbyStartError(
+                code="match_not_startable",
+                message=f"Match '{match_id}' cannot be started from status '{match.status}'.",
+            )
+
+        creator_api_key_id = str(match.config.get("creator_api_key_id", ""))
+        if creator_api_key_id != authenticated_agent_resolution.api_key_id:
+            raise MatchLobbyStartError(
+                code="match_start_forbidden",
+                message=f"Authenticated agent does not own lobby '{match_id}'.",
+            )
+
+        player_count = session.scalar(
+            select(func.count()).select_from(Player).where(Player.match_id == match_id)
+        )
+        if int(player_count or 0) < 2:
+            raise MatchLobbyStartError(
+                code="match_lobby_not_ready",
+                message=f"Match '{match_id}' needs at least 2 joined players before it can start.",
+            )
+
+        match.status = MatchStatus.ACTIVE.value
+        session.add(match)
+        started_record = _load_match_record_from_session(session=session, match=match)
+
+    return StartedMatchLobby(
+        response=MatchLobbyStartResponse(
+            match_id=started_record.match_id,
+            status=started_record.status,
+            map=started_record.map_id,
+            tick=started_record.state.tick,
+            tick_interval_seconds=started_record.tick_interval_seconds,
+            current_player_count=started_record.public_current_player_count,
+            max_player_count=started_record.public_max_player_count,
+            open_slot_count=started_record.public_open_slot_count,
+        ),
+        record=started_record,
+    )
+
+
+def _load_match_record_from_session(*, session: Session, match: Match) -> MatchRecord:
+    match_id = str(match.id)
+    player_rows = session.scalars(
+        select(Player).where(Player.match_id == match.id).order_by(Player.id)
+    ).all()
+    api_key_ids = [player.api_key_id for player in player_rows if player.api_key_id is not None]
+    api_key_rows = (
+        session.scalars(select(ApiKey).where(ApiKey.id.in_(api_key_ids)).order_by(ApiKey.id)).all()
+        if api_key_ids
+        else []
+    )
+    state = MatchState.model_validate(match.state)
+    joined_agents = _load_joined_agents_by_match(
+        matches=[match],
+        player_rows=player_rows,
+        api_key_rows=api_key_rows,
+    ).get(match_id, {})
+    agent_profiles = _load_agent_profiles_by_match(
+        matches=[match],
+        player_rows=player_rows,
+        api_key_rows=api_key_rows,
+    ).get(match_id, [])
+    authenticated_agent_keys = _load_authenticated_agent_keys_by_match(
+        matches=[match],
+        player_rows=player_rows,
+        api_key_rows=api_key_rows,
+    ).get(match_id, [])
+    joinable_player_ids = (
+        sorted(player_id for player_id in state.players if player_id not in joined_agents.values())
+        if match.status in {MatchStatus.LOBBY.value, MatchStatus.PAUSED.value}
+        else []
+    )
+    return MatchRecord(
+        match_id=match_id,
+        status=MatchStatus(match.status),
+        tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
+        state=state,
+        map_id=str(match.config.get("map", "britain")),
+        max_player_count=int(match.config.get("max_players", len(state.players))),
+        current_player_count=len(joined_agents),
+        joinable_player_ids=joinable_player_ids,
+        agent_profiles=agent_profiles,
+        joined_agents=joined_agents,
+        authenticated_agent_keys=authenticated_agent_keys,
     )
 
 

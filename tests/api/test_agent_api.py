@@ -32,7 +32,7 @@ from server.models.orders import OrderEnvelope
 from server.websocket import MatchWebSocketManager, build_match_realtime_envelope
 from sqlalchemy import create_engine, text
 from starlette.websockets import WebSocketDisconnect
-from tests.support import insert_completed_match_fixture
+from tests.support import insert_completed_match_fixture, insert_seeded_agent_player
 
 
 def _army_by_id(payload: dict[str, Any], army_id: str) -> dict[str, Any]:
@@ -2702,6 +2702,401 @@ async def test_create_match_lobby_route_rejects_invalid_requests_without_partial
     assert impossible_config_response.json()["error"]["code"] == "invalid_match_lobby_config"
     assert "cannot assign" in impossible_config_response.json()["error"]["message"]
     assert len(browse_response.json()["matches"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_create_match_lobby_route_rejects_missing_auth_and_memory_mode() -> None:
+    memory_registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        memory_registry.seed_match(record)
+    memory_app = create_app(match_registry=memory_registry)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=memory_app),
+        base_url="http://testserver",
+    ) as client:
+        missing_auth_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+        )
+        unavailable_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+
+    assert missing_auth_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_auth_response.json() == {
+        "error": {
+            "code": "invalid_api_key",
+            "message": "A valid active X-API-Key header is required.",
+        }
+    }
+    assert unavailable_response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert unavailable_response.json() == {
+        "error": {
+            "code": "match_lobby_creation_unavailable",
+            "message": "Authenticated match lobby creation is only available in DB-backed mode.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_start_match_lobby_route_transitions_ready_creator_lobby_to_active(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-start-match-lobby.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        create_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+        created_payload = create_response.json()
+
+        insert_seeded_agent_player(
+            database_url=database_url,
+            match_id=created_payload["match_id"],
+            agent_id="agent-player-3",
+            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff1",
+        )
+
+        start_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/start",
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+        browse_response = await client.get("/api/v1/matches")
+        detail_response = await client.get(f"/api/v1/matches/{created_payload['match_id']}")
+        state_response = await client.get(
+            f"/api/v1/matches/{created_payload['match_id']}/state",
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+
+    assert create_response.status_code == HTTPStatus.CREATED
+    assert start_response.status_code == HTTPStatus.OK
+    assert start_response.json() == {
+        "match_id": created_payload["match_id"],
+        "status": "active",
+        "map": "britain",
+        "tick": 0,
+        "tick_interval_seconds": 20,
+        "current_player_count": 2,
+        "max_player_count": 4,
+        "open_slot_count": 2,
+    }
+    assert browse_response.status_code == HTTPStatus.OK
+    assert browse_response.json()["matches"][0] == start_response.json()
+    assert detail_response.status_code == HTTPStatus.OK
+    assert detail_response.json() == {
+        **start_response.json(),
+        "roster": [
+            {"display_name": "Gawain", "competitor_kind": "agent"},
+            {"display_name": "Morgana", "competitor_kind": "agent"},
+        ],
+    }
+    assert state_response.status_code == HTTPStatus.OK
+    assert state_response.json()["match_id"] == created_payload["match_id"]
+    assert state_response.json()["player_id"] == "player-1"
+
+    started_record = app.state.match_registry.get_match(created_payload["match_id"])
+    assert started_record is not None
+    assert started_record.status == MatchStatus.ACTIVE
+    assert started_record.joinable_player_ids == []
+
+
+@pytest.mark.asyncio
+async def test_start_match_lobby_route_rejects_missing_auth_and_memory_mode() -> None:
+    memory_registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        memory_registry.seed_match(record)
+    memory_app = create_app(match_registry=memory_registry)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=memory_app),
+        base_url="http://testserver",
+    ) as client:
+        missing_auth_response = await client.post("/api/v1/matches/match-alpha/start")
+        unavailable_response = await client.post(
+            "/api/v1/matches/match-alpha/start",
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+
+    assert missing_auth_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_auth_response.json() == {
+        "error": {
+            "code": "invalid_api_key",
+            "message": "A valid active X-API-Key header is required.",
+        }
+    }
+    assert unavailable_response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert unavailable_response.json() == {
+        "error": {
+            "code": "match_lobby_start_unavailable",
+            "message": "Authenticated lobby start is only available in DB-backed mode.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_terminal_states(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-start-match-lobby-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+    engine = create_engine(database_url)
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        not_ready_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+        not_ready_start = await client.post(
+            f"/api/v1/matches/{not_ready_response.json()['match_id']}/start",
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+
+        outsider_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+        insert_seeded_agent_player(
+            database_url=database_url,
+            match_id=outsider_response.json()["match_id"],
+            agent_id="agent-player-3",
+            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff2",
+        )
+        outsider_start = await client.post(
+            f"/api/v1/matches/{outsider_response.json()['match_id']}/start",
+            headers=_auth_headers_for_agent("agent-player-3"),
+        )
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO api_keys (
+                        id, user_id, key_hash, elo_rating, is_active, created_at
+                    ) VALUES (
+                        :id, :user_id, :key_hash, :elo_rating, :is_active, CURRENT_TIMESTAMP
+                    )
+                    """
+                ),
+                {
+                    "id": "00000000-0000-0000-0000-000000000298",
+                    "user_id": "00000000-0000-0000-0000-000000000302",
+                    "key_hash": hash_api_key("sibling-morgana-key"),
+                    "elo_rating": 1190,
+                    "is_active": True,
+                },
+            )
+        sibling_key_start = await client.post(
+            f"/api/v1/matches/{outsider_response.json()['match_id']}/start",
+            headers={"X-API-Key": "sibling-morgana-key"},
+        )
+
+        active_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+        insert_seeded_agent_player(
+            database_url=database_url,
+            match_id=active_response.json()["match_id"],
+            agent_id="agent-player-3",
+            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff3",
+        )
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE matches SET status = :status WHERE id = :match_id"),
+                {"status": "active", "match_id": active_response.json()["match_id"]},
+            )
+        active_start = await client.post(
+            f"/api/v1/matches/{active_response.json()['match_id']}/start",
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+
+        completed_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+        insert_seeded_agent_player(
+            database_url=database_url,
+            match_id=completed_response.json()["match_id"],
+            agent_id="agent-player-3",
+            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff4",
+        )
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE matches SET status = :status WHERE id = :match_id"),
+                {"status": "completed", "match_id": completed_response.json()["match_id"]},
+            )
+        completed_start = await client.post(
+            f"/api/v1/matches/{completed_response.json()['match_id']}/start",
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+
+    assert not_ready_start.status_code == HTTPStatus.CONFLICT
+    assert not_ready_start.json() == {
+        "error": {
+            "code": "match_lobby_not_ready",
+            "message": (
+                f"Match '{not_ready_response.json()['match_id']}' needs at least 2 joined players "
+                "before it can start."
+            ),
+        }
+    }
+    assert outsider_start.status_code == HTTPStatus.FORBIDDEN
+    assert outsider_start.json() == {
+        "error": {
+            "code": "match_start_forbidden",
+            "message": (
+                f"Authenticated agent does not own lobby '{outsider_response.json()['match_id']}'."
+            ),
+        }
+    }
+    assert sibling_key_start.status_code == HTTPStatus.FORBIDDEN
+    assert sibling_key_start.json() == outsider_start.json()
+    assert active_start.status_code == HTTPStatus.CONFLICT
+    assert active_start.json() == {
+        "error": {
+            "code": "match_already_active",
+            "message": f"Match '{active_response.json()['match_id']}' is already active.",
+        }
+    }
+    assert completed_start.status_code == HTTPStatus.CONFLICT
+    assert completed_start.json() == {
+        "error": {
+            "code": "match_already_completed",
+            "message": f"Match '{completed_response.json()['match_id']}' is already completed.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_start_match_lobby_route_rejects_missing_match_and_paused_lobby(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-start-match-lobby-extra-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+    engine = create_engine(database_url)
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        missing_match_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000009999/start",
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+        create_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+        created_payload = create_response.json()
+        insert_seeded_agent_player(
+            database_url=database_url,
+            match_id=created_payload["match_id"],
+            agent_id="agent-player-3",
+            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff7",
+        )
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE matches SET status = :status WHERE id = :match_id"),
+                {"status": "paused", "match_id": created_payload["match_id"]},
+            )
+        paused_match_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/start",
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+
+    assert missing_match_response.status_code == HTTPStatus.NOT_FOUND
+    assert missing_match_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match '00000000-0000-0000-0000-000000009999' was not found.",
+        }
+    }
+    assert paused_match_response.status_code == HTTPStatus.CONFLICT
+    assert paused_match_response.json() == {
+        "error": {
+            "code": "match_not_startable",
+            "message": (
+                f"Match '{created_payload['match_id']}' cannot be started from status 'paused'."
+            ),
+        }
+    }
 
 
 @pytest.mark.asyncio

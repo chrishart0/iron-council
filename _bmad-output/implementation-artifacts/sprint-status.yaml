@@ -105,5 +105,5 @@ development_status:
   epic-21: done
   21-1-add-an-authenticated-match-lobby-creation-endpoint: done
 
-  epic-22: planned
-  22-1-add-an-authenticated-lobby-start-endpoint: drafted
+  epic-22: done
+  22-1-add-an-authenticated-lobby-start-endpoint: done

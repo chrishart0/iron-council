@@ -24,10 +24,13 @@ class MatchRuntime:
         for match in self._registry.list_matches():
             if match.status != MatchStatus.ACTIVE:
                 continue
-            self._tasks[match.match_id] = asyncio.create_task(
-                self._run_match_loop(match.match_id),
-                name=f"match-runtime:{match.match_id}",
-            )
+            self._ensure_match_task(match.match_id)
+
+    async def ensure_match_running(self, match_id: str) -> None:
+        match = self._registry.get_match(match_id)
+        if match is None or match.status != MatchStatus.ACTIVE:
+            return
+        self._ensure_match_task(match_id)
 
     async def stop(self) -> None:
         tasks = list(self._tasks.values())
@@ -36,6 +39,15 @@ class MatchRuntime:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _ensure_match_task(self, match_id: str) -> None:
+        existing_task = self._tasks.get(match_id)
+        if existing_task is not None and not existing_task.done():
+            return
+        self._tasks[match_id] = asyncio.create_task(
+            self._run_match_loop(match_id),
+            name=f"match-runtime:{match_id}",
+        )
 
     async def _run_match_loop(self, match_id: str) -> None:
         try:

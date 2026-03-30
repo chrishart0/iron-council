@@ -121,6 +121,10 @@ class MatchLobbyCreateResponse(MatchSummary):
     creator_player_id: str
 
 
+class MatchLobbyStartResponse(MatchSummary):
+    pass
+
+
 class AuthenticatedOrderSubmissionRequest(StrictModel):
     match_id: str
     tick: TickDuration

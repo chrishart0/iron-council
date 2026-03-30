@@ -8,7 +8,8 @@ from typing import Any
 import httpx
 from server.agent_registry import build_seeded_agent_api_key
 from server.db.registry import load_match_registry_from_database
-from tests.support import RunningApp, insert_completed_match_fixture
+from server.models.domain import MatchStatus
+from tests.support import RunningApp, insert_completed_match_fixture, insert_seeded_agent_player
 from websockets.sync.client import connect as connect_websocket
 
 
@@ -462,6 +463,84 @@ def test_create_match_lobby_smoke_flow_runs_through_real_process(
     assert "api_key" not in detail_response.text.lower()
     assert state_response.status_code == HTTPStatus.OK
     assert state_response.json()["player_id"] == "player-1"
+
+
+def test_start_match_lobby_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        create_response = client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 1,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_headers(),
+        )
+        assert create_response.status_code == HTTPStatus.CREATED
+        created_payload = create_response.json()
+
+        insert_seeded_agent_player(
+            database_url=running_seeded_app.database_url,
+            match_id=created_payload["match_id"],
+            agent_id="agent-player-3",
+            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff1",
+        )
+
+        start_response = client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/start",
+            headers=_headers(),
+        )
+        browse_response = client.get("/api/v1/matches")
+        detail_response = client.get(f"/api/v1/matches/{created_payload['match_id']}")
+
+        deadline = time.monotonic() + 3
+        latest_state: dict[str, Any] | None = None
+        while time.monotonic() < deadline:
+            state_response = client.get(
+                f"/api/v1/matches/{created_payload['match_id']}/state",
+                headers=_headers(),
+            )
+            assert state_response.status_code == HTTPStatus.OK
+            latest_state = state_response.json()
+            if latest_state["tick"] >= 1:
+                break
+            time.sleep(0.1)
+
+    assert start_response.status_code == HTTPStatus.OK
+    assert start_response.json() == {
+        "match_id": created_payload["match_id"],
+        "status": "active",
+        "map": "britain",
+        "tick": 0,
+        "tick_interval_seconds": 1,
+        "current_player_count": 2,
+        "max_player_count": 4,
+        "open_slot_count": 2,
+    }
+    assert browse_response.status_code == HTTPStatus.OK
+    assert browse_response.json()["matches"][0] == start_response.json()
+    assert detail_response.status_code == HTTPStatus.OK
+    assert detail_response.json() == {
+        **start_response.json(),
+        "roster": [
+            {"display_name": "Gawain", "competitor_kind": "agent"},
+            {"display_name": "Morgana", "competitor_kind": "agent"},
+        ],
+    }
+    assert latest_state is not None
+    assert latest_state["match_id"] == created_payload["match_id"]
+    assert latest_state["player_id"] == "player-1"
+    assert latest_state["tick"] >= 1
+
+    reloaded_registry = load_match_registry_from_database(running_seeded_app.database_url)
+    reloaded_match = reloaded_registry.get_match(created_payload["match_id"])
+    assert reloaded_match is not None
+    assert reloaded_match.status == MatchStatus.ACTIVE
+    assert reloaded_match.state.tick >= 1
 
 
 def test_authenticated_current_agent_profile_smoke_flow_runs_through_real_process(
