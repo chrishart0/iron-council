@@ -131,3 +131,43 @@ uv run uvicorn server.main:app --reload
 GitHub Actions runs the same `make ci` quality gate on pushes and pull requests.
 Coverage is enforced through `pytest-cov`, and the harness is tuned to stay pragmatic:
 it checks the public API behavior without adding implementation-detail tests.
+
+## Public match browser client
+
+Story 24.1 adds a minimal supported Next.js client under `client/`. It only ships a
+public read-only `/matches` page backed by the existing `GET /api/v1/matches`
+contract.
+
+Install the locked client dependencies once:
+
+```bash
+make client-install
+```
+
+Run the FastAPI server in one shell:
+
+```bash
+uv run uvicorn server.main:app --reload
+```
+
+Then run the client in another shell:
+
+```bash
+cd client
+cp .env.example .env.local
+npm run dev
+```
+
+Visit `http://127.0.0.1:3000/matches` to browse the live public match list. The
+client reads `IRON_COUNCIL_API_BASE_URL` from `client/.env.local`; the default local
+server target is `http://127.0.0.1:8000`.
+
+The repo quality gate now includes the client checks:
+
+```bash
+make client-lint
+make client-test
+make client-build
+make quality
+make ci
+```

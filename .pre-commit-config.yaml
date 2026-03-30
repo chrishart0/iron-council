@@ -31,9 +31,22 @@ repos:
         language: system
         pass_filenames: false
         types: [python]
+      - id: client-lint
+        name: client lint
+        entry: make client-lint
+        language: system
+        pass_filenames: false
+        files: ^client/
       - id: pytest
         name: pytest
         entry: uv run pytest -q
         language: system
         pass_filenames: false
         stages: [pre-push]
+      - id: client-test
+        name: client test
+        entry: make client-test
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        files: ^client/

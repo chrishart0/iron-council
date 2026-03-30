@@ -6,7 +6,7 @@ DOCKER_COMPOSE ?= docker compose -f $(SUPPORT_SERVICES_COMPOSE_FILE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install install-dev hooks format format-check lint test smoke-test regression-test test-real-api test-smoke pre-commit quality ci support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
+.PHONY: help setup install install-dev hooks format format-check lint test smoke-test regression-test test-real-api test-smoke pre-commit quality ci client-install client-lint client-typecheck client-test client-build support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
 
 help: ## Show the available developer workflow commands.
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-14s %s\n", $$1, $$2}'
@@ -49,7 +49,21 @@ test-smoke: ## Run the small real-process API smoke flow suite.
 pre-commit: ## Run the repository hooks across all files.
 	$(UV) run pre-commit run --all-files --show-diff-on-failure
 
-quality: format-check lint test ## Run the local quality gate, including smoke tests via pytest discovery.
+client-install: ## Install locked client dependencies.
+	cd client && npm ci
+
+client-lint: client-install ## Run the client lint/typecheck verification.
+	cd client && npm run lint
+
+client-typecheck: client-lint ## Backwards-compatible alias for client lint/typecheck.
+
+client-test: client-install ## Run the client behavior checks.
+	cd client && npm test
+
+client-build: client-install ## Build the client production bundle.
+	cd client && npm run build
+
+quality: format-check lint test client-typecheck client-test client-build ## Run the local quality gate, including the client checks.
 
 ci: pre-commit quality ## Run the CI quality gate locally.
 

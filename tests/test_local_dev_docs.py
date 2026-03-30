@@ -44,3 +44,15 @@ def test_readme_documents_real_process_api_targets_and_db_registry_mode() -> Non
     assert "make test-smoke" in readme
     assert "IRON_COUNCIL_MATCH_REGISTRY_BACKEND=db" in readme
     assert "temporary migrated and deterministically seeded SQLite database" in readme
+
+
+def test_readme_documents_public_match_browser_client_workflow() -> None:
+    readme = (REPO_ROOT / "README.md").read_text()
+
+    assert "make client-install" in readme
+    assert "npm run dev" in readme
+    assert "http://127.0.0.1:3000/matches" in readme
+    assert "IRON_COUNCIL_API_BASE_URL" in readme
+    assert "make client-lint" in readme
+    assert "make client-test" in readme
+    assert "make client-build" in readme

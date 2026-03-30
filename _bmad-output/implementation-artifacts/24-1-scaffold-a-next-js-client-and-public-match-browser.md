@@ -1,6 +1,6 @@
 # Story 24.1: Scaffold a Next.js client and public match browser
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -17,18 +17,18 @@ So that I can discover lobbies and active games without using agent tooling or p
 
 ## Tasks / Subtasks
 
-- [ ] Create the initial `client/` Next.js + TypeScript scaffold with a minimal app shell and shared API types. (AC: 1, 3)
-  - [ ] Add `client/package.json`, TypeScript config, and the smallest working app-router layout.
-  - [ ] Add a typed API helper for the public matches route and mirror only the compact browse fields already exposed by the server.
-- [ ] Build a read-only public matches page against `GET /api/v1/matches`. (AC: 1, 2, 4)
-  - [ ] Render deterministic loading, empty, success, and error states.
-  - [ ] Keep the page public and read-only; do not add auth, lobby mutation, or websocket behavior in this story.
-- [ ] Integrate the new client into local docs and repo verification paths. (AC: 3)
-  - [ ] Add local install/run commands to `README.md`.
-  - [ ] Add client verification commands to `Makefile` and CI in the simplest coherent way.
-- [ ] Add automated coverage for the public match browser and close the story with review/simplification. (AC: 1, 3, 4)
-  - [ ] Add at least one client-side automated check for successful load plus one failure/empty-path check.
-  - [ ] Re-run the repo quality gate after client integration.
+- [x] Create the initial `client/` Next.js + TypeScript scaffold with a minimal app shell and shared API types. (AC: 1, 3)
+  - [x] Add `client/package.json`, TypeScript config, and the smallest working app-router layout.
+  - [x] Add a typed API helper for the public matches route and mirror only the compact browse fields already exposed by the server.
+- [x] Build a read-only public matches page against `GET /api/v1/matches`. (AC: 1, 2, 4)
+  - [x] Render deterministic loading, empty, success, and error states.
+  - [x] Keep the page public and read-only; do not add auth, lobby mutation, or websocket behavior in this story.
+- [x] Integrate the new client into local docs and repo verification paths. (AC: 3)
+  - [x] Add local install/run commands to `README.md`.
+  - [x] Add client verification commands to `Makefile` and CI in the simplest coherent way.
+- [x] Add automated coverage for the public match browser and close the story with review/simplification. (AC: 1, 3, 4)
+  - [x] Add at least one client-side automated check for successful load plus one failure/empty-path check.
+  - [x] Re-run the repo quality gate after client integration.
 
 ## Dev Notes
 
@@ -56,16 +56,47 @@ So that I can discover lobbies and active games without using agent tooling or p
 
 ### Agent Model Used
 
-_To be filled during implementation._
+OpenAI Codex CLI via `codex --yolo exec`, followed by Hermes Agent review/verification on `gpt-5.4`.
 
 ### Debug Log References
 
-_To be filled during implementation._
+- `npm test`
+- `npm run lint`
+- `npm run build`
+- `make quality`
+- `make ci`
 
 ### Completion Notes List
 
-_To be filled during implementation._
+- Added a minimal `client/` Next.js + TypeScript workspace with a public `/matches` route.
+- Kept the first human-facing client surface read-only and limited to the existing compact browse contract from `GET /api/v1/matches`.
+- Added deterministic loading, empty, and error states without exposing raw transport details.
+- Integrated the client into repo commands, CI, and git-hook verification with the smallest coherent `client-install` / `client-lint` / `client-test` / `client-build` workflow.
+- Added client behavior tests for the rendered browser states plus API helper contract/error handling.
+- Updated README documentation for the new local client workflow.
 
 ### File List
 
-_To be filled during implementation._
+- `.github/workflows/quality.yml`
+- `.pre-commit-config.yaml`
+- `Makefile`
+- `README.md`
+- `tests/test_local_dev_docs.py`
+- `client/.env.example`
+- `client/.gitignore`
+- `client/next.config.ts`
+- `client/package-lock.json`
+- `client/package.json`
+- `client/src/app/globals.css`
+- `client/src/app/layout.tsx`
+- `client/src/app/matches/loading.tsx`
+- `client/src/app/matches/page.tsx`
+- `client/src/app/page.tsx`
+- `client/src/components/matches/match-browser.test.tsx`
+- `client/src/components/matches/match-browser.tsx`
+- `client/src/lib/api.test.ts`
+- `client/src/lib/api.ts`
+- `client/src/lib/types.ts`
+- `client/tsconfig.json`
+- `client/vitest.config.ts`
+- `client/vitest.setup.ts`

@@ -110,8 +110,8 @@ development_status:
   epic-23: done
   23-1-extend-the-python-sdk-and-example-quickstart-for-authenticated-lobby-lifecycle-flows: done
 
-  epic-24: ready
-  24-1-scaffold-a-next-js-client-and-public-match-browser: ready-for-dev
+  epic-24: in-progress
+  24-1-scaffold-a-next-js-client-and-public-match-browser: done
   24-2-add-real-human-jwt-authentication-for-http-and-websocket-paths: ready-for-dev
   24-3-add-client-side-auth-session-bootstrap-for-future-human-flows: backlog
 

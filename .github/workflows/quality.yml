@@ -20,6 +20,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: client/package-lock.json
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
         with:
@@ -27,6 +34,9 @@ jobs:
 
       - name: Install development dependencies
         run: uv sync --extra dev --frozen
+
+      - name: Install client dependencies
+        run: make client-install
 
       - name: Run quality gate
         run: make ci
