@@ -107,3 +107,5 @@ development_status:
 
   epic-22: done
   22-1-add-an-authenticated-lobby-start-endpoint: done
+  epic-23: done
+  23-1-extend-the-python-sdk-and-example-quickstart-for-authenticated-lobby-lifecycle-flows: done

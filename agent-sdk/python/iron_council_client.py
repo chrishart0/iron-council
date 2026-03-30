@@ -189,6 +189,10 @@ class MatchLobbyCreateResponse(MatchSummary):
     creator_player_id: str
 
 
+class MatchLobbyStartResponse(MatchSummary):
+    pass
+
+
 class MatchJoinResponse(StrictModel):
     status: Literal["accepted"]
     match_id: str
@@ -568,6 +572,13 @@ class IronCouncilClient:
             f"/api/v1/matches/{match_id}/join",
             json_body=MatchJoinRequest(match_id=match_id),
             response_model=MatchJoinResponse,
+        )
+
+    def start_match_lobby(self, match_id: str) -> MatchLobbyStartResponse:
+        return self._request_json(
+            "POST",
+            f"/api/v1/matches/{match_id}/start",
+            response_model=MatchLobbyStartResponse,
         )
 
     def get_match_state(self, match_id: str) -> AgentStateProjection:

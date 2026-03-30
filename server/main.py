@@ -51,6 +51,9 @@ from server.db.registry import (
     resolve_authenticated_agent_context_from_db,
     start_match_lobby,
 )
+from server.db.registry import (
+    join_match as join_db_match,
+)
 from server.fog import project_agent_state
 from server.models.api import (
     AgentBriefingResponse,
@@ -1092,6 +1095,7 @@ def create_app(
         join_request: MatchJoinRequest,
         registry: MatchRegistryDependency,
         authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
+        api_key: ApiKeyHeader = None,
     ) -> MatchJoinResponse:
         record = registry.get_match(match_id)
         if record is None:
@@ -1111,13 +1115,22 @@ def create_app(
             )
 
         try:
+            if history_database_url is not None and api_key is not None:
+                joined_match = join_db_match(
+                    database_url=history_database_url,
+                    match_id=match_id,
+                    authenticated_api_key_hash=hash_api_key(api_key),
+                )
+                registry.seed_match(joined_match.record)
+                return joined_match.response
             return registry.join_match(match_id=match_id, agent_id=authenticated_agent.agent_id)
         except MatchJoinError as exc:
-            raise ApiError(
-                status_code=HTTPStatus.BAD_REQUEST,
-                code=exc.code,
-                message=exc.message,
-            ) from exc
+            status_code = HTTPStatus.BAD_REQUEST
+            if exc.code == "invalid_api_key":
+                status_code = HTTPStatus.UNAUTHORIZED
+            elif exc.code == "match_not_found":
+                status_code = HTTPStatus.NOT_FOUND
+            raise ApiError(status_code=status_code, code=exc.code, message=exc.message) from exc
 
     @api_router.post(
         "/matches/{match_id}/orders",

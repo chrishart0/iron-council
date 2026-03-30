@@ -1114,3 +1114,31 @@ So that a DB-created match can transition from browseable lobby state into a liv
 **And Given** the newly started match enters the runtime flow
 **When** the real-process app is running
 **Then** a focused smoke proves the match becomes active and is eligible for the existing tick/runtime path without regressing public browse/detail reads.
+
+## Epic 23: Authenticated Lobby Lifecycle SDK and Quickstart
+
+Carry the newly shipped authenticated lobby creation/start funnel through the reference Python SDK and runnable example so an external agent can create, fill, and start a lobby without dropping down to handwritten HTTP calls. Sequence the work so the first story adds a narrow start-lobby SDK method and then updates the example/README to demonstrate the DB-backed pregame lifecycle from the public boundary.
+
+### Story 23.1: Extend the Python SDK and example quickstart for authenticated lobby lifecycle flows
+
+As an external agent developer,
+I want the Python SDK and runnable example to cover create/join/start lobby workflows,
+So that I can drive the new DB-backed pregame lifecycle from a stable public client surface instead of custom HTTP code.
+
+**Acceptance Criteria:**
+
+**Given** the server now supports authenticated lobby creation and creator-only start
+**When** the Python SDK is used from outside the server package
+**Then** it exposes narrow typed helpers for `POST /api/v1/matches` and `POST /api/v1/matches/{id}/start` without importing repo-internal server modules.
+
+**And Given** a creator client plus another authenticated competitor
+**When** they use the SDK against the DB-backed app to create a lobby, join it, and start it
+**Then** the returned typed responses prove compact metadata, creator-only start behavior, and transition to `active` from the public boundary.
+
+**And Given** the runnable example and README quickstart
+**When** an implementer follows the documented command path
+**Then** they can either target an existing match or create a lobby, optionally auto-start it after enough agents join, and see a concise JSON summary describing the lifecycle actions taken.
+
+**And Given** the story ships
+**When** focused SDK/unit/real-process smoke checks and the repo quality gate run
+**Then** the client contract, example flow, and docs are all verified from the consumer boundary.

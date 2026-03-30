@@ -3131,6 +3131,76 @@ async def test_join_match_rejects_invalid_authenticated_requests(
 
 
 @pytest.mark.asyncio
+async def test_join_match_persists_db_backed_lobby_membership_and_remains_idempotent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-join-match-lobby.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        create_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+        created_payload = create_response.json()
+
+        join_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json=_join_payload(match_id=created_payload["match_id"]),
+            headers=_auth_headers_for_agent("agent-player-3"),
+        )
+        repeat_join_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json=_join_payload(match_id=created_payload["match_id"]),
+            headers=_auth_headers_for_agent("agent-player-3"),
+        )
+        start_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/start",
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+
+    reloaded_app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=reloaded_app),
+        base_url="http://testserver",
+    ) as client:
+        joined_state_response = await client.get(
+            f"/api/v1/matches/{created_payload['match_id']}/state",
+            headers=_auth_headers_for_agent("agent-player-3"),
+        )
+
+    assert create_response.status_code == HTTPStatus.CREATED
+    assert join_response.status_code == HTTPStatus.ACCEPTED
+    assert join_response.json() == {
+        "status": "accepted",
+        "match_id": created_payload["match_id"],
+        "agent_id": "agent-player-3",
+        "player_id": "player-2",
+    }
+    assert repeat_join_response.status_code == HTTPStatus.ACCEPTED
+    assert repeat_join_response.json() == join_response.json()
+    assert start_response.status_code == HTTPStatus.OK
+    assert start_response.json()["status"] == "active"
+    assert start_response.json()["current_player_count"] == 2
+    assert joined_state_response.status_code == HTTPStatus.OK
+    assert joined_state_response.json()["player_id"] == "player-2"
+
+
+@pytest.mark.asyncio
 async def test_authenticated_match_access_derives_joined_player_and_rejects_unjoined(
     app_client: AsyncClient,
     seeded_registry: InMemoryMatchRegistry,

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 from server.agent_registry import build_seeded_agent_api_key
 from tests.support import RunningApp, load_python_agent_sdk_module
 
@@ -105,3 +110,71 @@ def test_agent_sdk_briefing_smoke_flow_runs_through_real_process(
     assert briefing.state.player_id == "player-2"
     assert briefing.alliances[0].alliance_id == "alliance-red"
     assert briefing.messages.direct[0].content == "SDK briefing direct."
+
+
+def test_agent_sdk_lobby_lifecycle_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    sdk_module = load_python_agent_sdk_module()
+    creator_client = sdk_module.IronCouncilClient(
+        base_url=running_seeded_app.base_url,
+        api_key=build_seeded_agent_api_key("agent-player-2"),
+    )
+    competitor_client = sdk_module.IronCouncilClient(
+        base_url=running_seeded_app.base_url,
+        api_key=build_seeded_agent_api_key("agent-player-3"),
+    )
+
+    created = creator_client.create_match_lobby(
+        map="britain",
+        tick_interval_seconds=20,
+        max_players=4,
+        victory_city_threshold=13,
+        starting_cities_per_player=2,
+    )
+    joined = competitor_client.join_match(created.match_id)
+    started = creator_client.start_match_lobby(created.match_id)
+    state = creator_client.get_match_state(created.match_id)
+
+    assert created.status == "lobby"
+    assert created.creator_player_id == "player-1"
+    assert joined.status == "accepted"
+    assert joined.player_id == "player-2"
+    assert started.status == "active"
+    assert started.current_player_count == 2
+    assert started.open_slot_count == 2
+    assert state.match_id == created.match_id
+    assert state.player_id == "player-1"
+
+
+def test_agent_sdk_example_lobby_lifecycle_command_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    command = [
+        sys.executable,
+        "agent-sdk/python/example_agent.py",
+        "--base-url",
+        running_seeded_app.base_url,
+        "--api-key",
+        build_seeded_agent_api_key("agent-player-2"),
+        "--create-lobby",
+        "--joiner-api-key",
+        build_seeded_agent_api_key("agent-player-3"),
+        "--auto-start",
+    ]
+
+    result = subprocess.run(
+        ["uv", "run", *command],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["mode"] == "lobby-lifecycle"
+    assert payload["joined_status"] == "accepted"
+    assert payload["started"] is True
+    assert payload["match_status"] == "active"

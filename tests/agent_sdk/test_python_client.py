@@ -156,6 +156,111 @@ def test_sdk_create_match_lobby_returns_typed_authenticated_contract(
     assert state.player_id == "player-1"
 
 
+def test_sdk_start_match_lobby_returns_typed_compact_active_contract(
+    sdk_module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'sdk-start-match-lobby.db'}"
+    from server.db.testing import provision_seeded_database
+
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+    with TestClient(app, base_url="http://testserver") as session:
+        creator_client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=build_seeded_agent_api_key("agent-player-2"),
+            session=session,
+        )
+        competitor_client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=build_seeded_agent_api_key("agent-player-3"),
+            session=session,
+        )
+
+        created = creator_client.create_match_lobby(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=4,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        )
+        joined = competitor_client.join_match(created.match_id)
+        started = creator_client.start_match_lobby(created.match_id)
+        state = creator_client.get_match_state(created.match_id)
+
+    assert joined.status == "accepted"
+    assert joined.match_id == created.match_id
+    assert started.match_id == created.match_id
+    assert isinstance(started, sdk_module.MatchLobbyStartResponse)
+    assert started.status == sdk_module.MatchStatus.ACTIVE
+    assert started.current_player_count == 2
+    assert started.max_player_count == 4
+    assert started.open_slot_count == 2
+    assert state.match_id == created.match_id
+    assert state.player_id == created.creator_player_id
+
+
+def test_sdk_start_match_lobby_wraps_creator_only_and_not_ready_errors(
+    sdk_module: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'sdk-start-match-lobby-errors.db'}"
+    from server.db.testing import provision_seeded_database
+
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+    with TestClient(app, base_url="http://testserver") as session:
+        creator_client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=build_seeded_agent_api_key("agent-player-2"),
+            session=session,
+        )
+        competitor_client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=build_seeded_agent_api_key("agent-player-3"),
+            session=session,
+        )
+
+        not_ready = creator_client.create_match_lobby(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=4,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        )
+        with pytest.raises(sdk_module.IronCouncilApiError) as not_ready_exc_info:
+            creator_client.start_match_lobby(not_ready.match_id)
+
+        ready_forbidden = creator_client.create_match_lobby(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=4,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        )
+        competitor_client.join_match(ready_forbidden.match_id)
+        with pytest.raises(sdk_module.IronCouncilApiError) as forbidden_exc_info:
+            competitor_client.start_match_lobby(ready_forbidden.match_id)
+
+    not_ready_error = not_ready_exc_info.value
+    assert not_ready_error.status_code == HTTPStatus.CONFLICT
+    assert not_ready_error.error_code == "match_lobby_not_ready"
+    assert "needs at least 2 joined players" in not_ready_error.message
+
+    forbidden_error = forbidden_exc_info.value
+    assert forbidden_error.status_code == HTTPStatus.FORBIDDEN
+    assert forbidden_error.error_code == "match_start_forbidden"
+    assert ready_forbidden.match_id in forbidden_error.message
+
+
 def test_sdk_workflow_methods_cover_orders_messages_treaties_and_alliances(
     client: Any,
     representative_order_payload: dict[str, Any],
@@ -625,6 +730,33 @@ def test_sdk_command_alliance_model_rejects_invalid_variants(
 ) -> None:
     with pytest.raises(ValueError, match=expected_message):
         sdk_module.AgentCommandAllianceAction.model_validate(payload)
+
+
+def test_sdk_alliance_models_accept_valid_create_join_and_leave_variants(sdk_module: Any) -> None:
+    route_create = sdk_module.AllianceActionRequest.model_validate(
+        {"match_id": "match-alpha", "action": "create", "name": "North"}
+    )
+    route_join = sdk_module.AllianceActionRequest.model_validate(
+        {"match_id": "match-alpha", "action": "join", "alliance_id": "alliance-1"}
+    )
+    route_leave = sdk_module.AllianceActionRequest.model_validate(
+        {"match_id": "match-alpha", "action": "leave"}
+    )
+
+    command_create = sdk_module.AgentCommandAllianceAction.model_validate(
+        {"action": "create", "name": "North"}
+    )
+    command_join = sdk_module.AgentCommandAllianceAction.model_validate(
+        {"action": "join", "alliance_id": "alliance-1"}
+    )
+    command_leave = sdk_module.AgentCommandAllianceAction.model_validate({"action": "leave"})
+
+    assert route_create.name == "North"
+    assert route_join.alliance_id == "alliance-1"
+    assert route_leave.action == "leave"
+    assert command_create.name == "North"
+    assert command_join.alliance_id == "alliance-1"
+    assert command_leave.action == "leave"
 
 
 def test_sdk_wraps_structured_api_failures_without_leaking_api_key(

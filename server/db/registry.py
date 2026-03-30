@@ -16,6 +16,7 @@ from server.agent_registry import (
     InMemoryMatchRegistry,
     MatchAlliance,
     MatchAllianceMember,
+    MatchJoinError,
     MatchRecord,
     build_seeded_agent_api_key,
     build_seeded_agent_profiles,
@@ -38,6 +39,7 @@ from server.models.api import (
     LeaderboardEntry,
     MatchHistoryEntry,
     MatchHistoryResponse,
+    MatchJoinResponse,
     MatchListResponse,
     MatchLobbyCreateRequest,
     MatchLobbyCreateResponse,
@@ -100,6 +102,12 @@ class CreatedMatchLobby:
 @dataclass(frozen=True)
 class StartedMatchLobby:
     response: MatchLobbyStartResponse
+    record: MatchRecord
+
+
+@dataclass(frozen=True)
+class JoinedMatch:
+    response: MatchJoinResponse
     record: MatchRecord
 
 
@@ -321,6 +329,80 @@ def create_match_lobby(
                 )
             ],
         ),
+    )
+
+
+def join_match(
+    *,
+    database_url: str,
+    match_id: str,
+    authenticated_api_key_hash: str,
+) -> JoinedMatch:
+    engine = create_engine(database_url)
+    with Session(engine) as session, session.begin():
+        authenticated_agent_resolution = _resolve_authenticated_agent_from_db_key_hash(
+            session=session,
+            key_hash=authenticated_api_key_hash,
+        )
+        if authenticated_agent_resolution is None:
+            raise MatchJoinError(
+                code="invalid_api_key",
+                message="A valid active X-API-Key header is required.",
+            )
+
+        match = session.get(Match, match_id)
+        if match is None:
+            raise MatchJoinError(
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+
+        joined_record = _load_match_record_from_session(session=session, match=match)
+        existing_player_id = joined_record.joined_agents.get(
+            authenticated_agent_resolution.context.agent_id
+        )
+        if existing_player_id is not None:
+            return JoinedMatch(
+                response=MatchJoinResponse(
+                    status="accepted",
+                    match_id=match_id,
+                    agent_id=authenticated_agent_resolution.context.agent_id,
+                    player_id=existing_player_id,
+                ),
+                record=joined_record,
+            )
+
+        if not joined_record.joinable_player_ids:
+            raise MatchJoinError(
+                code="match_not_joinable",
+                message=f"Match '{match_id}' does not support agent joins.",
+            )
+
+        assigned_player_id = joined_record.joinable_player_ids[0]
+        session.add(
+            Player(
+                id=_build_joined_player_id(len(joined_record.joined_agents) + 1),
+                user_id=authenticated_agent_resolution.user_id,
+                match_id=match_id,
+                display_name=authenticated_agent_resolution.context.display_name,
+                is_agent=True,
+                api_key_id=authenticated_agent_resolution.api_key_id,
+                elo_rating=authenticated_agent_resolution.elo_rating,
+                alliance_id=None,
+                alliance_joined_tick=None,
+                eliminated_at=None,
+            )
+        )
+        updated_record = _load_match_record_from_session(session=session, match=match)
+
+    return JoinedMatch(
+        response=MatchJoinResponse(
+            status="accepted",
+            match_id=match_id,
+            agent_id=authenticated_agent_resolution.context.agent_id,
+            player_id=assigned_player_id,
+        ),
+        record=updated_record,
     )
 
 
@@ -974,6 +1056,10 @@ def _build_persisted_player_mapping(
     return {
         str(player.id): canonical_player_ids[index] for index, player in enumerate(sorted_players)
     }
+
+
+def _build_joined_player_id(join_index: int) -> str:
+    return f"ffffffff-ffff-ffff-ffff-{join_index:012x}"
 
 
 @dataclass(frozen=True)
