@@ -1142,3 +1142,127 @@ So that I can drive the new DB-backed pregame lifecycle from a stable public cli
 **And Given** the story ships
 **When** focused SDK/unit/real-process smoke checks and the repo quality gate run
 **Then** the client contract, example flow, and docs are all verified from the consumer boundary.
+
+## Epic 24: Web Client Foundation and Human Access
+
+Open the next product lane beyond the server and agent SDK by introducing the first Next.js client scaffold and the missing human-access foundation. Sequence the work so the client can first ship a public read-only match browser against the existing public API, then tighten the human authentication boundary on HTTP and WebSocket paths, then add client-side session/bootstrap plumbing without overreaching into full gameplay UI.
+
+### Story 24.1: Scaffold a Next.js client and public match browser
+
+As a spectator or prospective player,
+I want a web page that lists public matches from the running server,
+So that I can discover lobbies and active games without using agent tooling or private credentials.
+
+**Acceptance Criteria:**
+
+**Given** the FastAPI server is running
+**When** a user opens the new client app's public matches route
+**Then** the page renders data from `GET /api/v1/matches` using the existing compact public browse contract.
+
+**And Given** the match browser is intended as the first human-facing entry point
+**When** rows are shown
+**Then** each row includes only public browse metadata such as match id, status, map, tick, tick interval, current player count, max players, and open slots.
+
+**And Given** the client is the first new runtime in the repo
+**When** the story ships
+**Then** the repository contains a minimal Next.js + TypeScript scaffold, documented local run commands, and automated client verification integrated into the repo quality workflow.
+
+**And Given** the server is unavailable or returns no public matches
+**When** the route loads
+**Then** the client shows deterministic empty/error states without exposing stack traces or raw transport details.
+
+### Story 24.2: Add real human JWT authentication for HTTP and WebSocket paths
+
+As a human player,
+I want the server to authenticate me with a real user token instead of agent credentials,
+So that the browser can join future player-only flows through the public architecture boundary.
+
+**Acceptance Criteria:**
+
+**Given** the architecture requires Supabase-issued JWTs for human users
+**When** an authenticated browser calls a protected HTTP route or player WebSocket path
+**Then** the server validates the JWT, resolves the human identity, and rejects invalid or missing tokens with structured auth errors.
+
+**And Given** agent auth and spectator access already exist
+**When** human auth is introduced
+**Then** the implementation preserves agent API-key flows and unauthenticated spectator reads without widening privileges or conflating identities.
+
+**And Given** WebSocket auth is a public contract
+**When** a player socket connects with a valid human token
+**Then** the server registers the viewer as a human player and sends the same initial realtime envelope shape already documented for player viewers.
+
+**And Given** the story ships
+**When** focused HTTP/WebSocket tests plus the repo quality gate run
+**Then** the new human auth path is verified from the public boundary and the docs stay aligned with the shipped contract.
+
+### Story 24.3: Add client-side auth/session bootstrap for future human flows
+
+As a returning human player,
+I want the web client to remember my configured server/auth context,
+So that later browse, lobby, and live-match pages can reuse one simple session shell instead of ad hoc per-page wiring.
+
+**Acceptance Criteria:**
+
+**Given** the client has a public browser page and the server can validate human JWTs
+**When** a user configures the client runtime
+**Then** the app provides a small session/bootstrap layer for server base URL, auth state, and guarded navigation.
+
+**And Given** some pages remain public while later pages require auth
+**When** navigation occurs
+**Then** the client clearly distinguishes public routes from authenticated routes without duplicating connection/bootstrap logic.
+
+**And Given** the story ships
+**When** local run docs and automated checks are executed
+**Then** the client session shell is documented, tested, and ready for authenticated lobby/gameplay stories.
+
+## Epic 25: Human Pregame and Spectator Entry
+
+Turn the new client foundation into a usable human-facing entry funnel by adding public match detail, a read-only spectator live view, and the first authenticated lobby actions for humans. Sequence the work so read-only discovery lands before live spectator delivery, and live spectator delivery lands before authenticated lobby mutation flows.
+
+### Story 25.1: Add a public match-detail page in the web client
+
+As a spectator or prospective player,
+I want a web detail page for one public match,
+So that I can inspect a lobby or running match before deciding to watch or join.
+
+**Acceptance Criteria:**
+
+**Given** the server already exposes a compact public match-detail route
+**When** a user opens the client detail page for a valid lobby, paused, or active match
+**Then** the page renders configuration and visible roster metadata without exposing fog-filtered state or private credentials.
+
+**And Given** an unknown or completed match id is requested
+**When** the route resolves
+**Then** the page shows deterministic not-found or unsupported-state handling aligned with the public API contract.
+
+### Story 25.2: Add a read-only spectator live match page over WebSockets
+
+As a spectator,
+I want to watch the live match state update in the browser,
+So that I can observe the war unfold without polling APIs manually.
+
+**Acceptance Criteria:**
+
+**Given** the running server already broadcasts spectator-safe WebSocket updates
+**When** a user opens the spectator live page for an active match
+**Then** the client connects to the spectator WebSocket path, renders the initial payload, and updates the view when new tick broadcasts arrive.
+
+**And Given** the socket disconnects or the match is not active
+**When** the client handles the condition
+**Then** it shows a deterministic reconnect or inactive-state message without silently freezing stale state.
+
+### Story 25.3: Add authenticated human lobby create/join/start flows in the web client
+
+As a human player,
+I want to create, join, and start a lobby from the browser,
+So that I can enter matches through the same product surface instead of relying on agent SDK tools.
+
+**Acceptance Criteria:**
+
+**Given** the browser has authenticated human access and the server already supports lobby lifecycle mutations
+**When** a player uses the client lobby actions
+**Then** the UI calls the existing public routes for create, join, and creator-only start without inventing a parallel backend path.
+
+**And Given** domain errors occur such as invalid auth, not-ready, or forbidden start
+**When** the action fails
+**Then** the client surfaces the structured error clearly and does not leave optimistic state that disagrees with the server.

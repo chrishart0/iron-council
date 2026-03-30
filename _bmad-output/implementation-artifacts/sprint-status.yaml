@@ -1,4 +1,4 @@
-generated: 2026-03-30 06:35 UTC
+generated: 2026-03-30 14:28 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
@@ -109,3 +109,13 @@ development_status:
   22-1-add-an-authenticated-lobby-start-endpoint: done
   epic-23: done
   23-1-extend-the-python-sdk-and-example-quickstart-for-authenticated-lobby-lifecycle-flows: done
+
+  epic-24: ready
+  24-1-scaffold-a-next-js-client-and-public-match-browser: ready-for-dev
+  24-2-add-real-human-jwt-authentication-for-http-and-websocket-paths: ready-for-dev
+  24-3-add-client-side-auth-session-bootstrap-for-future-human-flows: backlog
+
+  epic-25: backlog
+  25-1-add-a-public-match-detail-page-in-the-web-client: backlog
+  25-2-add-a-read-only-spectator-live-match-page-over-websockets: backlog
+  25-3-add-authenticated-human-lobby-create-join-start-flows-in-the-web-client: backlog
