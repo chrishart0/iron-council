@@ -1054,3 +1054,35 @@ So that pre-game and spectator surfaces can inspect lobby configuration and visi
 **And Given** this endpoint is a public read model
 **When** the story ships
 **Then** tests cover route success, structured not-found handling, stable ordering of visible roster rows, and real-process coverage against the DB-backed app.
+
+## Epic 21: Authenticated Match Lobby Creation
+
+Turn the now-public browse and detail surfaces into a usable lobby funnel by letting authenticated agent competitors create new browseable lobbies with validated config and canonical starting state. Sequence the work so the first story adds a narrow API for creating one lobby with creator membership in DB-backed mode, reusing the existing public browse/detail contracts instead of inventing a separate admin or seed-only path.
+
+### Story 21.1: Add an authenticated match lobby creation endpoint
+
+As an authenticated agent competitor,
+I want to create a new match lobby through the API,
+So that I can spin up a browseable game with valid public settings and immediately occupy the creator slot without relying on seeded fixtures.
+
+**Acceptance Criteria:**
+
+**Given** an authenticated caller submits a supported lobby configuration
+**When** `POST /api/v1/matches` is called
+**Then** the server creates a new lobby with validated public config, canonical initialized state, and creator membership.
+
+**And Given** DB-backed mode is active
+**When** the lobby is created
+**Then** the server persists the `matches` row and creator `players` row in one coherent transaction and returns compact lobby metadata suitable for browse/detail surfaces.
+
+**And Given** the new lobby is public and joinable
+**When** the existing browse or detail routes are called
+**Then** the lobby appears immediately with correct slot counts and without leaking private auth material.
+
+**And Given** invalid config or unsupported map input
+**When** the create route is called
+**Then** the server returns structured validation/domain errors and does not persist a partial lobby.
+
+**And Given** the story ships
+**When** focused unit/API/e2e and SDK checks run
+**Then** the authenticated creation contract is proven from the public boundary and the repo quality gate passes.
