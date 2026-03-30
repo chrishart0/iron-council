@@ -38,6 +38,7 @@ from server.db.registry import (
     get_match_history,
     get_match_replay_tick,
     get_public_leaderboard,
+    get_public_match_summaries,
     load_match_registry_from_database,
     persist_advanced_match_tick,
 )
@@ -76,6 +77,7 @@ from server.models.api import (
     TreatyActionRequest,
     TreatyListResponse,
 )
+from server.models.domain import MatchStatus
 from server.models.fog import AgentStateProjection
 from server.models.orders import OrderEnvelope
 from server.models.realtime import RealtimeViewerRole
@@ -119,6 +121,16 @@ def _authenticated_route_responses(
         int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
         **{int(status_code): API_ERROR_RESPONSE_SCHEMA for status_code in status_codes},
     }
+
+
+def _public_match_status_priority(status: MatchStatus) -> int:
+    if status is MatchStatus.LOBBY:
+        return 0
+    if status is MatchStatus.ACTIVE:
+        return 1
+    if status is MatchStatus.PAUSED:
+        return 2
+    return 3
 
 
 def _build_validation_error_response(*, code: str, message: str) -> JSONResponse:
@@ -640,15 +652,29 @@ def create_app(
     async def list_matches(
         registry: MatchRegistryDependency,
     ) -> MatchListResponse:
+        if history_database_url is not None:
+            return get_public_match_summaries(database_url=history_database_url)
+
         return MatchListResponse(
             matches=[
                 MatchSummary(
                     match_id=record.match_id,
                     status=record.status,
+                    map=record.map_id,
                     tick=record.state.tick,
                     tick_interval_seconds=record.tick_interval_seconds,
+                    current_player_count=record.public_current_player_count,
+                    max_player_count=record.public_max_player_count,
+                    open_slot_count=record.public_open_slot_count,
                 )
-                for record in registry.list_matches()
+                for record in sorted(
+                    registry.list_matches(),
+                    key=lambda match: (
+                        _public_match_status_priority(match.status),
+                        -match.state.tick,
+                        match.match_id,
+                    ),
+                )
             ]
         )
 

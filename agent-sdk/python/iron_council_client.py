@@ -153,8 +153,12 @@ class ApiErrorResponse(StrictModel):
 class MatchSummary(StrictModel):
     match_id: str
     status: MatchStatus
+    map: str
     tick: TickDuration
     tick_interval_seconds: int = Field(gt=0)
+    current_player_count: int = Field(ge=0)
+    max_player_count: int = Field(ge=0)
+    open_slot_count: int = Field(ge=0)
 
 
 class MatchListResponse(StrictModel):

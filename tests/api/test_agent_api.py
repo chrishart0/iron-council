@@ -230,14 +230,70 @@ async def test_list_matches_returns_stable_json_summaries(app_client: AsyncClien
             {
                 "match_id": "match-alpha",
                 "status": "active",
+                "map": "britain",
                 "tick": 142,
                 "tick_interval_seconds": 30,
+                "current_player_count": 3,
+                "max_player_count": 5,
+                "open_slot_count": 2,
             },
             {
                 "match_id": "match-beta",
                 "status": "paused",
+                "map": "britain",
                 "tick": 7,
                 "tick_interval_seconds": 45,
+                "current_player_count": 0,
+                "max_player_count": 5,
+                "open_slot_count": 5,
+            },
+        ]
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_matches_returns_compact_db_backed_public_browse_rows_and_excludes_completed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from server.db.testing import provision_seeded_database
+
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-match-browse.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/api/v1/matches")
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        "matches": [
+            {
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "status": "active",
+                "map": "britain",
+                "tick": 142,
+                "tick_interval_seconds": 30,
+                "current_player_count": 3,
+                "max_player_count": 5,
+                "open_slot_count": 2,
+            },
+            {
+                "match_id": "00000000-0000-0000-0000-000000000102",
+                "status": "paused",
+                "map": "britain",
+                "tick": 7,
+                "tick_interval_seconds": 45,
+                "current_player_count": 0,
+                "max_player_count": 5,
+                "open_slot_count": 5,
             },
         ]
     }

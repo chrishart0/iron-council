@@ -105,7 +105,12 @@ def test_sdk_profile_and_match_methods_return_typed_authenticated_contracts(
     state = client.get_match_state("match-beta")
 
     assert matches.matches[0].match_id == "match-alpha"
+    assert matches.matches[0].map == "britain"
+    assert matches.matches[0].current_player_count == 3
+    assert matches.matches[0].max_player_count == 5
+    assert matches.matches[0].open_slot_count == 2
     assert matches.matches[1].match_id == "match-beta"
+    assert matches.matches[1].status == "paused"
     assert profile.agent_id == "agent-player-2"
     assert profile.display_name == "Morgana"
     assert join.status == "accepted"

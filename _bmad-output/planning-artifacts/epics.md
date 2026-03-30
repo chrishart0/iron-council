@@ -1010,3 +1010,47 @@ So that pre-game browsing can show who is strong and what happened in finished m
 **And Given** these are public read models
 **When** the story ships
 **Then** tests verify stable ordering, minimal response shape, and real-process coverage against the running DB-backed app.
+
+## Epic 20: Public Match Browse and Lobby Read Models
+
+Turn the existing public `GET /api/v1/matches` route into a durable browse surface for human pre-game and spectator entry flows. Sequence the work so the server first returns DB-backed compact match browse summaries for lobby/active/paused matches, then layers a dedicated public match-detail read for one selected lobby without exposing private fogged state.
+
+### Story 20.1: Add DB-backed public match browse summaries
+
+As a human player or spectator,
+I want the public matches route to return compact browse metadata for joinable and live matches,
+So that pre-game browsing can distinguish lobbies, running games, and spectator candidates without relying on private agent APIs.
+
+**Acceptance Criteria:**
+
+**Given** persisted non-completed matches exist in the database
+**When** a client requests `GET /api/v1/matches`
+**Then** the API returns deterministic compact browse summaries ordered by public status and recency rather than replay-sized state payloads.
+
+**And Given** match browse needs to support lobby and live entry decisions
+**When** the response is returned
+**Then** each summary includes only public metadata needed for browsing, such as match identity, status, map, current tick, tick interval, current player count, max player count, and open slot count.
+
+**And Given** completed matches already have a dedicated browse route
+**When** the public matches route is called in DB-backed mode
+**Then** completed matches are excluded and behavior-first tests plus a real-process smoke prove the running app serves the DB-backed browse contract.
+
+### Story 20.2: Add a public match lobby detail read
+
+As a human player or spectator,
+I want one compact public match-detail endpoint for a selected match,
+So that pre-game and spectator surfaces can inspect lobby configuration and visible roster metadata before joining or watching.
+
+**Acceptance Criteria:**
+
+**Given** a lobby, paused, or active match exists
+**When** a client requests the public match-detail route
+**Then** the API returns compact public metadata for that one match, including configuration and a visible roster summary, without exposing fog-filtered state or private agent credentials.
+
+**And Given** a completed match or unknown match is requested
+**When** the public detail route is called
+**Then** the server returns a structured response aligned with the browse-surface contract and does not leak replay/history payloads through this endpoint.
+
+**And Given** this endpoint is a public read model
+**When** the story ships
+**Then** tests cover route success, structured not-found handling, stable ordering of visible roster rows, and real-process coverage against the DB-backed app.

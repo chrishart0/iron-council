@@ -48,10 +48,30 @@ def test_agent_api_smoke_flow_runs_through_real_process_and_seeded_database(
 
     assert health_response.status_code == HTTPStatus.OK
     assert list_response.status_code == HTTPStatus.OK
-    assert [match["match_id"] for match in list_response.json()["matches"]] == [
-        running_seeded_app.primary_match_id,
-        running_seeded_app.secondary_match_id,
-    ]
+    assert list_response.json() == {
+        "matches": [
+            {
+                "match_id": running_seeded_app.primary_match_id,
+                "status": "active",
+                "map": "britain",
+                "tick": 142,
+                "tick_interval_seconds": 30,
+                "current_player_count": 3,
+                "max_player_count": 5,
+                "open_slot_count": 2,
+            },
+            {
+                "match_id": running_seeded_app.secondary_match_id,
+                "status": "paused",
+                "map": "britain",
+                "tick": 7,
+                "tick_interval_seconds": 45,
+                "current_player_count": 0,
+                "max_player_count": 5,
+                "open_slot_count": 5,
+            },
+        ]
+    }
     assert initial_state_response.status_code == HTTPStatus.OK
     assert submit_response.status_code == HTTPStatus.ACCEPTED
     assert submit_response.json() == {
@@ -222,6 +242,41 @@ def test_public_leaderboard_and_completed_match_smoke_flow_runs_through_real_pro
                 "completed_at": "2026-03-29T08:30:00Z",
                 "winning_alliance_name": "Iron Crown",
                 "winning_player_display_names": ["Arthur", "Morgana"],
+            },
+        ]
+    }
+
+
+def test_match_browse_smoke_flow_runs_through_real_process_with_compact_db_backed_rows(
+    running_seeded_app: RunningApp,
+) -> None:
+    insert_completed_match_fixture(running_seeded_app.database_url)
+
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        response = client.get("/api/v1/matches")
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        "matches": [
+            {
+                "match_id": running_seeded_app.primary_match_id,
+                "status": "active",
+                "map": "britain",
+                "tick": 142,
+                "tick_interval_seconds": 30,
+                "current_player_count": 3,
+                "max_player_count": 5,
+                "open_slot_count": 2,
+            },
+            {
+                "match_id": running_seeded_app.secondary_match_id,
+                "status": "paused",
+                "map": "britain",
+                "tick": 7,
+                "tick_interval_seconds": 45,
+                "current_player_count": 0,
+                "max_player_count": 5,
+                "open_slot_count": 5,
             },
         ]
     }

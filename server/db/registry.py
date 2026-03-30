@@ -28,7 +28,9 @@ from server.models.api import (
     LeaderboardEntry,
     MatchHistoryEntry,
     MatchHistoryResponse,
+    MatchListResponse,
     MatchReplayTickResponse,
+    MatchSummary,
     PublicLeaderboardResponse,
 )
 from server.models.domain import MatchStatus
@@ -266,12 +268,72 @@ def get_public_leaderboard(*, database_url: str) -> PublicLeaderboardResponse:
     )
 
 
+def get_public_match_summaries(*, database_url: str) -> MatchListResponse:
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        public_matches = session.scalars(
+            select(Match).where(Match.status != MatchStatus.COMPLETED.value).order_by(Match.id)
+        ).all()
+        if not public_matches:
+            return MatchListResponse()
+
+        match_ids = [match.id for match in public_matches]
+        players = session.scalars(
+            select(Player)
+            .where(Player.match_id.in_(match_ids))
+            .order_by(Player.match_id, Player.id)
+        ).all()
+
+    player_counts_by_match: dict[str, int] = defaultdict(int)
+    for player in players:
+        player_counts_by_match[str(player.match_id)] += 1
+
+    return MatchListResponse(
+        matches=[
+            MatchSummary(
+                match_id=str(match.id),
+                status=MatchStatus(match.status),
+                map=str(match.config.get("map", "")),
+                tick=int(match.current_tick),
+                tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
+                current_player_count=player_counts_by_match.get(str(match.id), 0),
+                max_player_count=max(int(match.config.get("max_players", 0)), 0),
+                open_slot_count=max(
+                    int(match.config.get("max_players", 0))
+                    - player_counts_by_match.get(str(match.id), 0),
+                    0,
+                ),
+            )
+            for match in sorted(public_matches, key=_public_match_browse_sort_key)
+        ]
+    )
+
+
 def _leaderboard_competitor_identity(player: Player) -> str:
     if player.is_agent:
         if player.api_key_id is not None:
             return f"agent:{player.api_key_id}"
         return f"agent-user:{player.user_id}"
     return f"human:{player.user_id}"
+
+
+def _public_match_browse_sort_key(match: Match) -> tuple[int, float, int, str]:
+    return (
+        _public_status_priority(MatchStatus(match.status)),
+        -_to_utc(match.updated_at).timestamp(),
+        -int(match.current_tick),
+        str(match.id),
+    )
+
+
+def _public_status_priority(status: MatchStatus) -> int:
+    if status is MatchStatus.LOBBY:
+        return 0
+    if status is MatchStatus.ACTIVE:
+        return 1
+    if status is MatchStatus.PAUSED:
+        return 2
+    return 3
 
 
 def get_completed_match_summaries(*, database_url: str) -> CompletedMatchSummaryListResponse:

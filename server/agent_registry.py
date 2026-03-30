@@ -143,6 +143,9 @@ class MatchRecord:
     status: MatchStatus
     tick_interval_seconds: int
     state: MatchState
+    map_id: str = "britain"
+    max_player_count: int | None = None
+    current_player_count: int | None = None
     joinable_player_ids: list[str] = field(default_factory=list)
     agent_profiles: list[AgentProfileResponse] = field(default_factory=list)
     joined_agents: dict[str, str] = field(default_factory=dict)
@@ -152,6 +155,24 @@ class MatchRecord:
     treaties: list[MatchTreaty] = field(default_factory=list)
     alliances: list[MatchAlliance] = field(default_factory=list)
     authenticated_agent_keys: list[AuthenticatedAgentKeyRecord] = field(default_factory=list)
+
+    @property
+    def public_max_player_count(self) -> int:
+        if self.max_player_count is not None:
+            return self.max_player_count
+        return len(self.state.players)
+
+    @property
+    def public_current_player_count(self) -> int:
+        if self.current_player_count is not None:
+            return self.current_player_count
+        if self.joined_agents:
+            return len(self.joined_agents)
+        return max(len(self.state.players) - len(self.joinable_player_ids), 0)
+
+    @property
+    def public_open_slot_count(self) -> int:
+        return max(self.public_max_player_count - self.public_current_player_count, 0)
 
 
 @dataclass(slots=True)
@@ -199,6 +220,9 @@ class InMemoryMatchRegistry:
             status=record.status,
             tick_interval_seconds=record.tick_interval_seconds,
             state=cloned_state,
+            map_id=record.map_id,
+            max_player_count=record.max_player_count,
+            current_player_count=record.current_player_count,
             joinable_player_ids=list(record.joinable_player_ids),
             agent_profiles=[],
             joined_agents=dict(record.joined_agents),
@@ -1353,6 +1377,8 @@ def build_seeded_match_records(
             status=MatchStatus.ACTIVE,
             tick_interval_seconds=30,
             state=MatchState.model_validate(_seeded_match_state_payload()),
+            max_player_count=5,
+            current_player_count=3,
             agent_profiles=seeded_profiles,
             joined_agents={
                 f"agent-{player_id}": player_id
@@ -1364,6 +1390,8 @@ def build_seeded_match_records(
             match_id=secondary_match_id,
             status=MatchStatus.PAUSED,
             tick_interval_seconds=45,
+            max_player_count=5,
+            current_player_count=0,
             joinable_player_ids=sorted(_seeded_match_state_payload()["players"]),
             state=MatchState.model_validate(
                 {

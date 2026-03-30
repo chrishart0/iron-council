@@ -28,14 +28,22 @@ def test_running_app_lists_db_seeded_matches_and_serves_authenticated_fog_filter
             {
                 "match_id": running_seeded_app.primary_match_id,
                 "status": "active",
+                "map": "britain",
                 "tick": 142,
                 "tick_interval_seconds": 30,
+                "current_player_count": 3,
+                "max_player_count": 5,
+                "open_slot_count": 2,
             },
             {
                 "match_id": running_seeded_app.secondary_match_id,
                 "status": "paused",
+                "map": "britain",
                 "tick": 7,
                 "tick_interval_seconds": 45,
+                "current_player_count": 0,
+                "max_player_count": 5,
+                "open_slot_count": 5,
             },
         ]
     }

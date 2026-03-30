@@ -11,6 +11,7 @@ from server.db.registry import (
     get_match_history,
     get_match_replay_tick,
     get_public_leaderboard,
+    get_public_match_summaries,
     load_match_registry_from_database,
     persist_advanced_match_tick,
 )
@@ -632,6 +633,162 @@ def test_get_completed_match_summaries_returns_compact_browse_rows_only_for_comp
             },
         ]
     }
+
+
+def test_get_public_match_browse_summaries_returns_compact_rows_for_only_non_completed_matches(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-public-match-browse.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+
+    summaries = get_public_match_summaries(database_url=database_url)
+
+    assert summaries.model_dump(mode="json") == {
+        "matches": [
+            {
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "status": "active",
+                "map": "britain",
+                "tick": 142,
+                "tick_interval_seconds": 30,
+                "current_player_count": 3,
+                "max_player_count": 5,
+                "open_slot_count": 2,
+            },
+            {
+                "match_id": "00000000-0000-0000-0000-000000000102",
+                "status": "paused",
+                "map": "britain",
+                "tick": 7,
+                "tick_interval_seconds": 45,
+                "current_player_count": 0,
+                "max_player_count": 5,
+                "open_slot_count": 5,
+            },
+        ]
+    }
+
+
+def test_public_match_browse_summaries_order_rows_by_status_and_recency(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-public-match-ordering.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        seed_state = json.loads(
+            connection.execute(
+                text("SELECT state FROM matches WHERE id = :match_id"),
+                {"match_id": "00000000-0000-0000-0000-000000000101"},
+            ).scalar_one()
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO matches (
+                    id, config, status, current_tick, state, winner_alliance, created_at, updated_at
+                ) VALUES (
+                    :id, :config, :status, :current_tick, :state, :winner_alliance,
+                    :created_at, :updated_at
+                )
+                """
+            ),
+            [
+                {
+                    "id": "00000000-0000-0000-0000-000000000103",
+                    "config": json.dumps({"map": "britain", "max_players": 6, "turn_seconds": 60}),
+                    "status": "lobby",
+                    "current_tick": 0,
+                    "state": json.dumps({**seed_state, "tick": 0}),
+                    "winner_alliance": None,
+                    "created_at": "2026-03-29 00:30:00+00:00",
+                    "updated_at": "2026-03-29 00:30:00+00:00",
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000104",
+                    "config": json.dumps({"map": "britain", "max_players": 4, "turn_seconds": 20}),
+                    "status": "active",
+                    "current_tick": 99,
+                    "state": json.dumps(seed_state),
+                    "winner_alliance": None,
+                    "created_at": "2026-03-29 01:30:00+00:00",
+                    "updated_at": "2026-03-29 05:00:00+00:00",
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000100",
+                    "config": json.dumps({"map": "britain", "max_players": 4, "turn_seconds": 20}),
+                    "status": "active",
+                    "current_tick": 98,
+                    "state": json.dumps(seed_state),
+                    "winner_alliance": None,
+                    "created_at": "2026-03-29 01:00:00+00:00",
+                    "updated_at": "2026-03-29 05:00:00+00:00",
+                },
+            ],
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO players (
+                    id, user_id, match_id, display_name, is_agent, api_key_id, elo_rating,
+                    alliance_id, alliance_joined_tick, eliminated_at
+                ) VALUES (
+                    :id, :user_id, :match_id, :display_name, :is_agent, :api_key_id, :elo_rating,
+                    :alliance_id, :alliance_joined_tick, :eliminated_at
+                )
+                """
+            ),
+            [
+                {
+                    "id": "00000000-0000-0000-0000-000000000801",
+                    "user_id": "00000000-0000-0000-0000-000000000901",
+                    "match_id": "00000000-0000-0000-0000-000000000103",
+                    "display_name": "Lobby Host",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1200,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000802",
+                    "user_id": "00000000-0000-0000-0000-000000000902",
+                    "match_id": "00000000-0000-0000-0000-000000000104",
+                    "display_name": "Recent Active",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1200,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000803",
+                    "user_id": "00000000-0000-0000-0000-000000000903",
+                    "match_id": "00000000-0000-0000-0000-000000000100",
+                    "display_name": "Older Active",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1200,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+            ],
+        )
+
+    summaries = get_public_match_summaries(database_url=database_url)
+
+    assert [match.match_id for match in summaries.matches] == [
+        "00000000-0000-0000-0000-000000000103",
+        "00000000-0000-0000-0000-000000000104",
+        "00000000-0000-0000-0000-000000000100",
+        "00000000-0000-0000-0000-000000000101",
+        "00000000-0000-0000-0000-000000000102",
+    ]
 
 
 def test_load_match_registry_from_database_rejects_inactive_agent_api_keys(
