@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { loadBritainMapLayout } from "../../lib/britain-map";
 import { PublicMatchLivePage } from "./public-match-live-page";
 import { SessionProvider } from "../session/session-provider";
 import { SESSION_STORAGE_KEY } from "../../lib/session-storage";
@@ -329,7 +330,7 @@ describe("PublicMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <PublicMatchLivePage matchId="match-alpha" />
+        <PublicMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -371,7 +372,7 @@ describe("PublicMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <PublicMatchLivePage matchId="match-alpha" />
+        <PublicMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -389,6 +390,12 @@ describe("PublicMatchLivePage", () => {
 
     expect(screen.getByText("Arthur: War drums.")).toBeVisible();
     expect(screen.getByText("manchester")).toBeVisible();
+    const initialMapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(initialMapRegion).getByText("Tick 143")).toBeVisible();
+    expect(within(initialMapRegion).getByText("Birmingham")).toBeVisible();
+    expect(within(initialMapRegion).getByText("Arthur")).toBeVisible();
+    expect(within(initialMapRegion).getByText("Garrison 7")).toBeVisible();
+    expect(within(initialMapRegion).getByText("Morgana army 5 at Manchester")).toBeVisible();
     expect(screen.getByText("Arthur and player-9 • trade • active")).toBeVisible();
     expect(screen.getByText("Western Accord: Arthur, player-9")).toBeVisible();
 
@@ -400,6 +407,8 @@ describe("PublicMatchLivePage", () => {
 
     expect(screen.getByText("Arthur: Advance at dawn.")).toBeVisible();
     expect(screen.getByText("leeds")).toBeVisible();
+    const updatedMapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(updatedMapRegion).getByText("Tick 144")).toBeVisible();
   });
 
   it("renders territory pressure and victory context from the shipped websocket payload", async () => {
@@ -425,7 +434,7 @@ describe("PublicMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <PublicMatchLivePage matchId="match-alpha" />
+        <PublicMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -476,7 +485,7 @@ describe("PublicMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <PublicMatchLivePage matchId="match-alpha" />
+        <PublicMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -521,7 +530,7 @@ describe("PublicMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <PublicMatchLivePage matchId="match-alpha" />
+        <PublicMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -531,6 +540,9 @@ describe("PublicMatchLivePage", () => {
 
     expect(screen.getByText("This match is paused, so the spectator live page is not active.")).toBeVisible();
     expect(MockWebSocket.instances).toHaveLength(0);
+    const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(mapRegion).getByText("Spectator feed offline")).toBeVisible();
+    expect(within(mapRegion).getByText("No live strategic map data is available yet.")).toBeVisible();
   });
 
   it("marks the view as not live after the socket disconnects or errors", async () => {
@@ -553,7 +565,7 @@ describe("PublicMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <PublicMatchLivePage matchId="match-alpha" />
+        <PublicMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -587,5 +599,8 @@ describe("PublicMatchLivePage", () => {
       screen.getByText("Alliance membership is unavailable while the spectator feed is not live.")
     ).toBeVisible();
     expect(screen.queryByText("Arthur: War drums.")).not.toBeInTheDocument();
+    const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(mapRegion).getByText("Spectator feed offline")).toBeVisible();
+    expect(within(mapRegion).getByText("Birmingham")).toBeVisible();
   });
 });

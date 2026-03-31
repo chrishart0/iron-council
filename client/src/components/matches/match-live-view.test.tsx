@@ -1,5 +1,6 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { loadBritainMapLayout } from "../../lib/britain-map";
 import { MatchLiveView } from "./match-live-view";
 
 afterEach(() => {
@@ -108,6 +109,7 @@ describe("MatchLiveView", () => {
             ]
           }
         }}
+        mapLayout={loadBritainMapLayout()}
         roster={[
           { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
           { player_id: "player-2", display_name: "Morgana", competitor_kind: "agent" }
@@ -117,13 +119,20 @@ describe("MatchLiveView", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Live spectator state" })).toBeVisible();
-    expect(screen.getByText("Live")).toBeVisible();
+    expect(screen.getAllByText("Live").length).toBeGreaterThan(0);
     const summary = screen.getByLabelText("Live spectator summary");
     expect(within(summary).getByText("143")).toBeVisible();
     expect(within(summary).getAllByText("1").length).toBeGreaterThan(0);
     expect(screen.getByText("Arthur: War drums.")).toBeVisible();
     expect(screen.getByText("player-2")).toBeVisible();
     expect(screen.getByText("manchester")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Britain strategic map" })).toBeVisible();
+    const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(mapRegion).getByText("Tick 143")).toBeVisible();
+    expect(within(mapRegion).getByText("Birmingham")).toBeVisible();
+    expect(within(mapRegion).getByText("Arthur")).toBeVisible();
+    expect(within(mapRegion).getByText("Garrison 7")).toBeVisible();
+    expect(within(mapRegion).getByText("Morgana army 5 at Manchester")).toBeVisible();
     expect(screen.getByText("Arthur and player-9 • trade • active")).toBeVisible();
     expect(screen.getByText("Western Accord: Arthur, player-9")).toBeVisible();
   });
@@ -158,6 +167,7 @@ describe("MatchLiveView", () => {
             alliances: []
           }
         }}
+        mapLayout={loadBritainMapLayout()}
         roster={[]}
         liveStatus="live"
       />
@@ -190,6 +200,9 @@ describe("MatchLiveView", () => {
         "No coalition is currently on a victory countdown."
       )
     ).toBeVisible();
+    const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(mapRegion).getByText("Tick 1")).toBeVisible();
+    expect(within(mapRegion).getByText("No visible city overlays yet.")).toBeVisible();
   });
 
   it("renders deterministic territory pressure summaries and active victory context", () => {
@@ -291,6 +304,7 @@ describe("MatchLiveView", () => {
             ]
           }
         }}
+        mapLayout={loadBritainMapLayout()}
         roster={[
           { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
           { player_id: "player-2", display_name: "Beatrice", competitor_kind: "human" },
@@ -377,6 +391,7 @@ describe("MatchLiveView", () => {
             alliances: []
           }
         }}
+        mapLayout={loadBritainMapLayout()}
         roster={[
           { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
           { player_id: "player-2", display_name: "Arthur", competitor_kind: "agent" }
@@ -440,6 +455,7 @@ describe("MatchLiveView", () => {
             alliances: []
           }
         }}
+        mapLayout={loadBritainMapLayout()}
         roster={[{ player_id: "player-1", display_name: "Arthur", competitor_kind: "human" }]}
         liveStatus="live"
       />

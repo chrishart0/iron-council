@@ -9,11 +9,14 @@ import {
   PublicMatchDetailError
 } from "../../lib/api";
 import type { PublicMatchDetailResponse, SpectatorMatchEnvelope } from "../../lib/types";
+import type { BritainMapLayout } from "../../lib/britain-map";
 import { useSession } from "../session/session-provider";
 import { MatchLiveView } from "./match-live-view";
+import { MatchLiveMap } from "./match-live-map";
 
 type PublicMatchLivePageProps = {
   matchId: string;
+  mapLayout: BritainMapLayout;
 };
 
 type MatchDetailState =
@@ -50,7 +53,7 @@ type LiveConnectionState =
       message: string;
     };
 
-export function PublicMatchLivePage({ matchId }: PublicMatchLivePageProps) {
+export function PublicMatchLivePage({ matchId, mapLayout }: PublicMatchLivePageProps) {
   const { apiBaseUrl, hasHydrated } = useSession();
   const [matchState, setMatchState] = useState<MatchDetailState>({
     status: "loading",
@@ -244,9 +247,21 @@ export function PublicMatchLivePage({ matchId }: PublicMatchLivePageProps) {
         </section>
       ) : null}
 
+      {liveState.envelope === null ? (
+        <MatchLiveMap
+          mapLayout={mapLayout}
+          liveStatus={liveState.status === "not_live" ? "not_live" : "live"}
+          tick={null}
+          perspective="spectator"
+          cities={[]}
+          armies={[]}
+        />
+      ) : null}
+
       {liveState.envelope !== null ? (
         <MatchLiveView
           envelope={liveState.envelope}
+          mapLayout={mapLayout}
           roster={matchState.match.roster}
           liveStatus={liveState.status === "live" ? "live" : "not_live"}
         />

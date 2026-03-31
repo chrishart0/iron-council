@@ -1,4 +1,5 @@
 import { PublicMatchLivePage } from "../../../../components/matches/public-match-live-page";
+import { loadBritainMapLayout } from "../../../../lib/britain-map";
 
 type MatchLivePageProps = {
   params: Promise<{
@@ -9,5 +10,5 @@ type MatchLivePageProps = {
 export default async function MatchLivePage({ params }: MatchLivePageProps) {
   const { matchId } = await params;
 
-  return <PublicMatchLivePage matchId={matchId} />;
+  return <PublicMatchLivePage matchId={matchId} mapLayout={loadBritainMapLayout()} />;
 }

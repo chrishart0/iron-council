@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { loadBritainMapLayout } from "../../lib/britain-map";
 import { HumanMatchLivePage } from "./human-match-live-page";
 import { SessionProvider } from "../session/session-provider";
 import { SESSION_STORAGE_KEY } from "../../lib/session-storage";
@@ -299,7 +300,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -345,7 +346,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -369,6 +370,14 @@ describe("HumanMatchLivePage", () => {
     expect(screen.getByText("Alliance alliance-red led by player-1")).toBeVisible();
     expect(screen.getByText("Visible enemy army near birmingham")).toBeVisible();
     expect(screen.getByText("Food 263")).toBeVisible();
+    const initialMapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(initialMapRegion).getByText("Tick 143")).toBeVisible();
+    expect(within(initialMapRegion).getByText("Manchester")).toBeVisible();
+    expect(within(initialMapRegion).getByText("Owner player-2")).toBeVisible();
+    expect(within(initialMapRegion).getByText("Owner hidden")).toBeVisible();
+    expect(within(initialMapRegion).getByText("Garrison hidden")).toBeVisible();
+    expect(within(initialMapRegion).getByText("player-2 army 5 at Manchester")).toBeVisible();
+    expect(within(initialMapRegion).getByText("player-3 army hidden near Birmingham")).toBeVisible();
 
     socket?.emitMessage(makeEnvelope(144));
 
@@ -379,6 +388,8 @@ describe("HumanMatchLivePage", () => {
     expect(screen.getByText("Press north.")).toBeVisible();
     expect(screen.getByText("Food 264")).toBeVisible();
     expect(screen.getByText("player-2 at leeds with 5 troops (full)")).toBeVisible();
+    const updatedMapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(updatedMapRegion).getByText("Tick 144")).toBeVisible();
   });
 
   it("renders the live messaging composer after the first live player snapshot arrives", async () => {
@@ -398,7 +409,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -435,7 +446,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -477,7 +488,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -529,7 +540,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -601,7 +612,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -657,7 +668,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -702,7 +713,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -759,7 +770,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -852,7 +863,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -921,7 +932,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -973,7 +984,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1013,7 +1024,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1073,7 +1084,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1157,7 +1168,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1209,7 +1220,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1251,7 +1262,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1339,7 +1350,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1478,7 +1489,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1543,7 +1554,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1573,7 +1584,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1616,7 +1627,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1626,6 +1637,9 @@ describe("HumanMatchLivePage", () => {
 
     expect(screen.getByText("This match is paused, so the authenticated live page is not active.")).toBeVisible();
     expect(MockWebSocket.instances).toHaveLength(0);
+    const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(mapRegion).getByText("Player feed offline")).toBeVisible();
+    expect(within(mapRegion).getByText("No live strategic map data is available yet.")).toBeVisible();
   });
 
   it("preserves the last confirmed snapshot after socket failure", async () => {
@@ -1656,7 +1670,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1680,7 +1694,10 @@ describe("HumanMatchLivePage", () => {
 
     expect(screen.getByText("Showing the last confirmed player snapshot. Reconnect to resume live updates.")).toBeVisible();
     expect(screen.getByText("War drums.")).toBeVisible();
-    expect(screen.getAllByText("Not live")).toHaveLength(1);
+    expect(screen.getAllByText("Not live").length).toBeGreaterThan(0);
+    const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(mapRegion).getByText("Player feed offline")).toBeVisible();
+    expect(within(mapRegion).getByText("Manchester")).toBeVisible();
   });
 
   it("fails closed on invalid player websocket payloads while preserving the last confirmed snapshot", async () => {
@@ -1711,7 +1728,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1774,7 +1791,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1829,7 +1846,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1887,7 +1904,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -1975,7 +1992,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -2050,7 +2067,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 
@@ -2123,7 +2140,7 @@ describe("HumanMatchLivePage", () => {
 
     render(
       <SessionProvider>
-        <HumanMatchLivePage matchId="match-alpha" />
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
       </SessionProvider>
     );
 

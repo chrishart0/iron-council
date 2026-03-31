@@ -4,9 +4,12 @@ import type {
   TreatyRecord,
   AllianceRecord
 } from "../../lib/types";
+import type { BritainMapLayout } from "../../lib/britain-map";
+import { MatchLiveMap, type MatchLiveMapArmyDatum, type MatchLiveMapCityDatum } from "./match-live-map";
 
 type MatchLiveViewProps = {
   envelope: SpectatorMatchEnvelope;
+  mapLayout: BritainMapLayout;
   roster: PublicMatchRosterRow[];
   liveStatus: "live" | "not_live";
 };
@@ -38,7 +41,7 @@ function formatCitiesHeld(count: number) {
   return `${count} ${count === 1 ? "city" : "cities"}`;
 }
 
-export function MatchLiveView({ envelope, roster, liveStatus }: MatchLiveViewProps) {
+export function MatchLiveView({ envelope, mapLayout, roster, liveStatus }: MatchLiveViewProps) {
   const playerLabels = new Map(roster.map((entry) => [entry.player_id, entry.display_name]));
   const allianceLabels = new Map(
     envelope.data.alliances.map((alliance) => [alliance.alliance_id, alliance.name])
@@ -77,6 +80,33 @@ export function MatchLiveView({ envelope, roster, liveStatus }: MatchLiveViewPro
     envelope.data.state.victory.leading_alliance === null
       ? null
       : resolveAllianceLabel(envelope.data.state.victory.leading_alliance);
+  const mapCities: MatchLiveMapCityDatum[] = Object.entries(envelope.data.state.cities)
+    .map(([cityId, city]) => ({
+      cityId,
+      cityName: cityId.charAt(0).toUpperCase() + cityId.slice(1),
+      ownerLabel: city.owner === null ? null : resolvePlayerLabel(city.owner),
+      ownerVisibility: "full" as const,
+      garrisonLabel: String(city.garrison)
+    }))
+    .sort((left, right) => left.cityName.localeCompare(right.cityName));
+  const mapArmies = envelope.data.state.armies
+    .flatMap<MatchLiveMapArmyDatum>((army) => {
+      const cityId = army.location ?? army.destination;
+
+      if (cityId === null) {
+        return [];
+      }
+
+      return [{
+        armyId: army.id,
+        cityId,
+        cityName: cityId.charAt(0).toUpperCase() + cityId.slice(1),
+        ownerLabel: resolvePlayerLabel(army.owner),
+        troopsLabel: String(army.troops),
+        visibility: "full" as const
+      }];
+    })
+    .sort((left, right) => left.cityName.localeCompare(right.cityName));
 
   const renderUnavailable = (message: string) => {
     if (liveStatus === "not_live") {
@@ -107,6 +137,15 @@ export function MatchLiveView({ envelope, roster, liveStatus }: MatchLiveViewPro
         </div>
         <p>Read-only spectator-safe state from the shipped match websocket contract.</p>
       </section>
+
+      <MatchLiveMap
+        mapLayout={mapLayout}
+        liveStatus={liveStatus}
+        tick={envelope.data.state.tick}
+        perspective="spectator"
+        cities={mapCities}
+        armies={mapArmies}
+      />
 
       <dl className="panel panel-grid" aria-label="Live spectator summary">
         {summaryRows.map((row) => (

@@ -41,10 +41,13 @@ import type {
   UpgradeTrack,
   VisibleArmyState
 } from "../../lib/types";
+import type { BritainMapLayout } from "../../lib/britain-map";
 import { useSession } from "../session/session-provider";
+import { MatchLiveMap, type MatchLiveMapArmyDatum, type MatchLiveMapCityDatum } from "./match-live-map";
 
 type HumanMatchLivePageProps = {
   matchId: string;
+  mapLayout: BritainMapLayout;
 };
 
 type MatchDetailState =
@@ -90,7 +93,7 @@ const resourceRows: Array<{
   { label: "Money", value: (envelope) => envelope.data.state.resources.money }
 ];
 
-export function HumanMatchLivePage({ matchId }: HumanMatchLivePageProps) {
+export function HumanMatchLivePage({ matchId, mapLayout }: HumanMatchLivePageProps) {
   const { apiBaseUrl, bearerToken, hasHydrated } = useSession();
   const [matchState, setMatchState] = useState<MatchDetailState>({
     status: "loading",
@@ -284,9 +287,21 @@ export function HumanMatchLivePage({ matchId }: HumanMatchLivePageProps) {
 
       {statusPanel}
 
+      {liveState.envelope === null ? (
+        <MatchLiveMap
+          mapLayout={mapLayout}
+          liveStatus={liveState.status === "not_live" ? "not_live" : "live"}
+          tick={null}
+          perspective="player"
+          cities={[]}
+          armies={[]}
+        />
+      ) : null}
+
       {liveState.envelope !== null ? (
         <HumanMatchLiveSnapshot
           envelope={liveState.envelope}
+          mapLayout={mapLayout}
           apiBaseUrl={apiBaseUrl}
           bearerToken={bearerToken}
           liveStatus={liveState.status === "live" ? "live" : "not_live"}
@@ -654,11 +669,13 @@ function describeAcceptedAlliance(
 
 function HumanMatchLiveSnapshot({
   envelope,
+  mapLayout,
   apiBaseUrl,
   bearerToken,
   liveStatus
 }: {
   envelope: PlayerMatchEnvelope;
+  mapLayout: BritainMapLayout;
   apiBaseUrl: string;
   bearerToken: string | null;
   liveStatus: "live" | "not_live";
@@ -703,6 +720,34 @@ function HumanMatchLiveSnapshot({
   const latestTreaty = envelope.data.treaties.at(-1) ?? null;
   const latestAlliance = envelope.data.alliances.at(-1) ?? null;
   const partialArmy = envelope.data.state.visible_armies.find((army) => army.visibility === "partial") ?? null;
+  const mapCities: MatchLiveMapCityDatum[] = Object.entries(envelope.data.state.cities)
+    .map(([cityId, city]) => ({
+      cityId,
+      cityName: cityId.charAt(0).toUpperCase() + cityId.slice(1),
+      ownerLabel: city.visibility === "full" ? city.owner : null,
+      ownerVisibility: city.visibility,
+      garrisonLabel: city.visibility === "full" && city.garrison !== "unknown" ? String(city.garrison) : null
+    }))
+    .sort((left, right) => left.cityName.localeCompare(right.cityName));
+  const mapArmies = envelope.data.state.visible_armies
+    .map((army) => {
+      const cityId = army.location ?? army.destination;
+
+      if (cityId === null) {
+        return null;
+      }
+
+      return {
+        armyId: army.id,
+        cityId,
+        cityName: cityId.charAt(0).toUpperCase() + cityId.slice(1),
+        ownerLabel: army.owner,
+        troopsLabel: army.visibility === "full" && army.troops !== "unknown" ? String(army.troops) : null,
+        visibility: army.visibility
+      };
+    })
+    .filter((army): army is MatchLiveMapArmyDatum => army !== null)
+    .sort((left, right) => left.cityName.localeCompare(right.cityName));
   const canSubmit = liveStatus === "live" && bearerToken !== null && submissionFeedback.status !== "submitting";
   const canSubmitMessage =
     liveStatus === "live" && bearerToken !== null && messageSubmissionFeedback.status !== "submitting";
@@ -1303,6 +1348,15 @@ function HumanMatchLiveSnapshot({
         </div>
         <p>Fog-filtered state plus player-safe diplomacy and chat summaries from the current websocket snapshot.</p>
       </section>
+
+      <MatchLiveMap
+        mapLayout={mapLayout}
+        liveStatus={liveStatus}
+        tick={envelope.data.state.tick}
+        perspective="player"
+        cities={mapCities}
+        armies={mapArmies}
+      />
 
       <dl className="panel panel-grid" aria-label="Live player summary">
         <SummaryRow label="Match ID" value={envelope.data.match_id} />

@@ -1,6 +1,6 @@
 # Story 31.1: Add a shared read-only strategic SVG map to the live web client
 
-Status: ready
+Status: done
 
 ## Story
 
@@ -22,10 +22,10 @@ So that I can understand city ownership, visible armies, and front-line pressure
 
 ## Tasks / Subtasks
 
-- [ ] Add focused client tests that pin a shared Britain SVG map surface on both the spectator and human live pages, including ownership labels, visibility-safe masking, and not-live empty states. (AC: 1, 2, 3)
-- [ ] Implement a shared read-only live map component that derives deterministic city positions/edges from the canonical Britain map definition already in the repo and overlays visibility-safe city/army markers from the shipped websocket payloads. (AC: 1, 2)
-- [ ] Wire the new map panel into both live pages without inventing a new transport surface or browser-only state source. (AC: 1, 3)
-- [ ] Re-run focused client verification plus the repo quality gate, then close docs/BMAD artifacts. (AC: 4)
+- [x] Add focused client tests that pin a shared Britain SVG map surface on both the spectator and human live pages, including ownership labels, visibility-safe masking, and not-live empty states. (AC: 1, 2, 3)
+- [x] Implement a shared read-only live map component that derives deterministic city positions/edges from the canonical Britain map definition already in the repo and overlays visibility-safe city/army markers from the shipped websocket payloads. (AC: 1, 2)
+- [x] Wire the new map panel into both live pages without inventing a new transport surface or browser-only state source. (AC: 1, 3)
+- [x] Re-run focused client verification plus the repo quality gate, then close docs/BMAD artifacts. (AC: 4)
 
 ## Dev Notes
 
@@ -48,18 +48,23 @@ So that I can understand city ownership, visible armies, and front-line pressure
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Debug Log References
 
 - `cd client && npm test -- --run src/components/matches/match-live-map.test.tsx src/components/matches/match-live-view.test.tsx src/components/matches/public-match-live-page.test.tsx src/components/matches/human-match-live-page.test.tsx`
 - `cd client && npm run build`
 - `make quality`
+- Story 31.1 follow-up (2026-03-31): reproduced the public spectator disconnect regression where a post-snapshot socket error cleared the last envelope and showed the generic unavailable state; fixed `PublicMatchLivePage` to preserve the last spectator snapshot on websocket failure and keep the generic unavailable state only before the first valid payload.
 
 ## Completion Notes
 
-- Pending.
+- Added a shared read-only `MatchLiveMap` SVG panel for both spectator and authenticated player live pages, rendering the canonical Britain board from the checked-in `server/data/map_uk_1900.json` artifact through a small server-side layout loader.
+- Spectator live updates now project readable ownership, garrison, and visible army overlays onto the shared board without adding a new live API.
+- Human live updates reuse the same map surface while masking partial fog-of-war data as `Owner hidden`, `Garrison hidden`, and partial-army summaries instead of leaking spectator detail.
+- Added focused browser-boundary tests for the shared map component plus both live-page shells, then verified `npm run build` and the full `make quality` gate in a fresh worktree after bootstrapping dev dependencies with `uv sync --extra dev --frozen`.
+- Follow-up fix: preserved the last spectator websocket envelope when the live page disconnects after at least one valid payload, so the page now keeps the last map snapshot and renders the explicit `Live connection lost` recovery message instead of falling back to the generic unavailable state.
 
 ## Files
 
@@ -70,8 +75,9 @@ So that I can understand city ownership, visible armies, and front-line pressure
 - `client/src/components/matches/public-match-live-page.test.tsx`
 - `client/src/components/matches/human-match-live-page.tsx`
 - `client/src/components/matches/human-match-live-page.test.tsx`
+- `client/src/app/matches/[matchId]/live/page.tsx`
+- `client/src/app/matches/[matchId]/play/page.tsx`
 - `client/src/lib/britain-map.ts`
-- `client/next.config.ts`
 - `README.md`
 - `_bmad-output/implementation-artifacts/31-1-add-a-shared-read-only-strategic-svg-map-to-the-live-web-client.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
