@@ -1,4 +1,4 @@
-generated: 2026-03-31 19:51 UTC
+generated: 2026-03-31 21:21 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
@@ -144,6 +144,6 @@ development_status:
   30-2-add-territory-pressure-and-victory-context-to-the-spectator-live-page: done
   epic-30-retrospective: optional
 
-  epic-31: in-progress
+  epic-31: done
   31-1-add-a-shared-read-only-strategic-svg-map-to-the-live-web-client: done
-  31-2-add-click-assisted-city-inspection-and-order-draft-helpers-on-the-human-live-map: backlog
+  31-2-add-click-assisted-city-inspection-and-order-draft-helpers-on-the-human-live-map: done

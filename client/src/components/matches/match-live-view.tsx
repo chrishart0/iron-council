@@ -103,7 +103,8 @@ export function MatchLiveView({ envelope, mapLayout, roster, liveStatus }: Match
         cityName: cityId.charAt(0).toUpperCase() + cityId.slice(1),
         ownerLabel: resolvePlayerLabel(army.owner),
         troopsLabel: String(army.troops),
-        visibility: "full" as const
+        visibility: "full" as const,
+        visibleLocationCityId: army.location ?? army.destination
       }];
     })
     .sort((left, right) => left.cityName.localeCompare(right.cityName));

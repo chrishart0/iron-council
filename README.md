@@ -176,8 +176,9 @@ territory pressure summaries, and victory context sourced from the shipped
 public match detail plus spectator websocket contracts,
 `http://127.0.0.1:3000/matches/<match_id>/play` is the authenticated human live
 page with the same shared Britain strategic map rendered through player-safe
-fog-of-war masking, plus text-first movement/recruitment/upgrade/transfer order
-drafting through the shipped `/api/v1/matches/{id}/commands` route plus
+fog-of-war masking, clickable visible city/army inspection, deterministic
+selection helpers for the existing movement/recruitment/upgrade/transfer order
+draft rows through the shipped `/api/v1/matches/{id}/commands` route plus
 world/direct/group live messaging through the shipped
 `/api/v1/matches/{id}/messages` and
 `/api/v1/matches/{id}/group-chats/{group_chat_id}/messages` routes, text-first

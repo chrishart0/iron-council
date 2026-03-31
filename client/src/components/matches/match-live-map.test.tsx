@@ -1,5 +1,5 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadBritainMapLayout } from "../../lib/britain-map";
 import { MatchLiveMap } from "./match-live-map";
 
@@ -38,7 +38,8 @@ describe("MatchLiveMap", () => {
             cityName: "Manchester",
             ownerLabel: "Morgana",
             troopsLabel: "5",
-            visibility: "full"
+            visibility: "full",
+            visibleLocationCityId: "manchester"
           }
         ]}
       />
@@ -82,7 +83,8 @@ describe("MatchLiveMap", () => {
             cityName: "Birmingham",
             ownerLabel: "player-3",
             troopsLabel: null,
-            visibility: "partial"
+            visibility: "partial",
+            visibleLocationCityId: null
           }
         ]}
       />
@@ -95,6 +97,62 @@ describe("MatchLiveMap", () => {
     expect(within(mapRegion).getByText("Owner hidden")).toBeVisible();
     expect(within(mapRegion).getByText("Garrison hidden")).toBeVisible();
     expect(within(mapRegion).getByText("player-3 army hidden near Birmingham")).toBeVisible();
+  });
+
+  it("supports keyboard activation and pressed state for selectable city and army markers", () => {
+    const onCitySelect = vi.fn();
+    const onArmySelect = vi.fn();
+
+    render(
+      <MatchLiveMap
+        mapLayout={loadBritainMapLayout()}
+        liveStatus="live"
+        tick={143}
+        perspective="player"
+        selectedCityId="manchester"
+        selectedArmyId="army-1"
+        onCitySelect={onCitySelect}
+        onArmySelect={onArmySelect}
+        cities={[
+          {
+            cityId: "manchester",
+            cityName: "Manchester",
+            ownerLabel: "player-2",
+            ownerVisibility: "full",
+            garrisonLabel: "7"
+          }
+        ]}
+        armies={[
+          {
+            armyId: "army-1",
+            cityId: "manchester",
+            cityName: "Manchester",
+            ownerLabel: "player-2",
+            troopsLabel: "5",
+            visibility: "full",
+            visibleLocationCityId: "manchester"
+          }
+        ]}
+      />
+    );
+
+    const cityButton = screen.getByRole("button", { name: "Select city Manchester" });
+    const armyButton = screen.getByRole("button", { name: "Select army army-1 at Manchester" });
+
+    expect(cityButton).toHaveAttribute("aria-pressed", "true");
+    expect(armyButton).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.keyDown(cityButton, { key: "Enter" });
+    fireEvent.keyDown(armyButton, { key: " " });
+
+    expect(onCitySelect).toHaveBeenCalledTimes(1);
+    expect(onCitySelect).toHaveBeenCalledWith(
+      expect.objectContaining({ cityId: "manchester" })
+    );
+    expect(onArmySelect).toHaveBeenCalledTimes(1);
+    expect(onArmySelect).toHaveBeenCalledWith(
+      expect.objectContaining({ armyId: "army-1" })
+    );
   });
 
   it("renders a deterministic empty state before the first live snapshot", () => {

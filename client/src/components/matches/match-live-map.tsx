@@ -1,6 +1,5 @@
-import {
-  type BritainMapLayout
-} from "../../lib/britain-map";
+import type { KeyboardEvent } from "react";
+import { type BritainMapLayout } from "../../lib/britain-map";
 
 export type MatchLiveMapCityDatum = {
   cityId: string;
@@ -17,6 +16,7 @@ export type MatchLiveMapArmyDatum = {
   ownerLabel: string;
   troopsLabel: string | null;
   visibility: "full" | "partial";
+  visibleLocationCityId: string | null;
 };
 
 type MatchLiveMapProps = {
@@ -26,6 +26,10 @@ type MatchLiveMapProps = {
   perspective: "spectator" | "player";
   cities: MatchLiveMapCityDatum[];
   armies: MatchLiveMapArmyDatum[];
+  selectedCityId?: string | null;
+  selectedArmyId?: string | null;
+  onCitySelect?: ((city: MatchLiveMapCityDatum) => void) | null;
+  onArmySelect?: ((army: MatchLiveMapArmyDatum) => void) | null;
 };
 
 const cityRadius = 11;
@@ -72,13 +76,36 @@ function armySummaryText(army: MatchLiveMapArmyDatum) {
   return `${army.ownerLabel} army ${army.troopsLabel ?? "hidden"} at ${army.cityName}`;
 }
 
+function citySelectionLabel(city: MatchLiveMapCityDatum) {
+  return `Select city ${city.cityName}`;
+}
+
+function armySelectionLabel(army: MatchLiveMapArmyDatum) {
+  return army.visibility === "partial"
+    ? `Select army ${army.armyId} near ${army.cityName}`
+    : `Select army ${army.armyId} at ${army.cityName}`;
+}
+
+function handleSvgButtonKeyDown(event: KeyboardEvent<SVGGElement>, activate: () => void) {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+
+  event.preventDefault();
+  activate();
+}
+
 export function MatchLiveMap({
   mapLayout,
   liveStatus,
   tick,
   perspective,
   cities,
-  armies
+  armies,
+  selectedCityId = null,
+  selectedArmyId = null,
+  onCitySelect = null,
+  onArmySelect = null
 }: MatchLiveMapProps) {
   const cityOverlays = new Map(cities.map((city) => [city.cityId, city]));
   const armyOverlaysByCity = new Map<string, MatchLiveMapArmyDatum[]>();
@@ -156,27 +183,65 @@ export function MatchLiveMap({
         {canonicalCities.map((city) => {
           const cityOverlay = cityOverlays.get(city.id) ?? null;
           const visibleArmies = armyOverlaysByCity.get(city.id) ?? [];
+          const isSelectedCity = cityOverlay !== null && selectedCityId === cityOverlay.cityId;
 
           return (
             <g key={city.id}>
-              <circle
-                cx={city.x + 48}
-                cy={city.y + 48}
-                r={cityRadius}
-                fill={ownerColor(cityOverlay?.ownerLabel ?? null, cityOverlay?.ownerVisibility ?? "partial")}
-                stroke="#0f172a"
-                strokeWidth={2}
-              />
-              {visibleArmies.length > 0 ? (
+              {cityOverlay === null ? (
                 <circle
-                  cx={city.x + 66}
-                  cy={city.y + 36}
-                  r={7}
-                  fill="#111827"
-                  stroke="#f8fafc"
+                  cx={city.x + 48}
+                  cy={city.y + 48}
+                  r={cityRadius}
+                  fill={ownerColor(null, "partial")}
+                  stroke="#0f172a"
                   strokeWidth={2}
                 />
-              ) : null}
+              ) : (
+                <g
+                  role="button"
+                  tabIndex={0}
+                  aria-label={citySelectionLabel(cityOverlay)}
+                  aria-pressed={isSelectedCity}
+                  onClick={() => onCitySelect?.(cityOverlay)}
+                  onKeyDown={(event) => handleSvgButtonKeyDown(event, () => onCitySelect?.(cityOverlay))}
+                  style={{ cursor: "pointer" }}
+                >
+                  <circle
+                    cx={city.x + 48}
+                    cy={city.y + 48}
+                    r={cityRadius + (isSelectedCity ? 4 : 0)}
+                    fill={isSelectedCity ? "#fef3c7" : ownerColor(cityOverlay.ownerLabel, cityOverlay.ownerVisibility)}
+                    stroke={isSelectedCity ? "#b45309" : "#0f172a"}
+                    strokeWidth={isSelectedCity ? 4 : 2}
+                  />
+                </g>
+              )}
+              {visibleArmies.map((army, armyIndex) => {
+                const isSelectedArmy = selectedArmyId === army.armyId;
+                const offsetY = armyIndex * 18;
+
+                return (
+                  <g
+                    key={army.armyId}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={armySelectionLabel(army)}
+                    aria-pressed={isSelectedArmy}
+                    onClick={() => onArmySelect?.(army)}
+                    onKeyDown={(event) => handleSvgButtonKeyDown(event, () => onArmySelect?.(army))}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <circle
+                      cx={city.x + 66}
+                      cy={city.y + 36 - offsetY}
+                      r={isSelectedArmy ? 9 : 7}
+                      fill={isSelectedArmy ? "#f59e0b" : "#111827"}
+                      stroke="#f8fafc"
+                      strokeWidth={2}
+                    />
+                  </g>
+                );
+              })}
               <text
                 x={city.x + 48}
                 y={city.y + 72}
@@ -199,7 +264,11 @@ export function MatchLiveMap({
           </li>
         ) : (
           cities.map((city) => (
-            <li key={city.cityId} className="roster-row">
+            <li
+              key={city.cityId}
+              className="roster-row"
+              style={selectedCityId === city.cityId ? { borderColor: "#b45309", borderWidth: "2px" } : undefined}
+            >
               <span>{cityOwnerText(city, perspective)}</span>
               <span>{cityGarrisonText(city)}</span>
             </li>
@@ -214,7 +283,11 @@ export function MatchLiveMap({
           </li>
         ) : (
           armies.map((army) => (
-            <li key={army.armyId} className="roster-row">
+            <li
+              key={army.armyId}
+              className="roster-row"
+              style={selectedArmyId === army.armyId ? { borderColor: "#b45309", borderWidth: "2px" } : undefined}
+            >
               <span>{armySummaryText(army)}</span>
             </li>
           ))

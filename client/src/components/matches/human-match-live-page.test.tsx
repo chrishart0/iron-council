@@ -2201,4 +2201,144 @@ describe("HumanMatchLivePage", () => {
     expect(screen.getByLabelText("Transfer resource 1")).toHaveValue("money");
     expect(screen.getByLabelText("Transfer amount 1")).toHaveValue(25);
   });
+
+  it("clicking visible map markers highlights the selection, shows a safe inspector, and prefills blank draft fields with explicit helper actions", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "http://127.0.0.1:8000",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => makePublicMatchDetailResponse()
+      })
+    );
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    MockWebSocket.instances[0]?.emitOpen();
+    MockWebSocket.instances[0]?.emitMessage(makeEnvelope(144));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Order Drafts" })).toBeVisible();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add movement order" }));
+
+    const manchesterCityButton = screen.getByRole("button", { name: "Select city Manchester" });
+    fireEvent.click(manchesterCityButton);
+
+    expect(manchesterCityButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("heading", { name: "Map selection inspector" })).toBeVisible();
+    const inspectorRegion = screen.getByRole("region", { name: "Map selection inspector" });
+    expect(within(inspectorRegion).getByText("Selected city: Manchester")).toBeVisible();
+    expect(within(inspectorRegion).getByText("Owner player-2")).toBeVisible();
+    expect(within(inspectorRegion).getByText("Visible garrison 7")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Use selected marker for movement destination 1" }));
+    expect(screen.getByLabelText("Movement destination 1")).toHaveValue("manchester");
+
+    const armyButton = screen.getByRole("button", { name: "Select army army-1 at Leeds" });
+    fireEvent.click(armyButton);
+
+    expect(armyButton).toHaveAttribute("aria-pressed", "true");
+    expect(within(inspectorRegion).getByText("Selected army: army-1")).toBeVisible();
+    expect(within(inspectorRegion).getByText("Owner player-2")).toBeVisible();
+    expect(within(inspectorRegion).getByText("Visible troops 5")).toBeVisible();
+    expect(within(inspectorRegion).getByText("Visible location Leeds")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Use selected army for movement army ID 1" }));
+    expect(screen.getByLabelText("Movement army ID 1")).toHaveValue("army-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add recruitment order" }));
+    fireEvent.click(manchesterCityButton);
+    fireEvent.click(screen.getByRole("button", { name: "Use selected city for recruitment city 1" }));
+    expect(screen.getByLabelText("Recruitment city 1")).toHaveValue("manchester");
+  });
+
+  it("preserves existing draft values and shows deterministic guidance when a selected marker is invalid for the requested helper", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "http://127.0.0.1:8000",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => makePublicMatchDetailResponse()
+      })
+    );
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    MockWebSocket.instances[0]?.emitOpen();
+    MockWebSocket.instances[0]?.emitMessage(makeEnvelope(143));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Order Drafts" })).toBeVisible();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add recruitment order" }));
+    fireEvent.change(screen.getByLabelText("Recruitment city 1"), {
+      target: { value: "existing-city" }
+    });
+
+    const partialArmyButton = screen.getByRole("button", { name: "Select army army-2 near Birmingham" });
+    fireEvent.click(partialArmyButton);
+
+    const inspectorRegion = screen.getByRole("region", { name: "Map selection inspector" });
+    expect(within(inspectorRegion).getByText("Selected army: army-2")).toBeVisible();
+    expect(within(inspectorRegion).getByText("Visible location hidden or unknown")).toBeVisible();
+    expect(within(inspectorRegion).getByText("Visible troops hidden or unknown")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Use selected city for recruitment city 1" }));
+
+    expect(screen.getByLabelText("Recruitment city 1")).toHaveValue("existing-city");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Selection helper could not update recruitment city 1: the selected army does not expose a visible city."
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add transfer order" }));
+    fireEvent.change(screen.getByLabelText("Transfer destination 1"), {
+      target: { value: "player-3" }
+    });
+
+    const hiddenCityButton = screen.getByRole("button", { name: "Select city Birmingham" });
+    fireEvent.click(hiddenCityButton);
+    expect(within(inspectorRegion).getByText("Selected city: Birmingham")).toBeVisible();
+    expect(within(inspectorRegion).getByText("Owner hidden or unknown")).toBeVisible();
+    expect(within(inspectorRegion).getByText("Garrison hidden or unknown")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Use selected marker for transfer destination 1" }));
+
+    expect(screen.getByLabelText("Transfer destination 1")).toHaveValue("player-3");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Selection helper could not update transfer destination 1: visible city selections cannot fill transfer destinations."
+    );
+  });
 });

@@ -340,6 +340,10 @@ type OrderDraftState = {
   transfers: TransferDraft[];
 };
 
+type MapSelection =
+  | { kind: "city"; cityId: string }
+  | { kind: "army"; armyId: string };
+
 type SubmissionFeedback =
   | {
       status: "idle";
@@ -431,6 +435,10 @@ const emptyTransferDraft = (): TransferDraft => ({
   resource: "food",
   amount: ""
 });
+
+function formatCityName(cityId: string) {
+  return cityId.charAt(0).toUpperCase() + cityId.slice(1);
+}
 
 const emptyMessageDraft = (
   directTargetIds: string[],
@@ -619,6 +627,24 @@ function collectJoinableAlliances(envelope: PlayerMatchEnvelope): AllianceRecord
   );
 }
 
+function getSelectionOwnerCounterparty(
+  selection: MapSelection | null,
+  currentPlayerId: string,
+  selectedCity: MatchLiveMapCityDatum | null,
+  selectedArmy: MatchLiveMapArmyDatum | null
+): string | null {
+  if (selection === null) {
+    return null;
+  }
+
+  const ownerLabel = selection.kind === "city" ? selectedCity?.ownerLabel ?? null : selectedArmy?.ownerLabel ?? null;
+  if (ownerLabel === null || ownerLabel === currentPlayerId) {
+    return null;
+  }
+
+  return ownerLabel;
+}
+
 function describeAcceptedTreaty(
   accepted: TreatyActionAcceptanceResponse,
   currentPlayerId: string
@@ -684,6 +710,8 @@ function HumanMatchLiveSnapshot({
   const [submissionFeedback, setSubmissionFeedback] = useState<SubmissionFeedback>({
     status: "idle"
   });
+  const [selectedMapEntity, setSelectedMapEntity] = useState<MapSelection | null>(null);
+  const [selectionGuidance, setSelectionGuidance] = useState<string | null>(null);
   const visiblePlayerIds = collectVisiblePlayerIds(envelope);
   const directTargetIds = visiblePlayerIds;
   const visibleGroupChats = envelope.data.group_chats;
@@ -723,7 +751,7 @@ function HumanMatchLiveSnapshot({
   const mapCities: MatchLiveMapCityDatum[] = Object.entries(envelope.data.state.cities)
     .map(([cityId, city]) => ({
       cityId,
-      cityName: cityId.charAt(0).toUpperCase() + cityId.slice(1),
+      cityName: formatCityName(cityId),
       ownerLabel: city.visibility === "full" ? city.owner : null,
       ownerVisibility: city.visibility,
       garrisonLabel: city.visibility === "full" && city.garrison !== "unknown" ? String(city.garrison) : null
@@ -740,14 +768,29 @@ function HumanMatchLiveSnapshot({
       return {
         armyId: army.id,
         cityId,
-        cityName: cityId.charAt(0).toUpperCase() + cityId.slice(1),
+        cityName: formatCityName(cityId),
         ownerLabel: army.owner,
         troopsLabel: army.visibility === "full" && army.troops !== "unknown" ? String(army.troops) : null,
-        visibility: army.visibility
+        visibility: army.visibility,
+        visibleLocationCityId: army.visibility === "full" ? (army.location ?? army.destination) : null
       };
     })
     .filter((army): army is MatchLiveMapArmyDatum => army !== null)
     .sort((left, right) => left.cityName.localeCompare(right.cityName));
+  const selectedCity =
+    selectedMapEntity?.kind === "city"
+      ? mapCities.find((city) => city.cityId === selectedMapEntity.cityId) ?? null
+      : null;
+  const selectedArmy =
+    selectedMapEntity?.kind === "army"
+      ? mapArmies.find((army) => army.armyId === selectedMapEntity.armyId) ?? null
+      : null;
+  const selectedCounterpartyId = getSelectionOwnerCounterparty(
+    selectedMapEntity,
+    envelope.data.player_id,
+    selectedCity,
+    selectedArmy
+  );
   const canSubmit = liveStatus === "live" && bearerToken !== null && submissionFeedback.status !== "submitting";
   const canSubmitMessage =
     liveStatus === "live" && bearerToken !== null && messageSubmissionFeedback.status !== "submitting";
@@ -850,7 +893,31 @@ function HumanMatchLiveSnapshot({
     });
   }, [joinableAlliances]);
 
+  useEffect(() => {
+    if (selectedMapEntity === null) {
+      return;
+    }
+
+    if (
+      selectedMapEntity.kind === "city" &&
+      mapCities.some((city) => city.cityId === selectedMapEntity.cityId)
+    ) {
+      return;
+    }
+
+    if (
+      selectedMapEntity.kind === "army" &&
+      mapArmies.some((army) => army.armyId === selectedMapEntity.armyId)
+    ) {
+      return;
+    }
+
+    setSelectedMapEntity(null);
+    setSelectionGuidance("The previous map selection is no longer visible in the current snapshot.");
+  }, [mapArmies, mapCities, selectedMapEntity]);
+
   const updateMovementDraft = (index: number, key: keyof MovementDraft, value: string) => {
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       movements: currentDrafts.movements.map((draft, draftIndex) =>
@@ -860,6 +927,7 @@ function HumanMatchLiveSnapshot({
   };
 
   const updateRecruitmentDraft = (index: number, key: keyof RecruitmentDraft, value: string) => {
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       recruitment: currentDrafts.recruitment.map((draft, draftIndex) =>
@@ -869,6 +937,7 @@ function HumanMatchLiveSnapshot({
   };
 
   const updateUpgradeDraft = (index: number, key: keyof UpgradeDraft, value: string) => {
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       upgrades: currentDrafts.upgrades.map((draft, draftIndex) =>
@@ -878,6 +947,7 @@ function HumanMatchLiveSnapshot({
   };
 
   const updateTransferDraft = (index: number, key: keyof TransferDraft, value: string) => {
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       transfers: currentDrafts.transfers.map((draft, draftIndex) =>
@@ -888,6 +958,7 @@ function HumanMatchLiveSnapshot({
 
   const addMovementDraft = () => {
     setSubmissionFeedback({ status: "idle" });
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       movements: [...currentDrafts.movements, emptyMovementDraft()]
@@ -896,6 +967,7 @@ function HumanMatchLiveSnapshot({
 
   const addRecruitmentDraft = () => {
     setSubmissionFeedback({ status: "idle" });
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       recruitment: [...currentDrafts.recruitment, emptyRecruitmentDraft()]
@@ -904,6 +976,7 @@ function HumanMatchLiveSnapshot({
 
   const addUpgradeDraft = () => {
     setSubmissionFeedback({ status: "idle" });
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       upgrades: [...currentDrafts.upgrades, emptyUpgradeDraft()]
@@ -912,6 +985,7 @@ function HumanMatchLiveSnapshot({
 
   const addTransferDraft = () => {
     setSubmissionFeedback({ status: "idle" });
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       transfers: [...currentDrafts.transfers, emptyTransferDraft()]
@@ -920,6 +994,7 @@ function HumanMatchLiveSnapshot({
 
   const removeMovementDraft = (index: number) => {
     setSubmissionFeedback({ status: "idle" });
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       movements: currentDrafts.movements.filter((_, draftIndex) => draftIndex !== index)
@@ -928,6 +1003,7 @@ function HumanMatchLiveSnapshot({
 
   const removeRecruitmentDraft = (index: number) => {
     setSubmissionFeedback({ status: "idle" });
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       recruitment: currentDrafts.recruitment.filter((_, draftIndex) => draftIndex !== index)
@@ -936,6 +1012,7 @@ function HumanMatchLiveSnapshot({
 
   const removeUpgradeDraft = (index: number) => {
     setSubmissionFeedback({ status: "idle" });
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       upgrades: currentDrafts.upgrades.filter((_, draftIndex) => draftIndex !== index)
@@ -944,6 +1021,7 @@ function HumanMatchLiveSnapshot({
 
   const removeTransferDraft = (index: number) => {
     setSubmissionFeedback({ status: "idle" });
+    setSelectionGuidance(null);
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       transfers: currentDrafts.transfers.filter((_, draftIndex) => draftIndex !== index)
@@ -1031,6 +1109,108 @@ function HumanMatchLiveSnapshot({
       ...currentDraft,
       ...updates
     }));
+  };
+
+  const selectCity = (city: MatchLiveMapCityDatum) => {
+    setSelectedMapEntity({ kind: "city", cityId: city.cityId });
+    setSelectionGuidance(null);
+  };
+
+  const selectArmy = (army: MatchLiveMapArmyDatum) => {
+    setSelectedMapEntity({ kind: "army", armyId: army.armyId });
+    setSelectionGuidance(null);
+  };
+
+  const setSelectionMessage = (message: string) => {
+    setSubmissionFeedback({ status: "idle" });
+    setSelectionGuidance(message);
+  };
+
+  const applyMovementArmySelection = (index: number) => {
+    if (selectedArmy === null) {
+      setSelectionMessage(
+        `Selection helper could not update movement army ID ${index + 1}: select a visible army first.`
+      );
+      return;
+    }
+
+    updateMovementDraft(index, "armyId", selectedArmy.armyId);
+    setSelectionGuidance(`Selection helper set movement army ID ${index + 1} to ${selectedArmy.armyId}.`);
+  };
+
+  const applyMovementDestinationSelection = (index: number) => {
+    const destination =
+      selectedMapEntity?.kind === "city"
+        ? selectedCity?.cityId ?? null
+        : selectedArmy?.visibleLocationCityId ?? null;
+
+    if (destination === null) {
+      const reason =
+        selectedMapEntity?.kind === "army"
+          ? "the selected army does not expose a visible city."
+          : "select a visible city or army first.";
+      setSelectionMessage(
+        `Selection helper could not update movement destination ${index + 1}: ${reason}`
+      );
+      return;
+    }
+
+    updateMovementDraft(index, "destination", destination);
+    setSelectionGuidance(`Selection helper set movement destination ${index + 1} to ${destination}.`);
+  };
+
+  const applyRecruitmentCitySelection = (index: number) => {
+    if (selectedCity === null) {
+      const reason =
+        selectedArmy !== null
+          ? "the selected army does not expose a visible city."
+          : "select a visible city first.";
+      setSelectionMessage(`Selection helper could not update recruitment city ${index + 1}: ${reason}`);
+      return;
+    }
+
+    updateRecruitmentDraft(index, "city", selectedCity.cityId);
+    setSelectionGuidance(`Selection helper set recruitment city ${index + 1} to ${selectedCity.cityId}.`);
+  };
+
+  const applyUpgradeCitySelection = (index: number) => {
+    if (selectedCity === null) {
+      const reason =
+        selectedArmy !== null
+          ? "the selected army does not expose a visible city."
+          : "select a visible city first.";
+      setSelectionMessage(`Selection helper could not update upgrade city ${index + 1}: ${reason}`);
+      return;
+    }
+
+    updateUpgradeDraft(index, "city", selectedCity.cityId);
+    setSelectionGuidance(`Selection helper set upgrade city ${index + 1} to ${selectedCity.cityId}.`);
+  };
+
+  const applyTransferDestinationSelection = (index: number) => {
+    if (selectedCounterpartyId === null) {
+      const reason =
+        selectedMapEntity?.kind === "city"
+          ? "visible city selections cannot fill transfer destinations."
+          : "the selected marker does not expose a visible counterparty.";
+      setSelectionMessage(`Selection helper could not update transfer destination ${index + 1}: ${reason}`);
+      return;
+    }
+
+    updateTransferDraft(index, "to", selectedCounterpartyId);
+    setSelectionGuidance(`Selection helper set transfer destination ${index + 1} to ${selectedCounterpartyId}.`);
+  };
+
+  const applyTreatyCounterpartySelection = () => {
+    if (selectedCounterpartyId === null) {
+      setSelectionMessage(
+        "Selection helper could not update treaty counterparty: the selected marker does not expose a visible counterparty."
+      );
+      return;
+    }
+
+    updateTreatyDraft({ counterpartyId: selectedCounterpartyId });
+    setSelectionGuidance(`Selection helper set treaty counterparty to ${selectedCounterpartyId}.`);
   };
 
   const submitMessageDraft = async () => {
@@ -1356,7 +1536,38 @@ function HumanMatchLiveSnapshot({
         perspective="player"
         cities={mapCities}
         armies={mapArmies}
+        selectedCityId={selectedCity?.cityId ?? null}
+        selectedArmyId={selectedArmy?.armyId ?? null}
+        onCitySelect={selectCity}
+        onArmySelect={selectArmy}
       />
+
+      <section className="panel panel-section" aria-label="Map selection inspector">
+        <h2>Map selection inspector</h2>
+        {selectedMapEntity === null ? (
+          <p>Select a visible city or army marker to inspect it and use explicit draft helpers.</p>
+        ) : selectedCity !== null ? (
+          <>
+            <p>{`Selected city: ${selectedCity.cityName}`}</p>
+            <p>{selectedCity.ownerLabel === null ? "Owner hidden or unknown" : `Owner ${selectedCity.ownerLabel}`}</p>
+            <p>{selectedCity.garrisonLabel === null ? "Garrison hidden or unknown" : `Visible garrison ${selectedCity.garrisonLabel}`}</p>
+          </>
+        ) : selectedArmy !== null ? (
+          <>
+            <p>{`Selected army: ${selectedArmy.armyId}`}</p>
+            <p>{`Owner ${selectedArmy.ownerLabel}`}</p>
+            <p>{selectedArmy.troopsLabel === null ? "Visible troops hidden or unknown" : `Visible troops ${selectedArmy.troopsLabel}`}</p>
+            <p>
+              {selectedArmy.visibleLocationCityId === null
+                ? "Visible location hidden or unknown"
+                : `Visible location ${formatCityName(selectedArmy.visibleLocationCityId)}`}
+            </p>
+          </>
+        ) : (
+          <p>Selected marker is no longer visible in the current snapshot.</p>
+        )}
+        {selectionGuidance ? <p role="status">{selectionGuidance}</p> : null}
+      </section>
 
       <dl className="panel panel-grid" aria-label="Live player summary">
         <SummaryRow label="Match ID" value={envelope.data.match_id} />
@@ -1620,6 +1831,10 @@ function HumanMatchLiveSnapshot({
           </select>
         </label>
 
+        <button className="button-link secondary" type="button" onClick={applyTreatyCounterpartySelection}>
+          Use selected marker for treaty counterparty
+        </button>
+
         {allianceSubmissionFeedback.status === "success" ? (
           <div role="status">
             <p>{allianceSubmissionFeedback.message}</p>
@@ -1731,6 +1946,12 @@ function HumanMatchLiveSnapshot({
               >
                 {`Remove movement order ${index + 1}`}
               </button>
+              <button className="button-link secondary" type="button" onClick={() => applyMovementArmySelection(index)}>
+                {`Use selected army for movement army ID ${index + 1}`}
+              </button>
+              <button className="button-link secondary" type="button" onClick={() => applyMovementDestinationSelection(index)}>
+                {`Use selected marker for movement destination ${index + 1}`}
+              </button>
             </div>
           ))}
         </section>
@@ -1765,6 +1986,9 @@ function HumanMatchLiveSnapshot({
                 onClick={() => removeRecruitmentDraft(index)}
               >
                 {`Remove recruitment order ${index + 1}`}
+              </button>
+              <button className="button-link secondary" type="button" onClick={() => applyRecruitmentCitySelection(index)}>
+                {`Use selected city for recruitment city ${index + 1}`}
               </button>
             </div>
           ))}
@@ -1812,6 +2036,9 @@ function HumanMatchLiveSnapshot({
               >
                 {`Remove upgrade order ${index + 1}`}
               </button>
+              <button className="button-link secondary" type="button" onClick={() => applyUpgradeCitySelection(index)}>
+                {`Use selected city for upgrade city ${index + 1}`}
+              </button>
             </div>
           ))}
         </section>
@@ -1857,6 +2084,9 @@ function HumanMatchLiveSnapshot({
                 onClick={() => removeTransferDraft(index)}
               >
                 {`Remove transfer order ${index + 1}`}
+              </button>
+              <button className="button-link secondary" type="button" onClick={() => applyTransferDestinationSelection(index)}>
+                {`Use selected marker for transfer destination ${index + 1}`}
               </button>
             </div>
           ))}
