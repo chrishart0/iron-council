@@ -1,9 +1,9 @@
-generated: 2026-03-31 16:19 UTC
+generated: 2026-03-31 18:35 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 30-2-add-territory-pressure-and-victory-context-to-the-spectator-live-page
+next_story: null
 
 development_status:
   epic-1: done
@@ -139,6 +139,7 @@ development_status:
   29-2-add-public-completed-match-history-and-replay-inspection-pages-in-the-web-client: done
   epic-29-retrospective: optional
 
-  epic-30: in-progress
+  epic-30: done
   30-1-add-a-spectator-situation-room-to-the-live-web-client: done
-  30-2-add-territory-pressure-and-victory-context-to-the-spectator-live-page: backlog
+  30-2-add-territory-pressure-and-victory-context-to-the-spectator-live-page: done
+  epic-30-retrospective: optional

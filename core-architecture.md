@@ -96,7 +96,7 @@ The web client is a single-page application that connects to the game server via
 
 **Game controls** for submitting orders: clicking cities to queue upgrades or recruitment, dragging to set troop movement paths, and a resource panel showing current balances and per-tick income/expense.
 
-**Spectator mode** is the same client with fog of war disabled and all chat channels visible. Spectators connect via WebSocket but cannot submit orders or messages. This is a configuration flag, not a separate application.
+**Spectator mode** is the same client with fog of war disabled and all chat channels visible. Spectators connect via WebSocket but cannot submit orders or messages. The live page stays text-first: it reuses the shipped public roster plus spectator websocket payload to render readable diplomacy panels, deterministic territory-pressure summaries, and victory-race context without a spectator-only aggregation API. This is a configuration flag, not a separate application.
 
 The client does not talk to Supabase directly during gameplay. All game data flows through the game server's WebSocket. The client only talks to Supabase for authentication (login, signup) and for pre-game actions (browsing matches, viewing ELO leaderboards, match history).
 
@@ -517,7 +517,10 @@ Server → Client messages:
 
 The websocket contract is outbound-only in V1. Players authenticate with the `token`
 query parameter carrying a valid human JWT. Spectators are read-only and receive full
-map visibility plus all chat channels without authentication.
+map visibility plus all chat channels without authentication. The spectator client is
+expected to derive any read-only territory-pressure and victory-context summaries from
+`state.cities`, `state.players`, `state.victory`, `alliances`, and the already-fetched
+public roster rather than calling a second aggregation endpoint.
 
 ---
 

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicMatchLivePage } from "./public-match-live-page";
 import { SessionProvider } from "../session/session-provider";
@@ -141,6 +141,151 @@ function makeEnvelope(tick: number) {
   };
 }
 
+function makePressureEnvelope() {
+  return {
+    type: "tick_update",
+    data: {
+      match_id: "match-alpha",
+      viewer_role: "spectator" as const,
+      player_id: null,
+      state: {
+        match_id: "match-alpha",
+        tick: 201,
+        cities: {
+          london: {
+            owner: "player-1",
+            population: 12,
+            resources: { food: 3, production: 2, money: 8 },
+            upgrades: { economy: 2, military: 1, fortification: 0 },
+            garrison: 7,
+            building_queue: []
+          },
+          york: {
+            owner: "player-9",
+            population: 12,
+            resources: { food: 3, production: 2, money: 8 },
+            upgrades: { economy: 2, military: 1, fortification: 0 },
+            garrison: 7,
+            building_queue: []
+          },
+          leeds: {
+            owner: "player-2",
+            population: 12,
+            resources: { food: 3, production: 2, money: 8 },
+            upgrades: { economy: 2, military: 1, fortification: 0 },
+            garrison: 7,
+            building_queue: []
+          }
+        },
+        armies: [],
+        players: {
+          "player-1": {
+            resources: { food: 120, production: 85, money: 200 },
+            cities_owned: ["london"],
+            alliance_id: "alliance-red",
+            is_eliminated: false
+          },
+          "player-2": {
+            resources: { food: 120, production: 85, money: 200 },
+            cities_owned: ["leeds"],
+            alliance_id: null,
+            is_eliminated: false
+          },
+          "player-9": {
+            resources: { food: 120, production: 85, money: 200 },
+            cities_owned: ["york"],
+            alliance_id: "alliance-red",
+            is_eliminated: false
+          }
+        },
+        victory: {
+          leading_alliance: "alliance-red",
+          cities_held: 2,
+          threshold: 13,
+          countdown_ticks_remaining: 4
+        }
+      },
+      world_messages: [],
+      direct_messages: [],
+      group_chats: [],
+      group_messages: [],
+      treaties: [],
+      alliances: [
+        {
+          alliance_id: "alliance-red",
+          name: "Western Accord",
+          leader_id: "player-1",
+          formed_tick: 120,
+          members: [
+            { player_id: "player-1", joined_tick: 120 },
+            { player_id: "player-9", joined_tick: 121 }
+          ]
+        }
+      ]
+    }
+  };
+}
+
+function makeCollisionEnvelope() {
+  return {
+    type: "tick_update",
+    data: {
+      match_id: "match-alpha",
+      viewer_role: "spectator" as const,
+      player_id: null,
+      state: {
+        match_id: "match-alpha",
+        tick: 202,
+        cities: {
+          london: {
+            owner: "player-1",
+            population: 12,
+            resources: { food: 3, production: 2, money: 8 },
+            upgrades: { economy: 2, military: 1, fortification: 0 },
+            garrison: 7,
+            building_queue: []
+          },
+          york: {
+            owner: "player-2",
+            population: 12,
+            resources: { food: 3, production: 2, money: 8 },
+            upgrades: { economy: 2, military: 1, fortification: 0 },
+            garrison: 7,
+            building_queue: []
+          }
+        },
+        armies: [],
+        players: {
+          "player-1": {
+            resources: { food: 120, production: 85, money: 200 },
+            cities_owned: ["london"],
+            alliance_id: null,
+            is_eliminated: false
+          },
+          "player-2": {
+            resources: { food: 120, production: 85, money: 200 },
+            cities_owned: ["york"],
+            alliance_id: null,
+            is_eliminated: false
+          }
+        },
+        victory: {
+          leading_alliance: null,
+          cities_held: 0,
+          threshold: 13,
+          countdown_ticks_remaining: null
+        }
+      },
+      world_messages: [],
+      direct_messages: [],
+      group_chats: [],
+      group_messages: [],
+      treaties: [],
+      alliances: []
+    }
+  };
+}
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
@@ -255,6 +400,105 @@ describe("PublicMatchLivePage", () => {
 
     expect(screen.getByText("Arthur: Advance at dawn.")).toBeVisible();
     expect(screen.getByText("leeds")).toBeVisible();
+  });
+
+  it("renders territory pressure and victory context from the shipped websocket payload", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        match_id: "match-alpha",
+        status: "active",
+        map: "britain",
+        tick: 200,
+        tick_interval_seconds: 30,
+        current_player_count: 3,
+        max_player_count: 5,
+        open_slot_count: 2,
+        roster: [
+          { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
+          { player_id: "player-2", display_name: "Morgana", competitor_kind: "agent" }
+        ]
+      })
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <PublicMatchLivePage matchId="match-alpha" />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket?.emitOpen();
+    socket?.emitMessage(makePressureEnvelope());
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Territory pressure")).toBeVisible();
+    });
+
+    const pressureBoard = screen.getByLabelText("Territory pressure");
+    const pressureRows = within(pressureBoard).getAllByRole("listitem");
+    expect(pressureRows[0]).toHaveTextContent("Western Accord");
+    expect(pressureRows[0]).toHaveTextContent("2 cities");
+    expect(pressureRows[1]).toHaveTextContent("Morgana");
+    expect(pressureRows[1]).toHaveTextContent("1 city");
+    expect(
+      screen.getByText("Western Accord leads the victory race with 2 of 13 cities.")
+    ).toBeVisible();
+    expect(screen.getByText("Victory countdown: 4 ticks remaining.")).toBeVisible();
+  });
+
+  it("keeps same-label players separate in the territory pressure section", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        match_id: "match-alpha",
+        status: "active",
+        map: "britain",
+        tick: 200,
+        tick_interval_seconds: 30,
+        current_player_count: 2,
+        max_player_count: 5,
+        open_slot_count: 3,
+        roster: [
+          { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
+          { player_id: "player-2", display_name: "Arthur", competitor_kind: "agent" }
+        ]
+      })
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <PublicMatchLivePage matchId="match-alpha" />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket?.emitOpen();
+    socket?.emitMessage(makeCollisionEnvelope());
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Territory pressure")).toBeVisible();
+    });
+
+    const pressureBoard = screen.getByLabelText("Territory pressure");
+    const pressureRows = within(pressureBoard).getAllByRole("listitem");
+    expect(pressureRows).toHaveLength(2);
+    expect(pressureRows[0]).toHaveTextContent("Arthur");
+    expect(pressureRows[0]).toHaveTextContent("1 city");
+    expect(pressureRows[1]).toHaveTextContent("Arthur");
+    expect(pressureRows[1]).toHaveTextContent("1 city");
   });
 
   it("shows an inactive state for non-active matches and skips the websocket connection", async () => {
