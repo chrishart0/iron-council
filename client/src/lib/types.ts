@@ -121,6 +121,19 @@ export type GroupChatMessageCreateRequest = {
   content: string;
 };
 
+export type GroupChatCreateRequest = {
+  match_id: string;
+  tick: number;
+  name: string;
+  member_ids: string[];
+};
+
+export type GroupChatCreateAcceptanceResponse = {
+  status: "accepted";
+  match_id: string;
+  group_chat: GroupChatRecord;
+};
+
 export type GroupChatMessageAcceptanceResponse = {
   status: "accepted";
   match_id: string;

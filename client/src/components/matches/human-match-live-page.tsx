@@ -6,6 +6,7 @@ import {
   buildPlayerMatchWebSocketUrl,
   CommandSubmissionError,
   DiplomacySubmissionError,
+  GroupChatCreateError,
   MessageSubmissionError,
   fetchPublicMatchDetail,
   getPlayerWebSocketCloseMessage,
@@ -13,6 +14,7 @@ import {
   parseWebSocketApiErrorEnvelope,
   PublicMatchDetailError,
   submitAllianceAction,
+  submitGroupChatCreate,
   submitGroupChatMessage,
   submitMatchMessage,
   submitMatchOrders,
@@ -24,6 +26,7 @@ import type {
   AllianceActionAcceptanceResponse,
   AllianceActionRequest,
   GroupChatRecord,
+  GroupChatCreateAcceptanceResponse,
   GroupChatMessageAcceptanceResponse,
   GroupMessageRecord,
   MessageAcceptanceResponse,
@@ -349,6 +352,11 @@ type MessageDraftState = {
   content: string;
 };
 
+type GroupChatCreateDraftState = {
+  name: string;
+  selectedInviteeIds: string[];
+};
+
 type AsyncSubmissionFeedback =
   | {
       status: "idle";
@@ -429,6 +437,11 @@ const emptyAllianceDraft = (joinableAlliances: AllianceRecord[]): AllianceDraftS
   action: "create",
   name: "",
   allianceId: joinableAlliances[0]?.alliance_id ?? ""
+});
+
+const emptyGroupChatCreateDraft = (): GroupChatCreateDraftState => ({
+  name: "",
+  selectedInviteeIds: []
 });
 
 function parsePositiveInteger(value: string): number | null {
@@ -571,6 +584,20 @@ function describeAcceptedMessage(
   return `Accepted ${accepted.channel} message ${accepted.message_id} for tick ${accepted.tick} from ${accepted.sender_id}.`;
 }
 
+function describeAcceptedGroupChatCreate(
+  accepted: GroupChatCreateAcceptanceResponse
+): { message: string; details: string[] } {
+  return {
+    message: `Group chat accepted: ${accepted.group_chat.name}.`,
+    details: [
+      `Group chat id: ${accepted.group_chat.group_chat_id}`,
+      `Created by: ${accepted.group_chat.created_by}`,
+      `Created tick: ${accepted.group_chat.created_tick}`,
+      `Members: ${accepted.group_chat.member_ids.join(", ")}`
+    ]
+  };
+}
+
 function collectJoinableAlliances(envelope: PlayerMatchEnvelope): AllianceRecord[] {
   return envelope.data.alliances.filter(
     (alliance) => !alliance.members.some((member) => member.player_id === envelope.data.player_id)
@@ -651,6 +678,12 @@ function HumanMatchLiveSnapshot({
   const [messageSubmissionFeedback, setMessageSubmissionFeedback] = useState<AsyncSubmissionFeedback>({
     status: "idle"
   });
+  const [groupChatCreateDraft, setGroupChatCreateDraft] = useState<GroupChatCreateDraftState>(() =>
+    emptyGroupChatCreateDraft()
+  );
+  const [groupChatCreateFeedback, setGroupChatCreateFeedback] = useState<AsyncSubmissionFeedback>({
+    status: "idle"
+  });
   const [treatyDraft, setTreatyDraft] = useState<TreatyDraftState>(() =>
     emptyTreatyDraft(treatyCounterpartyIds)
   );
@@ -673,6 +706,13 @@ function HumanMatchLiveSnapshot({
   const canSubmit = liveStatus === "live" && bearerToken !== null && submissionFeedback.status !== "submitting";
   const canSubmitMessage =
     liveStatus === "live" && bearerToken !== null && messageSubmissionFeedback.status !== "submitting";
+  const canSubmitGroupChatCreate =
+    liveStatus === "live" &&
+    bearerToken !== null &&
+    groupChatCreateFeedback.status !== "submitting" &&
+    groupChatCreateDraft.name.trim().length > 0 &&
+    groupChatCreateDraft.selectedInviteeIds.length > 0 &&
+    visiblePlayerIds.length > 0;
   const canSubmitTreaty =
     liveStatus === "live" && bearerToken !== null && treatySubmissionFeedback.status !== "submitting";
   const canSubmitAlliance =
@@ -711,6 +751,23 @@ function HumanMatchLiveSnapshot({
       };
     });
   }, [directTargetIds, visibleGroupChats]);
+
+  useEffect(() => {
+    setGroupChatCreateDraft((currentDraft) => {
+      const nextSelectedInviteeIds = currentDraft.selectedInviteeIds.filter((playerId) =>
+        visiblePlayerIds.includes(playerId)
+      );
+
+      if (nextSelectedInviteeIds.length === currentDraft.selectedInviteeIds.length) {
+        return currentDraft;
+      }
+
+      return {
+        ...currentDraft,
+        selectedInviteeIds: nextSelectedInviteeIds
+      };
+    });
+  }, [visiblePlayerIds]);
 
   useEffect(() => {
     setTreatyDraft((currentDraft) => {
@@ -907,6 +964,14 @@ function HumanMatchLiveSnapshot({
     }));
   };
 
+  const updateGroupChatCreateDraft = (updates: Partial<GroupChatCreateDraftState>) => {
+    setGroupChatCreateFeedback({ status: "idle" });
+    setGroupChatCreateDraft((currentDraft) => ({
+      ...currentDraft,
+      ...updates
+    }));
+  };
+
   const updateTreatyDraft = (updates: Partial<TreatyDraftState>) => {
     setTreatySubmissionFeedback({ status: "idle" });
     setTreatyDraft((currentDraft) => ({
@@ -1017,6 +1082,79 @@ function HumanMatchLiveSnapshot({
         status: "error",
         message: "Unable to submit message right now.",
         code: "message_submission_unavailable",
+        statusCode: 500
+      });
+    }
+  };
+
+  const submitGroupChatCreateDraft = async () => {
+    if (bearerToken === null) {
+      setGroupChatCreateFeedback({
+        status: "error",
+        message: "A stored bearer token is required before creating a group chat.",
+        code: "auth_missing",
+        statusCode: 401
+      });
+      return;
+    }
+
+    const name = groupChatCreateDraft.name.trim();
+    if (name.length === 0) {
+      setGroupChatCreateFeedback({
+        status: "error",
+        message: "Group chat name is required before submitting.",
+        code: "invalid_group_chat_draft",
+        statusCode: 400
+      });
+      return;
+    }
+
+    if (groupChatCreateDraft.selectedInviteeIds.length === 0) {
+      setGroupChatCreateFeedback({
+        status: "error",
+        message: "Choose at least one visible player before creating a group chat.",
+        code: "invalid_group_chat_draft",
+        statusCode: 400
+      });
+      return;
+    }
+
+    setGroupChatCreateFeedback({ status: "submitting" });
+
+    try {
+      const accepted = await submitGroupChatCreate(
+        {
+          match_id: envelope.data.match_id,
+          tick: envelope.data.state.tick,
+          name,
+          member_ids: groupChatCreateDraft.selectedInviteeIds
+        },
+        bearerToken,
+        fetch,
+        { apiBaseUrl }
+      );
+      const feedback = describeAcceptedGroupChatCreate(accepted);
+      setGroupChatCreateDraft(emptyGroupChatCreateDraft());
+      setGroupChatCreateFeedback({
+        status: "success",
+        message: feedback.message,
+        details: feedback.details
+      });
+    } catch (error: unknown) {
+      if (error instanceof GroupChatCreateError) {
+        setGroupChatCreateFeedback({
+          status: "error",
+          message: error.message,
+          code: error.code,
+          statusCode: error.statusCode
+        });
+        return;
+      }
+
+      setGroupChatCreateFeedback({
+        status: "error",
+        message: "Unable to create group chat right now.",
+        code: "group_chat_create_unavailable",
         statusCode: 500
       });
     }
@@ -1226,6 +1364,76 @@ function HumanMatchLiveSnapshot({
       <section className="panel panel-section">
         <h2>Live messaging</h2>
         <p>Submit world, direct, or group messages for the current websocket tick. The live timeline stays read-only.</p>
+
+        <section aria-label="Create group chat">
+          <h3>Create group chat</h3>
+          <p>Use the current websocket snapshot to choose visible players, then wait for the next snapshot to show the chat in the live list.</p>
+
+          {groupChatCreateFeedback.status === "success" ? (
+            <div role="status">
+              <p>{groupChatCreateFeedback.message}</p>
+              {groupChatCreateFeedback.details?.map((detail) => <p key={detail}>{detail}</p>)}
+            </div>
+          ) : null}
+
+          {groupChatCreateFeedback.status === "error" ? (
+            <div role="alert">
+              <p>{groupChatCreateFeedback.message}</p>
+              <p>{`Error code: ${groupChatCreateFeedback.code}`}</p>
+              <p>{`HTTP status: ${groupChatCreateFeedback.statusCode}`}</p>
+            </div>
+          ) : null}
+
+          <label>
+            Group chat name
+            <input
+              type="text"
+              value={groupChatCreateDraft.name}
+              onChange={(event) => updateGroupChatCreateDraft({ name: event.target.value })}
+            />
+          </label>
+
+          {visiblePlayerIds.length === 0 ? (
+            <p>No other visible players can be invited from the current snapshot.</p>
+          ) : (
+            <fieldset>
+              <legend>Invite players</legend>
+              {visiblePlayerIds.map((playerId) => {
+                const isChecked = groupChatCreateDraft.selectedInviteeIds.includes(playerId);
+
+                return (
+                  <label key={playerId}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(event) => {
+                        const nextSelectedInviteeIds = event.target.checked
+                          ? [...groupChatCreateDraft.selectedInviteeIds, playerId]
+                          : groupChatCreateDraft.selectedInviteeIds.filter(
+                              (selectedPlayerId) => selectedPlayerId !== playerId
+                            );
+
+                        updateGroupChatCreateDraft({
+                          selectedInviteeIds: nextSelectedInviteeIds
+                        });
+                      }}
+                    />
+                    {playerId}
+                  </label>
+                );
+              })}
+            </fieldset>
+          )}
+
+          <button
+            className="button-link"
+            type="button"
+            onClick={() => void submitGroupChatCreateDraft()}
+            disabled={!canSubmitGroupChatCreate}
+          >
+            {groupChatCreateFeedback.status === "submitting" ? "Submitting…" : "Create group chat"}
+          </button>
+        </section>
 
         {messageSubmissionFeedback.status === "success" ? (
           <p role="status">{messageSubmissionFeedback.message}</p>

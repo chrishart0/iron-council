@@ -7,6 +7,7 @@ import {
   DiplomacySubmissionError,
   fetchPublicMatchDetail,
   fetchPublicMatches,
+  GroupChatCreateError,
   getPlayerWebSocketCloseMessage,
   joinMatchLobby,
   LobbyActionError,
@@ -17,6 +18,7 @@ import {
   PublicMatchDetailError,
   PublicMatchesError,
   submitAllianceAction,
+  submitGroupChatCreate,
   submitGroupChatMessage,
   submitMatchMessage,
   submitMatchOrders,
@@ -464,6 +466,196 @@ describe("submitMatchOrders", () => {
         "Unable to submit orders right now.",
         "invalid_command_response",
         202
+      )
+    );
+  });
+});
+
+describe("submitGroupChatCreate", () => {
+  it("posts the shipped group-chat creation payload with bearer auth and returns typed accepted metadata", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: "accepted",
+        match_id: "match-alpha",
+        group_chat: {
+          group_chat_id: "council-gold",
+          name: "Gold Council",
+          member_ids: ["player-2", "player-3"],
+          created_by: "player-2",
+          created_tick: 144
+        }
+      })
+    });
+
+    await expect(
+      submitGroupChatCreate(
+        {
+          match_id: "match-alpha",
+          tick: 144,
+          name: "Gold Council",
+          member_ids: ["player-3"]
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).resolves.toEqual({
+      status: "accepted",
+      match_id: "match-alpha",
+      group_chat: {
+        group_chat_id: "council-gold",
+        name: "Gold Council",
+        member_ids: ["player-2", "player-3"],
+        created_by: "player-2",
+        created_tick: 144
+      }
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/v1/matches/match-alpha/group-chats",
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          accept: "application/json",
+          authorization: "Bearer human-token",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          match_id: "match-alpha",
+          tick: 144,
+          name: "Gold Council",
+          member_ids: ["player-3"]
+        })
+      }
+    );
+  });
+
+  it("surfaces structured API errors as deterministic group-chat creation errors", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          code: "tick_mismatch",
+          message: "Group chat payload tick '143' does not match current match tick '144'."
+        }
+      })
+    });
+
+    await expect(
+      submitGroupChatCreate(
+        {
+          match_id: "match-alpha",
+          tick: 143,
+          name: "Gold Council",
+          member_ids: ["player-3"]
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new GroupChatCreateError(
+        "Group chat payload tick '143' does not match current match tick '144'.",
+        "tick_mismatch",
+        400
+      )
+    );
+  });
+
+  it("fails closed when the accepted response shape is invalid", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: "accepted",
+        match_id: "match-alpha",
+        group_chat: {
+          name: "Gold Council"
+        }
+      })
+    });
+
+    await expect(
+      submitGroupChatCreate(
+        {
+          match_id: "match-alpha",
+          tick: 144,
+          name: "Gold Council",
+          member_ids: ["player-3"]
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new GroupChatCreateError(
+        "Unable to create group chat right now.",
+        "invalid_group_chat_create_response",
+        202
+      )
+    );
+  });
+
+  it("uses an explicit apiBaseUrl override for group-chat creation submissions", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: "accepted",
+        match_id: "match-alpha",
+        group_chat: {
+          group_chat_id: "council-gold",
+          name: "Gold Council",
+          member_ids: ["player-2", "player-3"],
+          created_by: "player-2",
+          created_tick: 144
+        }
+      })
+    });
+
+    await submitGroupChatCreate(
+      {
+        match_id: "match-alpha",
+        tick: 144,
+        name: "Gold Council",
+        member_ids: ["player-3"]
+      },
+      "human-token",
+      fetchImpl as unknown as typeof fetch,
+      { apiBaseUrl: "https://session.example/game-api/" }
+    );
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://session.example/game-api/api/v1/matches/match-alpha/group-chats",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          authorization: "Bearer human-token"
+        })
+      })
+    );
+  });
+
+  it("uses group-chat-specific fallback copy when the request cannot reach the backend", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("network down"));
+
+    await expect(
+      submitGroupChatCreate(
+        {
+          match_id: "match-alpha",
+          tick: 144,
+          name: "Gold Council",
+          member_ids: ["player-3"]
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new GroupChatCreateError(
+        "Unable to create group chat right now.",
+        "group_chat_create_unavailable",
+        500
       )
     );
   });

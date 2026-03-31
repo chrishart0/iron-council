@@ -1371,3 +1371,31 @@ So that the browser supports the core diplomatic actions needed for real human m
 **When** focused client behavior tests plus the repo quality gate run
 **Then** treaty/alliance controls are verified from the public browser/API boundary and the docs/BMAD artifacts stay aligned with the shipped route and payload contracts.
 
+## Epic 28: Human Live Group Chat Creation and Invite Controls
+
+Close the last obvious human diplomacy parity gap in the live browser lane by letting authenticated human players create new match-scoped group chats from the existing `/play` page. Keep the work deliberately narrow: reuse the shipped authenticated `/api/v1/matches/{id}/group-chats` route, derive invite candidates from the authoritative websocket snapshot, and rely on the websocket as the source of truth for visible group-chat state after accepted writes.
+
+### Story 28.1: Add authenticated human live group-chat creation controls in the web client
+
+As an authenticated human player,
+I want to create a new group chat and invite visible players from the live browser page,
+So that I can start new private coalition conversations without leaving the shipped web client or relying on agent-only tooling.
+
+**Acceptance Criteria:**
+
+**Given** a joined authenticated human on the live match page and the server already supports authenticated group-chat creation
+**When** the player enters a group-chat name, selects one or more visible other players, and submits the form
+**Then** the client posts only the existing `/api/v1/matches/{id}/group-chats` route with the current live tick and the shipped payload contract without inventing a browser-only mutation API or extra discovery route.
+
+**And Given** auth is missing, the player is not joined, the tick is stale, the chat name is invalid, or the invited players are rejected by the existing domain rules
+**When** the creation request fails
+**Then** the client surfaces the structured error clearly, preserves the drafted name and invited-player selections for correction, and does not fabricate optimistic group-chat state.
+
+**And Given** the server accepts the group-chat creation request
+**When** the response returns accepted metadata
+**Then** the client shows deterministic acceptance details from the response while continuing to rely on the websocket snapshot as the authoritative source for the visible group-chat list and subsequent message targets.
+
+**And Given** the story ships
+**When** focused client behavior tests plus the repo quality gate run
+**Then** the human group-chat creation controls are verified from the public browser/API boundary and the docs/BMAD artifacts stay aligned with the shipped route and payload contract.
+

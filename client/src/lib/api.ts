@@ -8,6 +8,8 @@ import type {
   CityUpgradeState,
   DirectMessageRecord,
   GroupChatRecord,
+  GroupChatCreateAcceptanceResponse,
+  GroupChatCreateRequest,
   GroupChatMessageAcceptanceResponse,
   GroupChatMessageCreateRequest,
   GroupMessageRecord,
@@ -53,6 +55,7 @@ const SPECTATOR_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse spectator live mat
 const MATCH_LOBBY_ERROR_MESSAGE = "Unable to complete the requested lobby action right now.";
 const COMMAND_SUBMISSION_ERROR_MESSAGE = "Unable to submit orders right now.";
 const MESSAGE_SUBMISSION_ERROR_MESSAGE = "Unable to submit message right now.";
+const GROUP_CHAT_CREATE_ERROR_MESSAGE = "Unable to create group chat right now.";
 const DIPLOMACY_SUBMISSION_ERROR_MESSAGE = "Unable to submit diplomacy action right now.";
 const HUMAN_NOT_JOINED_MESSAGE =
   "Join this match as a human player before opening the authenticated live page.";
@@ -107,6 +110,17 @@ export class MessageSubmissionError extends Error {
   ) {
     super(message);
     this.name = "MessageSubmissionError";
+  }
+}
+
+export class GroupChatCreateError extends Error {
+  constructor(
+    message = GROUP_CHAT_CREATE_ERROR_MESSAGE,
+    readonly code: string = "group_chat_create_unavailable",
+    readonly statusCode: number = 500
+  ) {
+    super(message);
+    this.name = "GroupChatCreateError";
   }
 }
 
@@ -327,6 +341,31 @@ export async function submitGroupChatMessage(
   return handleMessageSubmissionResponse(response, isGroupChatMessageAcceptanceResponse);
 }
 
+export async function submitGroupChatCreate(
+  request: GroupChatCreateRequest,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<GroupChatCreateAcceptanceResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(request.match_id)}/group-chats`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: buildAuthenticatedJsonHeaders(bearerToken),
+      body: JSON.stringify(request)
+    }
+  ).catch(() => {
+    throw new GroupChatCreateError(
+      GROUP_CHAT_CREATE_ERROR_MESSAGE,
+      "group_chat_create_unavailable",
+      500
+    );
+  });
+
+  return handleGroupChatCreateResponse(response, isGroupChatCreateAcceptanceResponse);
+}
+
 export async function submitTreatyAction(
   request: TreatyActionRequest,
   bearerToken: string,
@@ -493,6 +532,27 @@ async function handleMessageSubmissionResponse<T>(
   return payload;
 }
 
+async function handleGroupChatCreateResponse<T>(
+  response: ResponseLike,
+  validator: (payload: unknown) => payload is T
+): Promise<T> {
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    throw toGroupChatCreateError(payload, response.status);
+  }
+
+  const payload: unknown = await response.json();
+  if (!validator(payload)) {
+    throw new GroupChatCreateError(
+      GROUP_CHAT_CREATE_ERROR_MESSAGE,
+      "invalid_group_chat_create_response",
+      response.status
+    );
+  }
+
+  return payload;
+}
+
 async function handleDiplomacySubmissionResponse<T>(
   response: ResponseLike,
   validator: (payload: unknown) => payload is T
@@ -547,6 +607,18 @@ function toMessageSubmissionError(payload: unknown, status: number): MessageSubm
   return new MessageSubmissionError(
     MESSAGE_SUBMISSION_ERROR_MESSAGE,
     "message_submission_unavailable",
+    status
+  );
+}
+
+function toGroupChatCreateError(payload: unknown, status: number): GroupChatCreateError {
+  if (isApiErrorEnvelope(payload)) {
+    return new GroupChatCreateError(payload.error.message, payload.error.code, status);
+  }
+
+  return new GroupChatCreateError(
+    GROUP_CHAT_CREATE_ERROR_MESSAGE,
+    "group_chat_create_unavailable",
     status
   );
 }
@@ -637,6 +709,17 @@ function isGroupChatMessageAcceptanceResponse(
     typeof payload.group_chat_id === "string" &&
     isGroupMessageRecord(payload.message) &&
     payload.message.group_chat_id === payload.group_chat_id
+  );
+}
+
+function isGroupChatCreateAcceptanceResponse(
+  payload: unknown
+): payload is GroupChatCreateAcceptanceResponse {
+  return (
+    isRecord(payload) &&
+    payload.status === "accepted" &&
+    typeof payload.match_id === "string" &&
+    isGroupChatRecord(payload.group_chat)
   );
 }
 

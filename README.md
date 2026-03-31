@@ -165,7 +165,9 @@ is the authenticated human live page with text-first movement/recruitment/
 upgrade/transfer order drafting through the shipped `/api/v1/matches/{id}/commands`
 route plus world/direct/group live messaging through the shipped
 `/api/v1/matches/{id}/messages` and
-`/api/v1/matches/{id}/group-chats/{group_chat_id}/messages` routes, and
+`/api/v1/matches/{id}/group-chats/{group_chat_id}/messages` routes, text-first
+group-chat creation through the shipped `/api/v1/matches/{id}/group-chats`
+route, and
 `http://127.0.0.1:3000/lobby` remains the authenticated human lobby flow.
 No client env vars are required.
 The browser defaults to the local server target `http://127.0.0.1:8000`.
