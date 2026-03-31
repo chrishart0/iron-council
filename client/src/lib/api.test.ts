@@ -4,6 +4,7 @@ import {
   buildSpectatorMatchWebSocketUrl,
   CommandSubmissionError,
   createMatchLobby,
+  DiplomacySubmissionError,
   fetchPublicMatchDetail,
   fetchPublicMatches,
   getPlayerWebSocketCloseMessage,
@@ -15,9 +16,11 @@ import {
   parseSpectatorMatchEnvelope,
   PublicMatchDetailError,
   PublicMatchesError,
+  submitAllianceAction,
   submitGroupChatMessage,
   submitMatchMessage,
   submitMatchOrders,
+  submitTreatyAction,
   startMatchLobby
 } from "./api";
 
@@ -706,6 +709,396 @@ describe("message submission helpers", () => {
       new MessageSubmissionError(
         "Unable to submit message right now.",
         "invalid_message_response",
+        202
+      )
+    );
+  });
+});
+
+describe("diplomacy submission helpers", () => {
+  it("posts the shipped treaty action request shape with bearer auth and returns typed accepted metadata", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: "accepted",
+        match_id: "match-alpha",
+        treaty: {
+          treaty_id: 8,
+          player_a_id: "player-2",
+          player_b_id: "player-3",
+          treaty_type: "non_aggression",
+          status: "proposed",
+          proposed_by: "player-2",
+          proposed_tick: 144,
+          signed_tick: null,
+          withdrawn_by: null,
+          withdrawn_tick: null
+        }
+      })
+    });
+
+    await expect(
+      submitTreatyAction(
+        {
+          match_id: "match-alpha",
+          counterparty_id: "player-3",
+          action: "propose",
+          treaty_type: "non_aggression"
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).resolves.toEqual({
+      status: "accepted",
+      match_id: "match-alpha",
+      treaty: {
+        treaty_id: 8,
+        player_a_id: "player-2",
+        player_b_id: "player-3",
+        treaty_type: "non_aggression",
+        status: "proposed",
+        proposed_by: "player-2",
+        proposed_tick: 144,
+        signed_tick: null,
+        withdrawn_by: null,
+        withdrawn_tick: null
+      }
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("http://127.0.0.1:8000/api/v1/matches/match-alpha/treaties", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        counterparty_id: "player-3",
+        action: "propose",
+        treaty_type: "non_aggression"
+      })
+    });
+  });
+
+  it("posts the shipped alliance create, join, and leave request shapes with bearer auth", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        json: async () => ({
+          status: "accepted",
+          match_id: "match-alpha",
+          player_id: "player-2",
+          alliance: {
+            alliance_id: "alliance-blue",
+            name: "Blue League",
+            leader_id: "player-2",
+            formed_tick: 144,
+            members: [{ player_id: "player-2", joined_tick: 144 }]
+          }
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        json: async () => ({
+          status: "accepted",
+          match_id: "match-alpha",
+          player_id: "player-2",
+          alliance: {
+            alliance_id: "alliance-red",
+            name: "Red Council",
+            leader_id: "player-1",
+            formed_tick: 140,
+            members: [
+              { player_id: "player-1", joined_tick: 140 },
+              { player_id: "player-2", joined_tick: 144 }
+            ]
+          }
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        json: async () => ({
+          status: "accepted",
+          match_id: "match-alpha",
+          player_id: "player-2",
+          alliance: {
+            alliance_id: "alliance-red",
+            name: "Red Council",
+            leader_id: "player-1",
+            formed_tick: 140,
+            members: [{ player_id: "player-1", joined_tick: 140 }]
+          }
+        })
+      });
+
+    await expect(
+      submitAllianceAction(
+        {
+          match_id: "match-alpha",
+          action: "create",
+          name: "Blue League"
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).resolves.toEqual({
+      status: "accepted",
+      match_id: "match-alpha",
+      player_id: "player-2",
+      alliance: {
+        alliance_id: "alliance-blue",
+        name: "Blue League",
+        leader_id: "player-2",
+        formed_tick: 144,
+        members: [{ player_id: "player-2", joined_tick: 144 }]
+      }
+    });
+
+    await expect(
+      submitAllianceAction(
+        {
+          match_id: "match-alpha",
+          action: "join",
+          alliance_id: "alliance-red"
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).resolves.toEqual({
+      status: "accepted",
+      match_id: "match-alpha",
+      player_id: "player-2",
+      alliance: {
+        alliance_id: "alliance-red",
+        name: "Red Council",
+        leader_id: "player-1",
+        formed_tick: 140,
+        members: [
+          { player_id: "player-1", joined_tick: 140 },
+          { player_id: "player-2", joined_tick: 144 }
+        ]
+      }
+    });
+
+    await expect(
+      submitAllianceAction(
+        {
+          match_id: "match-alpha",
+          action: "leave"
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).resolves.toEqual({
+      status: "accepted",
+      match_id: "match-alpha",
+      player_id: "player-2",
+      alliance: {
+        alliance_id: "alliance-red",
+        name: "Red Council",
+        leader_id: "player-1",
+        formed_tick: 140,
+        members: [{ player_id: "player-1", joined_tick: 140 }]
+      }
+    });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, "http://127.0.0.1:8000/api/v1/matches/match-alpha/alliances", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        action: "create",
+        name: "Blue League"
+      })
+    });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, "http://127.0.0.1:8000/api/v1/matches/match-alpha/alliances", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        action: "join",
+        alliance_id: "alliance-red"
+      })
+    });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(3, "http://127.0.0.1:8000/api/v1/matches/match-alpha/alliances", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        action: "leave"
+      })
+    });
+  });
+
+  it("turns structured diplomacy api error envelopes into deterministic treaty and alliance client errors", async () => {
+    const treatyFetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        error: {
+          code: "treaty_conflict",
+          message: "A non_aggression treaty with player-3 is already active."
+        }
+      })
+    });
+    const allianceFetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({
+        error: {
+          code: "alliance_leave_forbidden",
+          message: "Alliance leaders cannot leave without disbanding first."
+        }
+      })
+    });
+
+    await expect(
+      submitTreatyAction(
+        {
+          match_id: "match-alpha",
+          counterparty_id: "player-3",
+          action: "propose",
+          treaty_type: "non_aggression"
+        },
+        "human-token",
+        treatyFetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new DiplomacySubmissionError(
+        "A non_aggression treaty with player-3 is already active.",
+        "treaty_conflict",
+        409
+      )
+    );
+
+    await expect(
+      submitAllianceAction(
+        {
+          match_id: "match-alpha",
+          action: "leave"
+        },
+        "human-token",
+        allianceFetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new DiplomacySubmissionError(
+        "Alliance leaders cannot leave without disbanding first.",
+        "alliance_leave_forbidden",
+        403
+      )
+    );
+  });
+
+  it("normalizes diplomacy transport rejections into a deterministic client error", async () => {
+    const treatyFetchImpl = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    const allianceFetchImpl = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+
+    await expect(
+      submitTreatyAction(
+        {
+          match_id: "match-alpha",
+          counterparty_id: "player-3",
+          action: "propose",
+          treaty_type: "trade"
+        },
+        "human-token",
+        treatyFetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new DiplomacySubmissionError(
+        "Unable to submit diplomacy action right now.",
+        "diplomacy_submission_unavailable",
+        500
+      )
+    );
+
+    await expect(
+      submitAllianceAction(
+        {
+          match_id: "match-alpha",
+          action: "create",
+          name: "Blue League"
+        },
+        "human-token",
+        allianceFetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new DiplomacySubmissionError(
+        "Unable to submit diplomacy action right now.",
+        "diplomacy_submission_unavailable",
+        500
+      )
+    );
+  });
+
+  it("rejects malformed diplomacy success responses with a deterministic client error", async () => {
+    const treatyFetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({ status: "accepted", match_id: "match-alpha", treaty: null })
+    });
+    const allianceFetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({ status: "accepted", match_id: "match-alpha", player_id: "player-2", alliance: null })
+    });
+
+    await expect(
+      submitTreatyAction(
+        {
+          match_id: "match-alpha",
+          counterparty_id: "player-3",
+          action: "accept",
+          treaty_type: "trade"
+        },
+        "human-token",
+        treatyFetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new DiplomacySubmissionError(
+        "Unable to submit diplomacy action right now.",
+        "invalid_diplomacy_response",
+        202
+      )
+    );
+
+    await expect(
+      submitAllianceAction(
+        {
+          match_id: "match-alpha",
+          action: "leave"
+        },
+        "human-token",
+        allianceFetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new DiplomacySubmissionError(
+        "Unable to submit diplomacy action right now.",
+        "invalid_diplomacy_response",
         202
       )
     );

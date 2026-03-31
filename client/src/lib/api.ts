@@ -1,4 +1,6 @@
 import type {
+  AllianceActionAcceptanceResponse,
+  AllianceActionRequest,
   AllianceRecord,
   AllianceMemberRecord,
   ApiErrorEnvelope,
@@ -34,6 +36,8 @@ import type {
   SpectatorMatchEnvelope,
   SpectatorMatchState,
   SpectatorPlayerState,
+  TreatyActionAcceptanceResponse,
+  TreatyActionRequest,
   TreatyRecord,
   VictoryState,
   WorldMessageRecord
@@ -49,6 +53,7 @@ const SPECTATOR_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse spectator live mat
 const MATCH_LOBBY_ERROR_MESSAGE = "Unable to complete the requested lobby action right now.";
 const COMMAND_SUBMISSION_ERROR_MESSAGE = "Unable to submit orders right now.";
 const MESSAGE_SUBMISSION_ERROR_MESSAGE = "Unable to submit message right now.";
+const DIPLOMACY_SUBMISSION_ERROR_MESSAGE = "Unable to submit diplomacy action right now.";
 const HUMAN_NOT_JOINED_MESSAGE =
   "Join this match as a human player before opening the authenticated live page.";
 const INVALID_WEBSOCKET_AUTH_MESSAGE =
@@ -102,6 +107,17 @@ export class MessageSubmissionError extends Error {
   ) {
     super(message);
     this.name = "MessageSubmissionError";
+  }
+}
+
+export class DiplomacySubmissionError extends Error {
+  constructor(
+    message = DIPLOMACY_SUBMISSION_ERROR_MESSAGE,
+    readonly code: string = "diplomacy_submission_unavailable",
+    readonly statusCode: number = 500
+  ) {
+    super(message);
+    this.name = "DiplomacySubmissionError";
   }
 }
 
@@ -311,6 +327,56 @@ export async function submitGroupChatMessage(
   return handleMessageSubmissionResponse(response, isGroupChatMessageAcceptanceResponse);
 }
 
+export async function submitTreatyAction(
+  request: TreatyActionRequest,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<TreatyActionAcceptanceResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(request.match_id)}/treaties`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: buildAuthenticatedJsonHeaders(bearerToken),
+      body: JSON.stringify(request)
+    }
+  ).catch(() => {
+    throw new DiplomacySubmissionError(
+      DIPLOMACY_SUBMISSION_ERROR_MESSAGE,
+      "diplomacy_submission_unavailable",
+      500
+    );
+  });
+
+  return handleDiplomacySubmissionResponse(response, isTreatyActionAcceptanceResponse);
+}
+
+export async function submitAllianceAction(
+  request: AllianceActionRequest,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<AllianceActionAcceptanceResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(request.match_id)}/alliances`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: buildAuthenticatedJsonHeaders(bearerToken),
+      body: JSON.stringify(request)
+    }
+  ).catch(() => {
+    throw new DiplomacySubmissionError(
+      DIPLOMACY_SUBMISSION_ERROR_MESSAGE,
+      "diplomacy_submission_unavailable",
+      500
+    );
+  });
+
+  return handleDiplomacySubmissionResponse(response, isAllianceActionAcceptanceResponse);
+}
+
 export function buildSpectatorMatchWebSocketUrl(
   matchId: string,
   options?: { apiBaseUrl?: string }
@@ -427,6 +493,27 @@ async function handleMessageSubmissionResponse<T>(
   return payload;
 }
 
+async function handleDiplomacySubmissionResponse<T>(
+  response: ResponseLike,
+  validator: (payload: unknown) => payload is T
+): Promise<T> {
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    throw toDiplomacySubmissionError(payload, response.status);
+  }
+
+  const payload: unknown = await response.json();
+  if (!validator(payload)) {
+    throw new DiplomacySubmissionError(
+      DIPLOMACY_SUBMISSION_ERROR_MESSAGE,
+      "invalid_diplomacy_response",
+      response.status
+    );
+  }
+
+  return payload;
+}
+
 type ResponseLike = {
   ok: boolean;
   status: number;
@@ -460,6 +547,18 @@ function toMessageSubmissionError(payload: unknown, status: number): MessageSubm
   return new MessageSubmissionError(
     MESSAGE_SUBMISSION_ERROR_MESSAGE,
     "message_submission_unavailable",
+    status
+  );
+}
+
+function toDiplomacySubmissionError(payload: unknown, status: number): DiplomacySubmissionError {
+  if (isApiErrorEnvelope(payload)) {
+    return new DiplomacySubmissionError(payload.error.message, payload.error.code, status);
+  }
+
+  return new DiplomacySubmissionError(
+    DIPLOMACY_SUBMISSION_ERROR_MESSAGE,
+    "diplomacy_submission_unavailable",
     status
   );
 }
@@ -538,6 +637,27 @@ function isGroupChatMessageAcceptanceResponse(
     typeof payload.group_chat_id === "string" &&
     isGroupMessageRecord(payload.message) &&
     payload.message.group_chat_id === payload.group_chat_id
+  );
+}
+
+function isTreatyActionAcceptanceResponse(payload: unknown): payload is TreatyActionAcceptanceResponse {
+  return (
+    isRecord(payload) &&
+    payload.status === "accepted" &&
+    typeof payload.match_id === "string" &&
+    isTreatyRecord(payload.treaty)
+  );
+}
+
+function isAllianceActionAcceptanceResponse(
+  payload: unknown
+): payload is AllianceActionAcceptanceResponse {
+  return (
+    isRecord(payload) &&
+    payload.status === "accepted" &&
+    typeof payload.match_id === "string" &&
+    typeof payload.player_id === "string" &&
+    isAllianceRecord(payload.alliance)
   );
 }
 

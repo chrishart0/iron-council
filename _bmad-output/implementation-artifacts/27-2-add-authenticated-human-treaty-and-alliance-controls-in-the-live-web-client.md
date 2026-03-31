@@ -1,6 +1,6 @@
 # Story 27.2: Add authenticated human treaty and alliance controls in the live web client
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -22,10 +22,10 @@ So that the browser supports the core diplomatic actions needed for real human m
 
 ## Tasks / Subtasks
 
-- [ ] Add typed authenticated client helpers for treaty and alliance actions. (AC: 1, 2, 3)
-- [ ] Extend the live page with text-first treaty/alliance action controls using only the shipped routes/contracts. (AC: 1, 2, 3)
-- [ ] Add behavior-first tests covering success, structured-error handling, and websocket-source-of-truth semantics. (AC: 2, 3)
-- [ ] Re-run focused client checks and the repo quality gate, then close docs/BMAD artifacts. (AC: 4)
+- [x] Add typed authenticated client helpers for treaty and alliance actions. (AC: 1, 2, 3)
+- [x] Extend the live page with text-first treaty/alliance action controls using only the shipped routes/contracts. (AC: 1, 2, 3)
+- [x] Add behavior-first tests covering success, structured-error handling, and websocket-source-of-truth semantics. (AC: 2, 3)
+- [x] Re-run focused client checks and the repo quality gate, then close docs/BMAD artifacts. (AC: 4)
 
 ## Dev Notes
 
@@ -46,23 +46,40 @@ So that the browser supports the core diplomatic actions needed for real human m
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
-Pending implementation.
+OpenAI Codex CLI final implementation/review pass on GPT-5 Codex in the existing Story 27.2 worktree.
 
 ### Debug Log References
 
-- Pending.
+- `cd client && npm test -- --run src/lib/api.test.ts src/components/matches/human-match-live-page.test.tsx`
+- `cd client && npm run build`
+- `make quality`
 
 ### Completion Notes List
 
-- Pending.
+- Added the minimal typed treaty and alliance request/response client surface plus thin authenticated helpers for only `POST /api/v1/matches/{id}/treaties` and `POST /api/v1/matches/{id}/alliances`.
+- Extended the authenticated live player page with boring text-first treaty and alliance controls that derive counterparties and joinable alliances from the websocket snapshot instead of inventing extra reads or optimistic local state.
+- Successful treaty and alliance submissions now show deterministic acceptance metadata only, while the websocket snapshot remains the authoritative source for visible treaties, alliance membership, and alliance listings.
+- Corrective follow-up: treaty success now renders accepted envelope metadata directly from the returned treaty record (`treaty_id`, counterparties, type, status, proposed-by, and tick fields) instead of a summary-like sentence.
+- Corrective follow-up: alliance success now renders accepted envelope metadata directly from the returned alliance record and response (`action`, `player_id`, `alliance_id`, `name`, `leader_id`, `formed_tick`, and accepted membership timing when present) without mutating visible alliance state ahead of the websocket snapshot.
+- Added an explicit browser-boundary regression proving accepted alliance feedback can appear immediately while the rendered authoritative alliance state remains on the current websocket snapshot until a later websocket update arrives.
+- Structured diplomacy failures surface server-provided `message`, `code`, and `status` details while preserving treaty and alliance draft state for correction.
+- Simplified the alliance join UX during final review so the form no longer auto-switches the selected action back to `create` when no joinable alliance exists; it now keeps the user's explicit `join` selection and shows an empty deterministic choice instead.
+- Verified the focused client checks, client production build, and full repo `make quality` gate after the final simplification pass.
 
 ### File List
 
-- Pending.
+- _bmad-output/implementation-artifacts/27-2-add-authenticated-human-treaty-and-alliance-controls-in-the-live-web-client.md
+- _bmad-output/implementation-artifacts/sprint-status.yaml
+- client/src/components/matches/human-match-live-page.test.tsx
+- client/src/components/matches/human-match-live-page.tsx
+- client/src/lib/api.test.ts
+- client/src/lib/api.ts
+- client/src/lib/types.ts
+- docs/plans/2026-03-31-story-27-2-human-live-diplomacy-controls.md

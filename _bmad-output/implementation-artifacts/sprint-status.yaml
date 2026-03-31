@@ -1,9 +1,9 @@
-generated: 2026-03-31 02:30 UTC
+generated: 2026-03-31 10:57 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 27-2-add-authenticated-human-treaty-and-alliance-controls-in-the-live-web-client
+next_story: null
 
 development_status:
   epic-1: done
@@ -126,8 +126,8 @@ development_status:
   26-2-add-authenticated-human-order-submission-controls-in-the-live-web-client: done
 
 
-  epic-27: in_progress
+  epic-27: done
   27-1-add-authenticated-human-live-messaging-controls-in-the-web-client: done
-  27-2-add-authenticated-human-treaty-and-alliance-controls-in-the-live-web-client: backlog
-
+  27-2-add-authenticated-human-treaty-and-alliance-controls-in-the-live-web-client: done
+  epic-27-retrospective: optional
 

@@ -128,6 +128,53 @@ export type GroupChatMessageAcceptanceResponse = {
   message: GroupMessageRecord;
 };
 
+export type TreatyAction = "propose" | "accept" | "withdraw";
+export type TreatyType = "non_aggression" | "defensive" | "trade";
+
+export type TreatyActionRequest = {
+  match_id: string;
+  counterparty_id: string;
+  action: TreatyAction;
+  treaty_type: TreatyType;
+};
+
+export type TreatyActionAcceptanceResponse = {
+  status: "accepted";
+  match_id: string;
+  treaty: TreatyRecord;
+};
+
+export type AllianceAction = "create" | "join" | "leave";
+
+export type AllianceCreateRequest = {
+  match_id: string;
+  action: "create";
+  name: string;
+};
+
+export type AllianceJoinRequest = {
+  match_id: string;
+  action: "join";
+  alliance_id: string;
+};
+
+export type AllianceLeaveRequest = {
+  match_id: string;
+  action: "leave";
+};
+
+export type AllianceActionRequest =
+  | AllianceCreateRequest
+  | AllianceJoinRequest
+  | AllianceLeaveRequest;
+
+export type AllianceActionAcceptanceResponse = {
+  status: "accepted";
+  match_id: string;
+  player_id: string;
+  alliance: AllianceRecord;
+};
+
 export type OrderAcceptanceResponse = {
   status: "accepted";
   match_id: string;

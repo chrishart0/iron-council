@@ -5,18 +5,24 @@ import { useEffect, useState } from "react";
 import {
   buildPlayerMatchWebSocketUrl,
   CommandSubmissionError,
+  DiplomacySubmissionError,
   MessageSubmissionError,
   fetchPublicMatchDetail,
   getPlayerWebSocketCloseMessage,
   parsePlayerMatchEnvelope,
   parseWebSocketApiErrorEnvelope,
   PublicMatchDetailError,
+  submitAllianceAction,
   submitGroupChatMessage,
   submitMatchMessage,
-  submitMatchOrders
+  submitMatchOrders,
+  submitTreatyAction
 } from "../../lib/api";
 import type {
   AllianceRecord,
+  AllianceAction,
+  AllianceActionAcceptanceResponse,
+  AllianceActionRequest,
   GroupChatRecord,
   GroupChatMessageAcceptanceResponse,
   GroupMessageRecord,
@@ -25,7 +31,10 @@ import type {
   PlayerMatchEnvelope,
   PublicMatchDetailResponse,
   ResourceType,
+  TreatyAction,
+  TreatyActionAcceptanceResponse,
   TreatyRecord,
+  TreatyType,
   UpgradeTrack,
   VisibleArmyState
 } from "../../lib/types";
@@ -340,7 +349,7 @@ type MessageDraftState = {
   content: string;
 };
 
-type MessageSubmissionFeedback =
+type AsyncSubmissionFeedback =
   | {
       status: "idle";
     }
@@ -350,6 +359,7 @@ type MessageSubmissionFeedback =
   | {
       status: "success";
       message: string;
+      details?: string[];
     }
   | {
       status: "error";
@@ -357,6 +367,18 @@ type MessageSubmissionFeedback =
       code: string;
       statusCode: number;
     };
+
+type TreatyDraftState = {
+  action: TreatyAction;
+  treatyType: TreatyType;
+  counterpartyId: string;
+};
+
+type AllianceDraftState = {
+  action: AllianceAction;
+  name: string;
+  allianceId: string;
+};
 
 const emptyDraftState = (): OrderDraftState => ({
   movements: [],
@@ -395,6 +417,18 @@ const emptyMessageDraft = (
   directRecipientId: directTargetIds[0] ?? "",
   groupChatId: visibleGroupChats[0]?.group_chat_id ?? "",
   content: ""
+});
+
+const emptyTreatyDraft = (counterpartyIds: string[]): TreatyDraftState => ({
+  action: "propose",
+  treatyType: "non_aggression",
+  counterpartyId: counterpartyIds[0] ?? ""
+});
+
+const emptyAllianceDraft = (joinableAlliances: AllianceRecord[]): AllianceDraftState => ({
+  action: "create",
+  name: "",
+  allianceId: joinableAlliances[0]?.alliance_id ?? ""
 });
 
 function parsePositiveInteger(value: string): number | null {
@@ -537,6 +571,60 @@ function describeAcceptedMessage(
   return `Accepted ${accepted.channel} message ${accepted.message_id} for tick ${accepted.tick} from ${accepted.sender_id}.`;
 }
 
+function collectJoinableAlliances(envelope: PlayerMatchEnvelope): AllianceRecord[] {
+  return envelope.data.alliances.filter(
+    (alliance) => !alliance.members.some((member) => member.player_id === envelope.data.player_id)
+  );
+}
+
+function describeAcceptedTreaty(
+  accepted: TreatyActionAcceptanceResponse,
+  currentPlayerId: string
+): { message: string; details: string[] } {
+  const counterpartyId =
+    accepted.treaty.player_a_id === currentPlayerId ? accepted.treaty.player_b_id : accepted.treaty.player_a_id;
+
+  return {
+    message: `Treaty accepted: ${accepted.treaty.treaty_type} with ${counterpartyId}.`,
+    details: [
+      `Treaty id: ${accepted.treaty.treaty_id}`,
+      `Counterparties: ${accepted.treaty.player_a_id} and ${accepted.treaty.player_b_id}`,
+      `Type: ${accepted.treaty.treaty_type}`,
+      `Status: ${accepted.treaty.status}`,
+      `Proposed by: ${accepted.treaty.proposed_by}`,
+      `Proposed tick: ${accepted.treaty.proposed_tick}`,
+      accepted.treaty.signed_tick === null
+        ? "Signed tick: not signed"
+        : `Signed tick: ${accepted.treaty.signed_tick}`
+    ]
+  };
+}
+
+function describeAcceptedAlliance(
+  accepted: AllianceActionAcceptanceResponse,
+  action: AllianceAction
+): { message: string; details: string[] } {
+  const joinedMember =
+    accepted.alliance.members.find((member) => member.player_id === accepted.player_id) ?? null;
+  const actionLabel =
+    action === "create" ? "created" : action === "join" ? "joined" : "left";
+
+  return {
+    message: `Alliance accepted: ${actionLabel} ${accepted.alliance.name}.`,
+    details: [
+      `Action: ${action}`,
+      `Player id: ${accepted.player_id}`,
+      `Alliance id: ${accepted.alliance.alliance_id}`,
+      `Alliance name: ${accepted.alliance.name}`,
+      `Leader id: ${accepted.alliance.leader_id}`,
+      `Formed tick: ${accepted.alliance.formed_tick}`,
+      joinedMember === null
+        ? `Accepted player membership: ${accepted.player_id} not present in accepted alliance record`
+        : `Accepted player joined tick: ${joinedMember.joined_tick}`
+    ]
+  };
+}
+
 function HumanMatchLiveSnapshot({
   envelope,
   apiBaseUrl,
@@ -552,12 +640,27 @@ function HumanMatchLiveSnapshot({
   const [submissionFeedback, setSubmissionFeedback] = useState<SubmissionFeedback>({
     status: "idle"
   });
-  const directTargetIds = collectVisiblePlayerIds(envelope);
+  const visiblePlayerIds = collectVisiblePlayerIds(envelope);
+  const directTargetIds = visiblePlayerIds;
   const visibleGroupChats = envelope.data.group_chats;
+  const treatyCounterpartyIds = visiblePlayerIds;
+  const joinableAlliances = collectJoinableAlliances(envelope);
   const [messageDraft, setMessageDraft] = useState<MessageDraftState>(() =>
     emptyMessageDraft(directTargetIds, visibleGroupChats)
   );
-  const [messageSubmissionFeedback, setMessageSubmissionFeedback] = useState<MessageSubmissionFeedback>({
+  const [messageSubmissionFeedback, setMessageSubmissionFeedback] = useState<AsyncSubmissionFeedback>({
+    status: "idle"
+  });
+  const [treatyDraft, setTreatyDraft] = useState<TreatyDraftState>(() =>
+    emptyTreatyDraft(treatyCounterpartyIds)
+  );
+  const [treatySubmissionFeedback, setTreatySubmissionFeedback] = useState<AsyncSubmissionFeedback>({
+    status: "idle"
+  });
+  const [allianceDraft, setAllianceDraft] = useState<AllianceDraftState>(() =>
+    emptyAllianceDraft(joinableAlliances)
+  );
+  const [allianceSubmissionFeedback, setAllianceSubmissionFeedback] = useState<AsyncSubmissionFeedback>({
     status: "idle"
   });
   const latestWorldMessage = envelope.data.world_messages.at(-1) ?? null;
@@ -570,6 +673,10 @@ function HumanMatchLiveSnapshot({
   const canSubmit = liveStatus === "live" && bearerToken !== null && submissionFeedback.status !== "submitting";
   const canSubmitMessage =
     liveStatus === "live" && bearerToken !== null && messageSubmissionFeedback.status !== "submitting";
+  const canSubmitTreaty =
+    liveStatus === "live" && bearerToken !== null && treatySubmissionFeedback.status !== "submitting";
+  const canSubmitAlliance =
+    liveStatus === "live" && bearerToken !== null && allianceSubmissionFeedback.status !== "submitting";
 
   useEffect(() => {
     setMessageDraft((currentDraft) => {
@@ -604,6 +711,42 @@ function HumanMatchLiveSnapshot({
       };
     });
   }, [directTargetIds, visibleGroupChats]);
+
+  useEffect(() => {
+    setTreatyDraft((currentDraft) => {
+      const nextCounterpartyId = treatyCounterpartyIds.includes(currentDraft.counterpartyId)
+        ? currentDraft.counterpartyId
+        : (treatyCounterpartyIds[0] ?? "");
+
+      if (nextCounterpartyId === currentDraft.counterpartyId) {
+        return currentDraft;
+      }
+
+      return {
+        ...currentDraft,
+        counterpartyId: nextCounterpartyId
+      };
+    });
+  }, [treatyCounterpartyIds]);
+
+  useEffect(() => {
+    setAllianceDraft((currentDraft) => {
+      const nextAllianceId = joinableAlliances.some(
+        (alliance) => alliance.alliance_id === currentDraft.allianceId
+      )
+        ? currentDraft.allianceId
+        : (joinableAlliances[0]?.alliance_id ?? "");
+
+      if (nextAllianceId === currentDraft.allianceId) {
+        return currentDraft;
+      }
+
+      return {
+        ...currentDraft,
+        allianceId: nextAllianceId
+      };
+    });
+  }, [joinableAlliances]);
 
   const updateMovementDraft = (index: number, key: keyof MovementDraft, value: string) => {
     setDrafts((currentDrafts) => ({
@@ -764,6 +907,22 @@ function HumanMatchLiveSnapshot({
     }));
   };
 
+  const updateTreatyDraft = (updates: Partial<TreatyDraftState>) => {
+    setTreatySubmissionFeedback({ status: "idle" });
+    setTreatyDraft((currentDraft) => ({
+      ...currentDraft,
+      ...updates
+    }));
+  };
+
+  const updateAllianceDraft = (updates: Partial<AllianceDraftState>) => {
+    setAllianceSubmissionFeedback({ status: "idle" });
+    setAllianceDraft((currentDraft) => ({
+      ...currentDraft,
+      ...updates
+    }));
+  };
+
   const submitMessageDraft = async () => {
     if (bearerToken === null) {
       setMessageSubmissionFeedback({
@@ -858,6 +1017,140 @@ function HumanMatchLiveSnapshot({
         status: "error",
         message: "Unable to submit message right now.",
         code: "message_submission_unavailable",
+        statusCode: 500
+      });
+    }
+  };
+
+  const submitTreatyDraft = async () => {
+    if (bearerToken === null) {
+      setTreatySubmissionFeedback({
+        status: "error",
+        message: "A stored bearer token is required before submitting diplomacy.",
+        code: "auth_missing",
+        statusCode: 401
+      });
+      return;
+    }
+
+    if (treatyDraft.counterpartyId.length === 0) {
+      setTreatySubmissionFeedback({
+        status: "error",
+        message: "Choose a visible treaty counterparty before submitting.",
+        code: "invalid_treaty_draft",
+        statusCode: 400
+      });
+      return;
+    }
+
+    setTreatySubmissionFeedback({ status: "submitting" });
+
+    try {
+      const accepted = await submitTreatyAction(
+        {
+          match_id: envelope.data.match_id,
+          counterparty_id: treatyDraft.counterpartyId,
+          action: treatyDraft.action,
+          treaty_type: treatyDraft.treatyType
+        },
+        bearerToken,
+        fetch,
+        { apiBaseUrl }
+      );
+      const feedback = describeAcceptedTreaty(accepted, envelope.data.player_id);
+      setTreatySubmissionFeedback({
+        status: "success",
+        message: feedback.message,
+        details: feedback.details
+      });
+    } catch (error: unknown) {
+      if (error instanceof DiplomacySubmissionError) {
+        setTreatySubmissionFeedback({
+          status: "error",
+          message: error.message,
+          code: error.code,
+          statusCode: error.statusCode
+        });
+        return;
+      }
+
+      setTreatySubmissionFeedback({
+        status: "error",
+        message: "Unable to submit diplomacy action right now.",
+        code: "diplomacy_submission_unavailable",
+        statusCode: 500
+      });
+    }
+  };
+
+  const submitAllianceDraft = async () => {
+    if (bearerToken === null) {
+      setAllianceSubmissionFeedback({
+        status: "error",
+        message: "A stored bearer token is required before submitting diplomacy.",
+        code: "auth_missing",
+        statusCode: 401
+      });
+      return;
+    }
+
+    let request: AllianceActionRequest;
+    if (allianceDraft.action === "create") {
+      const name = allianceDraft.name.trim();
+      if (name.length === 0) {
+        setAllianceSubmissionFeedback({
+          status: "error",
+          message: "Alliance name is required before creating an alliance.",
+          code: "invalid_alliance_draft",
+          statusCode: 400
+        });
+        return;
+      }
+      request = { match_id: envelope.data.match_id, action: "create", name };
+    } else if (allianceDraft.action === "join") {
+      if (allianceDraft.allianceId.length === 0) {
+        setAllianceSubmissionFeedback({
+          status: "error",
+          message: "Choose a visible alliance before joining.",
+          code: "invalid_alliance_draft",
+          statusCode: 400
+        });
+        return;
+      }
+      request = {
+        match_id: envelope.data.match_id,
+        action: "join",
+        alliance_id: allianceDraft.allianceId
+      };
+    } else {
+      request = { match_id: envelope.data.match_id, action: "leave" };
+    }
+
+    setAllianceSubmissionFeedback({ status: "submitting" });
+
+    try {
+      const accepted = await submitAllianceAction(request, bearerToken, fetch, { apiBaseUrl });
+      const feedback = describeAcceptedAlliance(accepted, allianceDraft.action);
+      setAllianceSubmissionFeedback({
+        status: "success",
+        message: feedback.message,
+        details: feedback.details
+      });
+    } catch (error: unknown) {
+      if (error instanceof DiplomacySubmissionError) {
+        setAllianceSubmissionFeedback({
+          status: "error",
+          message: error.message,
+          code: error.code,
+          statusCode: error.statusCode
+        });
+        return;
+      }
+
+      setAllianceSubmissionFeedback({
+        status: "error",
+        message: "Unable to submit diplomacy action right now.",
+        code: "diplomacy_submission_unavailable",
         statusCode: 500
       });
     }
@@ -1004,6 +1297,130 @@ function HumanMatchLiveSnapshot({
 
         <button className="button-link" type="button" onClick={() => void submitMessageDraft()} disabled={!canSubmitMessage}>
           {messageSubmissionFeedback.status === "submitting" ? "Submitting…" : "Submit message"}
+        </button>
+      </section>
+
+      <section className="panel panel-section">
+        <h2>Live diplomacy</h2>
+        <p>Submit treaty and alliance actions through the shipped routes. The websocket snapshot stays authoritative.</p>
+
+        {treatySubmissionFeedback.status === "success" ? (
+          <div role="status">
+            <p>{treatySubmissionFeedback.message}</p>
+            {treatySubmissionFeedback.details?.map((detail) => <p key={detail}>{detail}</p>)}
+          </div>
+        ) : null}
+
+        {treatySubmissionFeedback.status === "error" ? (
+          <div role="alert">
+            <p>{treatySubmissionFeedback.message}</p>
+            <p>{`Error code: ${treatySubmissionFeedback.code}`}</p>
+            <p>{`HTTP status: ${treatySubmissionFeedback.statusCode}`}</p>
+          </div>
+        ) : null}
+
+        <label>
+          Treaty action
+          <select
+            value={treatyDraft.action}
+            onChange={(event) => updateTreatyDraft({ action: event.target.value as TreatyAction })}
+          >
+            <option value="propose">propose</option>
+            <option value="accept">accept</option>
+            <option value="withdraw">withdraw</option>
+          </select>
+        </label>
+
+        <label>
+          Treaty type
+          <select
+            value={treatyDraft.treatyType}
+            onChange={(event) => updateTreatyDraft({ treatyType: event.target.value as TreatyType })}
+          >
+            <option value="non_aggression">non_aggression</option>
+            <option value="defensive">defensive</option>
+            <option value="trade">trade</option>
+          </select>
+        </label>
+
+        <label>
+          Treaty counterparty
+          <select
+            value={treatyDraft.counterpartyId}
+            onChange={(event) => updateTreatyDraft({ counterpartyId: event.target.value })}
+          >
+            {treatyCounterpartyIds.length === 0 ? <option value="">No visible players</option> : null}
+            {treatyCounterpartyIds.map((playerId) => (
+              <option key={playerId} value={playerId}>
+                {playerId}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {allianceSubmissionFeedback.status === "success" ? (
+          <div role="status">
+            <p>{allianceSubmissionFeedback.message}</p>
+            {allianceSubmissionFeedback.details?.map((detail) => <p key={detail}>{detail}</p>)}
+          </div>
+        ) : null}
+
+        {allianceSubmissionFeedback.status === "error" ? (
+          <div role="alert">
+            <p>{allianceSubmissionFeedback.message}</p>
+            <p>{`Error code: ${allianceSubmissionFeedback.code}`}</p>
+            <p>{`HTTP status: ${allianceSubmissionFeedback.statusCode}`}</p>
+          </div>
+        ) : null}
+
+        <button className="button-link" type="button" onClick={() => void submitTreatyDraft()} disabled={!canSubmitTreaty}>
+          {treatySubmissionFeedback.status === "submitting" ? "Submitting…" : "Submit treaty"}
+        </button>
+
+        <p>{`Current alliance: ${envelope.data.state.alliance_id ?? "none"}`}</p>
+
+        <label>
+          Alliance action
+          <select
+            value={allianceDraft.action}
+            onChange={(event) => updateAllianceDraft({ action: event.target.value as AllianceAction })}
+          >
+            <option value="create">create</option>
+            <option value="join">join</option>
+            <option value="leave">leave</option>
+          </select>
+        </label>
+
+        {allianceDraft.action === "create" ? (
+          <label>
+            Alliance name
+            <input
+              type="text"
+              value={allianceDraft.name}
+              onChange={(event) => updateAllianceDraft({ name: event.target.value })}
+            />
+          </label>
+        ) : null}
+
+        {allianceDraft.action === "join" ? (
+          <label>
+            Join alliance
+            <select
+              value={allianceDraft.allianceId}
+              onChange={(event) => updateAllianceDraft({ allianceId: event.target.value })}
+            >
+              {joinableAlliances.length === 0 ? <option value="">No joinable alliances</option> : null}
+              {joinableAlliances.map((alliance) => (
+                <option key={alliance.alliance_id} value={alliance.alliance_id}>
+                  {alliance.alliance_id}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        <button className="button-link" type="button" onClick={() => void submitAllianceDraft()} disabled={!canSubmitAlliance}>
+          {allianceSubmissionFeedback.status === "submitting" ? "Submitting…" : "Submit alliance"}
         </button>
       </section>
 
