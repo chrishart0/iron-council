@@ -56,6 +56,63 @@ export type ApiErrorEnvelope = {
   };
 };
 
+export type UpgradeTrack = "economy" | "military" | "fortification";
+export type ResourceType = "food" | "production" | "money";
+
+export type MovementOrder = {
+  army_id: string;
+  destination: string;
+};
+
+export type RecruitmentOrder = {
+  city: string;
+  troops: number;
+};
+
+export type UpgradeOrder = {
+  city: string;
+  track: UpgradeTrack;
+  target_tier: number;
+};
+
+export type TransferOrder = {
+  to: string;
+  resource: ResourceType;
+  amount: number;
+};
+
+export type OrderBatch = {
+  movements: MovementOrder[];
+  recruitment: RecruitmentOrder[];
+  upgrades: UpgradeOrder[];
+  transfers: TransferOrder[];
+};
+
+export type MatchOrdersCommandRequest = {
+  match_id: string;
+  tick: number;
+  orders: OrderBatch;
+};
+
+export type OrderAcceptanceResponse = {
+  status: "accepted";
+  match_id: string;
+  player_id: string;
+  tick: number;
+  submission_index: number;
+};
+
+export type MatchOrdersCommandEnvelopeResponse = {
+  status: "accepted";
+  match_id: string;
+  player_id: string;
+  tick: number;
+  orders: OrderAcceptanceResponse | null;
+  messages: unknown[];
+  treaties: unknown[];
+  alliance: unknown | null;
+};
+
 export type ResourceState = {
   food: number;
   production: number;

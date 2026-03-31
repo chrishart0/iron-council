@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 26-2-add-authenticated-human-order-submission-controls-in-the-live-web-client
+next_story: null
 
 development_status:
   epic-1: done
@@ -121,6 +121,6 @@ development_status:
   25-2-add-a-read-only-spectator-live-match-page-over-websockets: done
   25-3-add-authenticated-human-lobby-create-join-start-flows-in-the-web-client: done
 
-  epic-26: in_progress
+  epic-26: done
   26-1-add-an-authenticated-human-live-match-page-over-the-player-websocket: done
-  26-2-add-authenticated-human-order-submission-controls-in-the-live-web-client: ready
+  26-2-add-authenticated-human-order-submission-controls-in-the-live-web-client: done

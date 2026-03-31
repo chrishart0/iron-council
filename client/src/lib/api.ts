@@ -7,6 +7,8 @@ import type {
   DirectMessageRecord,
   GroupChatRecord,
   GroupMessageRecord,
+  MatchOrdersCommandEnvelopeResponse,
+  MatchOrdersCommandRequest,
   MatchJoinRequest,
   MatchJoinResponse,
   MatchListResponse,
@@ -14,6 +16,7 @@ import type {
   MatchLobbyCreateResponse,
   MatchLobbyStartResponse,
   MatchSummary,
+  OrderAcceptanceResponse,
   PlayerMatchEnvelope,
   PlayerMatchState,
   PublicMatchDetailResponse,
@@ -40,6 +43,7 @@ const PUBLIC_MATCH_DETAIL_NOT_FOUND_MESSAGE =
 const PLAYER_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse player live match update.";
 const SPECTATOR_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse spectator live match update.";
 const MATCH_LOBBY_ERROR_MESSAGE = "Unable to complete the requested lobby action right now.";
+const COMMAND_SUBMISSION_ERROR_MESSAGE = "Unable to submit orders right now.";
 const HUMAN_NOT_JOINED_MESSAGE =
   "Join this match as a human player before opening the authenticated live page.";
 const INVALID_WEBSOCKET_AUTH_MESSAGE =
@@ -71,6 +75,17 @@ export class LobbyActionError extends Error {
   ) {
     super(message);
     this.name = "LobbyActionError";
+  }
+}
+
+export class CommandSubmissionError extends Error {
+  constructor(
+    message = COMMAND_SUBMISSION_ERROR_MESSAGE,
+    readonly code: string = "command_submission_unavailable",
+    readonly statusCode: number = 500
+  ) {
+    super(message);
+    this.name = "CommandSubmissionError";
   }
 }
 
@@ -185,6 +200,50 @@ export async function startMatchLobby(
   return handleLobbyResponse(response, isMatchSummary);
 }
 
+export async function submitMatchOrders(
+  request: MatchOrdersCommandRequest,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<OrderAcceptanceResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(request.match_id)}/commands`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: buildAuthenticatedJsonHeaders(bearerToken),
+      body: JSON.stringify({
+        ...request,
+        messages: [],
+        treaties: [],
+        alliance: null
+      })
+    }
+  ).catch(() => {
+    throw new CommandSubmissionError(
+      COMMAND_SUBMISSION_ERROR_MESSAGE,
+      "command_submission_unavailable",
+      500
+    );
+  });
+
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    throw toCommandSubmissionError(payload, response.status);
+  }
+
+  const payload: unknown = await response.json();
+  if (!isMatchOrdersCommandEnvelopeResponse(payload) || payload.orders === null) {
+    throw new CommandSubmissionError(
+      COMMAND_SUBMISSION_ERROR_MESSAGE,
+      "invalid_command_response",
+      response.status
+    );
+  }
+
+  return payload.orders;
+}
+
 export function buildSpectatorMatchWebSocketUrl(
   matchId: string,
   options?: { apiBaseUrl?: string }
@@ -293,6 +352,18 @@ function toLobbyActionError(payload: unknown, status: number): LobbyActionError 
   return new LobbyActionError(MATCH_LOBBY_ERROR_MESSAGE, "lobby_action_unavailable", status);
 }
 
+function toCommandSubmissionError(payload: unknown, status: number): CommandSubmissionError {
+  if (isApiErrorEnvelope(payload)) {
+    return new CommandSubmissionError(payload.error.message, payload.error.code, status);
+  }
+
+  return new CommandSubmissionError(
+    COMMAND_SUBMISSION_ERROR_MESSAGE,
+    "command_submission_unavailable",
+    status
+  );
+}
+
 function isApiErrorEnvelope(payload: unknown): payload is ApiErrorEnvelope {
   return (
     isRecord(payload) &&
@@ -313,6 +384,33 @@ function isMatchJoinResponse(payload: unknown): payload is MatchJoinResponse {
     typeof payload.match_id === "string" &&
     typeof payload.agent_id === "string" &&
     typeof payload.player_id === "string"
+  );
+}
+
+function isMatchOrdersCommandEnvelopeResponse(
+  payload: unknown
+): payload is MatchOrdersCommandEnvelopeResponse {
+  return (
+    isRecord(payload) &&
+    payload.status === "accepted" &&
+    typeof payload.match_id === "string" &&
+    typeof payload.player_id === "string" &&
+    typeof payload.tick === "number" &&
+    (payload.orders === null || isOrderAcceptanceResponse(payload.orders)) &&
+    Array.isArray(payload.messages) &&
+    Array.isArray(payload.treaties) &&
+    (payload.alliance === null || isRecord(payload.alliance))
+  );
+}
+
+function isOrderAcceptanceResponse(payload: unknown): payload is OrderAcceptanceResponse {
+  return (
+    isRecord(payload) &&
+    payload.status === "accepted" &&
+    typeof payload.match_id === "string" &&
+    typeof payload.player_id === "string" &&
+    typeof payload.tick === "number" &&
+    typeof payload.submission_index === "number"
   );
 }
 

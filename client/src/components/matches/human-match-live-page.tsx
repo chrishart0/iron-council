@@ -4,19 +4,24 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   buildPlayerMatchWebSocketUrl,
+  CommandSubmissionError,
   fetchPublicMatchDetail,
   getPlayerWebSocketCloseMessage,
   parsePlayerMatchEnvelope,
   parseWebSocketApiErrorEnvelope,
-  PublicMatchDetailError
+  PublicMatchDetailError,
+  submitMatchOrders
 } from "../../lib/api";
 import type {
   AllianceRecord,
   GroupChatRecord,
   GroupMessageRecord,
+  MatchOrdersCommandRequest,
   PlayerMatchEnvelope,
   PublicMatchDetailResponse,
+  ResourceType,
   TreatyRecord,
+  UpgradeTrack,
   VisibleArmyState
 } from "../../lib/types";
 import { useSession } from "../session/session-provider";
@@ -265,6 +270,8 @@ export function HumanMatchLivePage({ matchId }: HumanMatchLivePageProps) {
       {liveState.envelope !== null ? (
         <HumanMatchLiveSnapshot
           envelope={liveState.envelope}
+          apiBaseUrl={apiBaseUrl}
+          bearerToken={bearerToken}
           liveStatus={liveState.status === "live" ? "live" : "not_live"}
         />
       ) : null}
@@ -272,13 +279,193 @@ export function HumanMatchLivePage({ matchId }: HumanMatchLivePageProps) {
   );
 }
 
+type MovementDraft = {
+  armyId: string;
+  destination: string;
+};
+
+type RecruitmentDraft = {
+  city: string;
+  troops: string;
+};
+
+type UpgradeDraft = {
+  city: string;
+  track: UpgradeTrack;
+  targetTier: string;
+};
+
+type TransferDraft = {
+  to: string;
+  resource: ResourceType;
+  amount: string;
+};
+
+type OrderDraftState = {
+  movements: MovementDraft[];
+  recruitment: RecruitmentDraft[];
+  upgrades: UpgradeDraft[];
+  transfers: TransferDraft[];
+};
+
+type SubmissionFeedback =
+  | {
+      status: "idle";
+    }
+  | {
+      status: "submitting";
+    }
+  | {
+      status: "success";
+      message: string;
+    }
+  | {
+      status: "error";
+      message: string;
+      code: string;
+      statusCode: number;
+    };
+
+const emptyDraftState = (): OrderDraftState => ({
+  movements: [],
+  recruitment: [],
+  upgrades: [],
+  transfers: []
+});
+
+const emptyMovementDraft = (): MovementDraft => ({
+  armyId: "",
+  destination: ""
+});
+
+const emptyRecruitmentDraft = (): RecruitmentDraft => ({
+  city: "",
+  troops: ""
+});
+
+const emptyUpgradeDraft = (): UpgradeDraft => ({
+  city: "",
+  track: "economy",
+  targetTier: ""
+});
+
+const emptyTransferDraft = (): TransferDraft => ({
+  to: "",
+  resource: "food",
+  amount: ""
+});
+
+function parsePositiveInteger(value: string): number | null {
+  const trimmedValue = value.trim();
+  if (trimmedValue.length === 0) {
+    return null;
+  }
+
+  const parsedValue = Number(trimmedValue);
+  if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+    return null;
+  }
+
+  return parsedValue;
+}
+
+function buildOrderRequest(
+  envelope: PlayerMatchEnvelope,
+  drafts: OrderDraftState
+):
+  | { ok: true; request: MatchOrdersCommandRequest }
+  | { ok: false; message: string } {
+  if (
+    drafts.movements.length === 0 &&
+    drafts.recruitment.length === 0 &&
+    drafts.upgrades.length === 0 &&
+    drafts.transfers.length === 0
+  ) {
+    return { ok: false, message: "Add at least one order draft before submitting." };
+  }
+
+  const movements = drafts.movements.map((draft, index) => {
+    const armyId = draft.armyId.trim();
+    const destination = draft.destination.trim();
+    if (armyId.length === 0 || destination.length === 0) {
+      return { ok: false as const, message: `Movement order ${index + 1} requires army ID and destination.` };
+    }
+    return { ok: true as const, value: { army_id: armyId, destination } };
+  });
+  const invalidMovement = movements.find((draft) => !draft.ok);
+  if (invalidMovement && !invalidMovement.ok) {
+    return { ok: false, message: invalidMovement.message };
+  }
+
+  const recruitment = drafts.recruitment.map((draft, index) => {
+    const city = draft.city.trim();
+    const troops = parsePositiveInteger(draft.troops);
+    if (city.length === 0 || troops === null) {
+      return { ok: false as const, message: `Recruitment order ${index + 1} requires city and troops greater than zero.` };
+    }
+    return { ok: true as const, value: { city, troops } };
+  });
+  const invalidRecruitment = recruitment.find((draft) => !draft.ok);
+  if (invalidRecruitment && !invalidRecruitment.ok) {
+    return { ok: false, message: invalidRecruitment.message };
+  }
+
+  const upgrades = drafts.upgrades.map((draft, index) => {
+    const city = draft.city.trim();
+    const targetTier = parsePositiveInteger(draft.targetTier);
+    if (city.length === 0 || targetTier === null) {
+      return { ok: false as const, message: `Upgrade order ${index + 1} requires city and target tier greater than zero.` };
+    }
+    return { ok: true as const, value: { city, track: draft.track, target_tier: targetTier } };
+  });
+  const invalidUpgrade = upgrades.find((draft) => !draft.ok);
+  if (invalidUpgrade && !invalidUpgrade.ok) {
+    return { ok: false, message: invalidUpgrade.message };
+  }
+
+  const transfers = drafts.transfers.map((draft, index) => {
+    const to = draft.to.trim();
+    const amount = parsePositiveInteger(draft.amount);
+    if (to.length === 0 || amount === null) {
+      return { ok: false as const, message: `Transfer order ${index + 1} requires destination and amount greater than zero.` };
+    }
+    return { ok: true as const, value: { to, resource: draft.resource, amount } };
+  });
+  const invalidTransfer = transfers.find((draft) => !draft.ok);
+  if (invalidTransfer && !invalidTransfer.ok) {
+    return { ok: false, message: invalidTransfer.message };
+  }
+
+  return {
+    ok: true,
+    request: {
+      match_id: envelope.data.match_id,
+      tick: envelope.data.state.tick,
+      orders: {
+        movements: movements.flatMap((draft) => (draft.ok ? [draft.value] : [])),
+        recruitment: recruitment.flatMap((draft) => (draft.ok ? [draft.value] : [])),
+        upgrades: upgrades.flatMap((draft) => (draft.ok ? [draft.value] : [])),
+        transfers: transfers.flatMap((draft) => (draft.ok ? [draft.value] : []))
+      }
+    }
+  };
+}
+
 function HumanMatchLiveSnapshot({
   envelope,
+  apiBaseUrl,
+  bearerToken,
   liveStatus
 }: {
   envelope: PlayerMatchEnvelope;
+  apiBaseUrl: string;
+  bearerToken: string | null;
   liveStatus: "live" | "not_live";
 }) {
+  const [drafts, setDrafts] = useState<OrderDraftState>(() => emptyDraftState());
+  const [submissionFeedback, setSubmissionFeedback] = useState<SubmissionFeedback>({
+    status: "idle"
+  });
   const latestWorldMessage = envelope.data.world_messages.at(-1) ?? null;
   const latestDirectMessage = envelope.data.direct_messages.at(-1) ?? null;
   const latestGroupChat = envelope.data.group_chats.at(-1) ?? null;
@@ -286,6 +473,158 @@ function HumanMatchLiveSnapshot({
   const latestTreaty = envelope.data.treaties.at(-1) ?? null;
   const latestAlliance = envelope.data.alliances.at(-1) ?? null;
   const partialArmy = envelope.data.state.visible_armies.find((army) => army.visibility === "partial") ?? null;
+  const canSubmit = liveStatus === "live" && bearerToken !== null && submissionFeedback.status !== "submitting";
+
+  const updateMovementDraft = (index: number, key: keyof MovementDraft, value: string) => {
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      movements: currentDrafts.movements.map((draft, draftIndex) =>
+        draftIndex === index ? { ...draft, [key]: value } : draft
+      )
+    }));
+  };
+
+  const updateRecruitmentDraft = (index: number, key: keyof RecruitmentDraft, value: string) => {
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      recruitment: currentDrafts.recruitment.map((draft, draftIndex) =>
+        draftIndex === index ? { ...draft, [key]: value } : draft
+      )
+    }));
+  };
+
+  const updateUpgradeDraft = (index: number, key: keyof UpgradeDraft, value: string) => {
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      upgrades: currentDrafts.upgrades.map((draft, draftIndex) =>
+        draftIndex === index ? { ...draft, [key]: value } : draft
+      )
+    }));
+  };
+
+  const updateTransferDraft = (index: number, key: keyof TransferDraft, value: string) => {
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      transfers: currentDrafts.transfers.map((draft, draftIndex) =>
+        draftIndex === index ? { ...draft, [key]: value } : draft
+      )
+    }));
+  };
+
+  const addMovementDraft = () => {
+    setSubmissionFeedback({ status: "idle" });
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      movements: [...currentDrafts.movements, emptyMovementDraft()]
+    }));
+  };
+
+  const addRecruitmentDraft = () => {
+    setSubmissionFeedback({ status: "idle" });
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      recruitment: [...currentDrafts.recruitment, emptyRecruitmentDraft()]
+    }));
+  };
+
+  const addUpgradeDraft = () => {
+    setSubmissionFeedback({ status: "idle" });
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      upgrades: [...currentDrafts.upgrades, emptyUpgradeDraft()]
+    }));
+  };
+
+  const addTransferDraft = () => {
+    setSubmissionFeedback({ status: "idle" });
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      transfers: [...currentDrafts.transfers, emptyTransferDraft()]
+    }));
+  };
+
+  const removeMovementDraft = (index: number) => {
+    setSubmissionFeedback({ status: "idle" });
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      movements: currentDrafts.movements.filter((_, draftIndex) => draftIndex !== index)
+    }));
+  };
+
+  const removeRecruitmentDraft = (index: number) => {
+    setSubmissionFeedback({ status: "idle" });
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      recruitment: currentDrafts.recruitment.filter((_, draftIndex) => draftIndex !== index)
+    }));
+  };
+
+  const removeUpgradeDraft = (index: number) => {
+    setSubmissionFeedback({ status: "idle" });
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      upgrades: currentDrafts.upgrades.filter((_, draftIndex) => draftIndex !== index)
+    }));
+  };
+
+  const removeTransferDraft = (index: number) => {
+    setSubmissionFeedback({ status: "idle" });
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      transfers: currentDrafts.transfers.filter((_, draftIndex) => draftIndex !== index)
+    }));
+  };
+
+  const submitDrafts = async () => {
+    if (bearerToken === null) {
+      setSubmissionFeedback({
+        status: "error",
+        message: "A stored bearer token is required before submitting orders.",
+        code: "auth_missing",
+        statusCode: 401
+      });
+      return;
+    }
+
+    const nextRequest = buildOrderRequest(envelope, drafts);
+    if (!nextRequest.ok) {
+      setSubmissionFeedback({
+        status: "error",
+        message: nextRequest.message,
+        code: "invalid_order_draft",
+        statusCode: 400
+      });
+      return;
+    }
+
+    setSubmissionFeedback({ status: "submitting" });
+
+    try {
+      const accepted = await submitMatchOrders(nextRequest.request, bearerToken, fetch, { apiBaseUrl });
+      setDrafts(emptyDraftState());
+      setSubmissionFeedback({
+        status: "success",
+        message: `Orders accepted for tick ${accepted.tick} from ${accepted.player_id}.`
+      });
+    } catch (error: unknown) {
+      if (error instanceof CommandSubmissionError) {
+        setSubmissionFeedback({
+          status: "error",
+          message: error.message,
+          code: error.code,
+          statusCode: error.statusCode
+        });
+        return;
+      }
+
+      setSubmissionFeedback({
+        status: "error",
+        message: "Unable to submit orders right now.",
+        code: "command_submission_unavailable",
+        statusCode: 500
+      });
+    }
+  };
 
   return (
     <>
@@ -352,6 +691,187 @@ function HumanMatchLiveSnapshot({
             <span>{describeAlliance(latestAlliance)}</span>
           </li>
         </ul>
+      </section>
+
+      <section className="panel panel-section">
+        <h2>Order Drafts</h2>
+        <p>Draft text-first orders for the current live tick. Submission only confirms what the server accepted.</p>
+
+        {submissionFeedback.status === "success" ? <p role="status">{submissionFeedback.message}</p> : null}
+
+        {submissionFeedback.status === "error" ? (
+          <div role="alert">
+            <p>{submissionFeedback.message}</p>
+            <p>{`Error code: ${submissionFeedback.code}`}</p>
+            <p>{`HTTP status: ${submissionFeedback.statusCode}`}</p>
+          </div>
+        ) : null}
+
+        <section aria-label="Movement drafts">
+          <h3>Movement</h3>
+          <button className="button-link secondary" type="button" onClick={addMovementDraft}>
+            Add movement order
+          </button>
+          {drafts.movements.length === 0 ? <p>No movement orders drafted.</p> : null}
+          {drafts.movements.map((draft, index) => (
+            <div key={`movement-${index}`}>
+              <label>
+                {`Movement army ID ${index + 1}`}
+                <input
+                  type="text"
+                  value={draft.armyId}
+                  onChange={(event) => updateMovementDraft(index, "armyId", event.target.value)}
+                />
+              </label>
+              <label>
+                {`Movement destination ${index + 1}`}
+                <input
+                  type="text"
+                  value={draft.destination}
+                  onChange={(event) => updateMovementDraft(index, "destination", event.target.value)}
+                />
+              </label>
+              <button
+                className="button-link secondary"
+                type="button"
+                onClick={() => removeMovementDraft(index)}
+              >
+                {`Remove movement order ${index + 1}`}
+              </button>
+            </div>
+          ))}
+        </section>
+
+        <section aria-label="Recruitment drafts">
+          <h3>Recruitment</h3>
+          <button className="button-link secondary" type="button" onClick={addRecruitmentDraft}>
+            Add recruitment order
+          </button>
+          {drafts.recruitment.length === 0 ? <p>No recruitment orders drafted.</p> : null}
+          {drafts.recruitment.map((draft, index) => (
+            <div key={`recruitment-${index}`}>
+              <label>
+                {`Recruitment city ${index + 1}`}
+                <input
+                  type="text"
+                  value={draft.city}
+                  onChange={(event) => updateRecruitmentDraft(index, "city", event.target.value)}
+                />
+              </label>
+              <label>
+                {`Recruitment troops ${index + 1}`}
+                <input
+                  type="number"
+                  value={draft.troops}
+                  onChange={(event) => updateRecruitmentDraft(index, "troops", event.target.value)}
+                />
+              </label>
+              <button
+                className="button-link secondary"
+                type="button"
+                onClick={() => removeRecruitmentDraft(index)}
+              >
+                {`Remove recruitment order ${index + 1}`}
+              </button>
+            </div>
+          ))}
+        </section>
+
+        <section aria-label="Upgrade drafts">
+          <h3>Upgrade</h3>
+          <button className="button-link secondary" type="button" onClick={addUpgradeDraft}>
+            Add upgrade order
+          </button>
+          {drafts.upgrades.length === 0 ? <p>No upgrade orders drafted.</p> : null}
+          {drafts.upgrades.map((draft, index) => (
+            <div key={`upgrade-${index}`}>
+              <label>
+                {`Upgrade city ${index + 1}`}
+                <input
+                  type="text"
+                  value={draft.city}
+                  onChange={(event) => updateUpgradeDraft(index, "city", event.target.value)}
+                />
+              </label>
+              <label>
+                {`Upgrade track ${index + 1}`}
+                <select
+                  value={draft.track}
+                  onChange={(event) => updateUpgradeDraft(index, "track", event.target.value)}
+                >
+                  <option value="economy">economy</option>
+                  <option value="military">military</option>
+                  <option value="fortification">fortification</option>
+                </select>
+              </label>
+              <label>
+                {`Upgrade target tier ${index + 1}`}
+                <input
+                  type="number"
+                  value={draft.targetTier}
+                  onChange={(event) => updateUpgradeDraft(index, "targetTier", event.target.value)}
+                />
+              </label>
+              <button
+                className="button-link secondary"
+                type="button"
+                onClick={() => removeUpgradeDraft(index)}
+              >
+                {`Remove upgrade order ${index + 1}`}
+              </button>
+            </div>
+          ))}
+        </section>
+
+        <section aria-label="Transfer drafts">
+          <h3>Transfer</h3>
+          <button className="button-link secondary" type="button" onClick={addTransferDraft}>
+            Add transfer order
+          </button>
+          {drafts.transfers.length === 0 ? <p>No transfer orders drafted.</p> : null}
+          {drafts.transfers.map((draft, index) => (
+            <div key={`transfer-${index}`}>
+              <label>
+                {`Transfer destination ${index + 1}`}
+                <input
+                  type="text"
+                  value={draft.to}
+                  onChange={(event) => updateTransferDraft(index, "to", event.target.value)}
+                />
+              </label>
+              <label>
+                {`Transfer resource ${index + 1}`}
+                <select
+                  value={draft.resource}
+                  onChange={(event) => updateTransferDraft(index, "resource", event.target.value)}
+                >
+                  <option value="food">food</option>
+                  <option value="production">production</option>
+                  <option value="money">money</option>
+                </select>
+              </label>
+              <label>
+                {`Transfer amount ${index + 1}`}
+                <input
+                  type="number"
+                  value={draft.amount}
+                  onChange={(event) => updateTransferDraft(index, "amount", event.target.value)}
+                />
+              </label>
+              <button
+                className="button-link secondary"
+                type="button"
+                onClick={() => removeTransferDraft(index)}
+              >
+                {`Remove transfer order ${index + 1}`}
+              </button>
+            </div>
+          ))}
+        </section>
+
+        <button className="button-link" type="button" onClick={() => void submitDrafts()} disabled={!canSubmit}>
+          {submissionFeedback.status === "submitting" ? "Submitting…" : "Submit drafted orders"}
+        </button>
       </section>
     </>
   );

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildPlayerMatchWebSocketUrl,
   buildSpectatorMatchWebSocketUrl,
+  CommandSubmissionError,
   createMatchLobby,
   fetchPublicMatchDetail,
   fetchPublicMatches,
@@ -13,6 +14,7 @@ import {
   parseSpectatorMatchEnvelope,
   PublicMatchDetailError,
   PublicMatchesError,
+  submitMatchOrders,
   startMatchLobby
 } from "./api";
 
@@ -25,7 +27,7 @@ describe("fetchPublicMatches", () => {
           {
             match_id: "match-alpha",
             status: "active",
-            map: "uk-1900",
+            map: "britain",
             tick: 8,
             tick_interval_seconds: 30,
             current_player_count: 3,
@@ -41,7 +43,7 @@ describe("fetchPublicMatches", () => {
         {
           match_id: "match-alpha",
           status: "active",
-          map: "uk-1900",
+          map: "britain",
           tick: 8,
           tick_interval_seconds: 30,
           current_player_count: 3,
@@ -123,7 +125,7 @@ describe("fetchPublicMatchDetail", () => {
       json: async () => ({
         match_id: "match-alpha",
         status: "paused",
-        map: "uk-1900",
+        map: "britain",
         tick: 18,
         tick_interval_seconds: 45,
         current_player_count: 3,
@@ -141,7 +143,7 @@ describe("fetchPublicMatchDetail", () => {
     ).resolves.toEqual({
       match_id: "match-alpha",
       status: "paused",
-      map: "uk-1900",
+      map: "britain",
       tick: 18,
       tick_interval_seconds: 45,
       current_player_count: 3,
@@ -167,7 +169,7 @@ describe("fetchPublicMatchDetail", () => {
       json: async () => ({
         match_id: "match-alpha",
         status: "active",
-        map: "uk-1900",
+        map: "britain",
         tick: 8,
         tick_interval_seconds: 30,
         current_player_count: 3,
@@ -225,6 +227,238 @@ describe("fetchPublicMatchDetail", () => {
       fetchPublicMatchDetail("broken", fetchImpl as unknown as typeof fetch)
     ).rejects.toEqual(
       new PublicMatchDetailError("Unable to load this public match right now.", "unavailable")
+    );
+  });
+});
+
+describe("submitMatchOrders", () => {
+  it("posts the shipped order-only command envelope with bearer auth and returns typed accepted metadata", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: "accepted",
+        match_id: "match-alpha",
+        player_id: "player-2",
+        tick: 143,
+        orders: {
+          status: "accepted",
+          match_id: "match-alpha",
+          player_id: "player-2",
+          tick: 143,
+          submission_index: 2
+        },
+        messages: [],
+        treaties: [],
+        alliance: null
+      })
+    });
+
+    await expect(
+      submitMatchOrders(
+        {
+          match_id: "match-alpha",
+          tick: 143,
+          orders: {
+            movements: [{ army_id: "army-7", destination: "york" }],
+            recruitment: [{ city: "manchester", troops: 5 }],
+            upgrades: [{ city: "london", track: "military", target_tier: 2 }],
+            transfers: [{ to: "player-3", resource: "money", amount: 25 }]
+          }
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).resolves.toEqual({
+      status: "accepted",
+      match_id: "match-alpha",
+      player_id: "player-2",
+      tick: 143,
+      submission_index: 2
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("http://127.0.0.1:8000/api/v1/matches/match-alpha/commands", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        tick: 143,
+        orders: {
+          movements: [{ army_id: "army-7", destination: "york" }],
+          recruitment: [{ city: "manchester", troops: 5 }],
+          upgrades: [{ city: "london", track: "military", target_tier: 2 }],
+          transfers: [{ to: "player-3", resource: "money", amount: 25 }]
+        },
+        messages: [],
+        treaties: [],
+        alliance: null
+      })
+    });
+  });
+
+  it("prefers an explicit browser session API base URL for command submissions", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: "accepted",
+        match_id: "match-alpha",
+        player_id: "player-2",
+        tick: 143,
+        orders: {
+          status: "accepted",
+          match_id: "match-alpha",
+          player_id: "player-2",
+          tick: 143,
+          submission_index: 3
+        },
+        messages: [],
+        treaties: [],
+        alliance: null
+      })
+    });
+
+    await submitMatchOrders(
+      {
+        match_id: "match-alpha",
+        tick: 143,
+        orders: {
+          movements: [],
+          recruitment: [],
+          upgrades: [],
+          transfers: []
+        }
+      },
+      "human-token",
+      fetchImpl as unknown as typeof fetch,
+      { apiBaseUrl: "https://session.example/" }
+    );
+
+    expect(fetchImpl).toHaveBeenCalledWith("https://session.example/api/v1/matches/match-alpha/commands", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        tick: 143,
+        orders: {
+          movements: [],
+          recruitment: [],
+          upgrades: [],
+          transfers: []
+        },
+        messages: [],
+        treaties: [],
+        alliance: null
+      })
+    });
+  });
+
+  it("turns structured api error envelopes into a deterministic client error", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          code: "tick_mismatch",
+          message: "Command payload tick '141' does not match current match tick '142'."
+        }
+      })
+    });
+
+    await expect(
+      submitMatchOrders(
+        {
+          match_id: "match-alpha",
+          tick: 141,
+          orders: {
+            movements: [],
+            recruitment: [],
+            upgrades: [],
+            transfers: []
+          }
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new CommandSubmissionError(
+        "Command payload tick '141' does not match current match tick '142'.",
+        "tick_mismatch",
+        400
+      )
+    );
+  });
+
+  it("normalizes transport rejections into a deterministic client error", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+
+    await expect(
+      submitMatchOrders(
+        {
+          match_id: "match-alpha",
+          tick: 143,
+          orders: {
+            movements: [],
+            recruitment: [],
+            upgrades: [],
+            transfers: []
+          }
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new CommandSubmissionError("Unable to submit orders right now.", "command_submission_unavailable", 500)
+    );
+  });
+
+  it("raises a deterministic client error when the accepted response is malformed", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: "accepted",
+        match_id: "match-alpha",
+        player_id: "player-2",
+        tick: 143,
+        orders: null,
+        messages: [],
+        treaties: [],
+        alliance: null
+      })
+    });
+
+    await expect(
+      submitMatchOrders(
+        {
+          match_id: "match-alpha",
+          tick: 143,
+          orders: {
+            movements: [],
+            recruitment: [],
+            upgrades: [],
+            transfers: []
+          }
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new CommandSubmissionError(
+        "Unable to submit orders right now.",
+        "invalid_command_response",
+        202
+      )
     );
   });
 });

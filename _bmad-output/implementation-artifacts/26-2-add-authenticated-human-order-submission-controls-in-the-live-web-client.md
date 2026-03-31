@@ -1,6 +1,6 @@
 # Story 26.2: Add authenticated human order submission controls in the live web client
 
-Status: ready
+Status: done
 
 ## Story
 
@@ -17,15 +17,15 @@ So that I can actually play an active match through the shipped web client witho
 
 ## Ready Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Tasks / Subtasks
 
-- [ ] Add typed authenticated command-envelope request/response models plus a client helper for posting order-only command payloads. (AC: 1, 2, 3)
-- [ ] Add a text-first order draft composer to the authenticated live page for movement, recruitment, upgrade, and transfer orders. (AC: 1, 2, 3)
-- [ ] Add behavior-first tests covering success, stale-tick / structured-error handling, and auth guards. (AC: 2, 3)
-- [ ] Re-run focused client checks and the repo quality gate, then close out docs/BMAD artifacts. (AC: 4)
+- [x] Add typed authenticated command-envelope request/response models plus a client helper for posting order-only command payloads. (AC: 1, 2, 3)
+- [x] Add a text-first order draft composer to the authenticated live page for movement, recruitment, upgrade, and transfer orders. (AC: 1, 2, 3)
+- [x] Add behavior-first tests covering success, stale-tick / structured-error handling, and auth guards. (AC: 2, 3)
+- [x] Re-run focused client checks and the repo quality gate, then close out docs/BMAD artifacts. (AC: 4)
 
 ## Dev Notes
 
@@ -48,23 +48,39 @@ So that I can actually play an active match through the shipped web client witho
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
-TBD
+OpenAI Codex CLI via `codex --yolo exec`, followed by Hermes Agent spec/quality review and repo verification on `gpt-5.4`.
 
 ### Debug Log References
 
-- TBD
+- `cd client && npm test -- --run src/lib/api.test.ts`
+- `cd client && npm test -- --run src/components/matches/human-match-live-page.test.tsx src/lib/api.test.ts`
+- `cd client && npm test -- --run src/components/matches/human-match-live-page.test.tsx src/lib/api.test.ts` (page tests refined to assert fetch/API-boundary behavior rather than `submitMatchOrders()` spying)
+- `cd client && npm run build`
+- `make quality`
 
 ### Completion Notes List
 
-- TBD
+- Added the minimal typed order-command request/response client surface plus `submitMatchOrders()` so the browser reuses the shipped authenticated `/api/v1/matches/{id}/commands` route instead of inventing a client-only mutation path.
+- Added a boring text-first order draft composer on the authenticated live page for movement, recruitment, upgrade, and transfer orders with explicit add/remove controls.
+- Client submissions now use the current websocket tick, show deterministic accepted-for-tick confirmation from the public response, clear accepted drafts, and continue relying on the websocket as the authoritative live-state source.
+- Structured command failures preserve the current draft rows, surface message/code/status details, and block incomplete client-side drafts before POSTing obviously invalid empty or zero-value payloads.
+- Refined the page-level live-page tests to verify browser-boundary `fetch` behavior for the shipped command POST while leaving request-shape helper validation in `client/src/lib/api.test.ts`.
+- Updated the README web-client walkthrough so the `/matches/<match_id>/play` route is documented as the authenticated human order-entry surface.
 
 ### File List
 
-- TBD
+- README.md
+- _bmad-output/implementation-artifacts/26-2-add-authenticated-human-order-submission-controls-in-the-live-web-client.md
+- _bmad-output/implementation-artifacts/sprint-status.yaml
+- client/src/components/matches/human-match-live-page.test.tsx
+- client/src/components/matches/human-match-live-page.tsx
+- client/src/lib/api.test.ts
+- client/src/lib/api.ts
+- client/src/lib/types.ts

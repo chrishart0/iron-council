@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HumanMatchLivePage } from "./human-match-live-page";
 import { SessionProvider } from "../session/session-provider";
@@ -180,6 +180,20 @@ function makeEnvelope(tick: number) {
         }
       ]
     }
+  };
+}
+
+function makePublicMatchDetailResponse() {
+  return {
+    match_id: "match-alpha",
+    status: "active",
+    map: "britain",
+    tick: 142,
+    tick_interval_seconds: 30,
+    current_player_count: 3,
+    max_player_count: 5,
+    open_slot_count: 2,
+    roster: []
   };
 }
 
@@ -594,5 +608,332 @@ describe("HumanMatchLivePage", () => {
     ).toBeVisible();
     expect(screen.getByText("War drums.")).toBeVisible();
     expect(screen.queryByText("Showing the last confirmed player snapshot. Reconnect to resume live updates.")).not.toBeInTheDocument();
+  });
+
+  it("renders boring order drafts after the first live snapshot and allows adding and removing each order type", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "http://127.0.0.1:8000",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          match_id: "match-alpha",
+          status: "active",
+          map: "britain",
+          tick: 142,
+          tick_interval_seconds: 30,
+          current_player_count: 3,
+          max_player_count: 5,
+          open_slot_count: 2,
+          roster: []
+        })
+      })
+    );
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" />
+      </SessionProvider>
+    );
+
+    expect(screen.queryByRole("heading", { name: "Order Drafts" })).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket?.emitOpen();
+    socket?.emitMessage(makeEnvelope(143));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Order Drafts" })).toBeVisible();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add movement order" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add recruitment order" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add upgrade order" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add transfer order" }));
+
+    expect(screen.getByLabelText("Movement army ID 1")).toBeVisible();
+    expect(screen.getByLabelText("Recruitment city 1")).toBeVisible();
+    expect(screen.getByLabelText("Upgrade city 1")).toBeVisible();
+    expect(screen.getByLabelText("Transfer destination 1")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove movement order 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove recruitment order 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove upgrade order 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove transfer order 1" }));
+
+    expect(screen.queryByLabelText("Movement army ID 1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Recruitment city 1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Upgrade city 1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Transfer destination 1")).not.toBeInTheDocument();
+  });
+
+  it("submits current draft orders for the current websocket tick, shows accepted confirmation, and clears the draft", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "https://hydrated.example/",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    const fetchSpy = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === "https://hydrated.example/api/v1/matches/match-alpha") {
+        return {
+          ok: true,
+          json: async () => makePublicMatchDetailResponse()
+        };
+      }
+
+      if (url === "https://hydrated.example/api/v1/matches/match-alpha/commands") {
+        return {
+          ok: true,
+          status: 202,
+          json: async () => ({
+            status: "accepted",
+            match_id: "match-alpha",
+            player_id: "player-2",
+            tick: 144,
+            orders: {
+              status: "accepted",
+              match_id: "match-alpha",
+              player_id: "player-2",
+              tick: 144,
+              submission_index: 3
+            },
+            messages: [],
+            treaties: [],
+            alliance: null
+          })
+        };
+      }
+
+      throw new Error(`Unexpected fetch call: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket?.emitOpen();
+    socket?.emitMessage(makeEnvelope(144));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Order Drafts" })).toBeVisible();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add movement order" }));
+    fireEvent.change(screen.getByLabelText("Movement army ID 1"), {
+      target: { value: "army-1" }
+    });
+    fireEvent.change(screen.getByLabelText("Movement destination 1"), {
+      target: { value: "leeds" }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit drafted orders" }));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(2, "https://hydrated.example/api/v1/matches/match-alpha/commands", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        tick: 144,
+        orders: {
+          movements: [{ army_id: "army-1", destination: "leeds" }],
+          recruitment: [],
+          upgrades: [],
+          transfers: []
+        },
+        messages: [],
+        treaties: [],
+        alliance: null
+      })
+    });
+    expect(screen.getByText("Orders accepted for tick 144 from player-2.")).toBeVisible();
+    expect(screen.queryByLabelText("Movement army ID 1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Movement destination 1")).not.toBeInTheDocument();
+  });
+
+  it("blocks incomplete draft rows before submission and preserves the draft for correction", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "http://127.0.0.1:8000",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => makePublicMatchDetailResponse()
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket?.emitOpen();
+    socket?.emitMessage(makeEnvelope(143));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Order Drafts" })).toBeVisible();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add recruitment order" }));
+    fireEvent.change(screen.getByLabelText("Recruitment city 1"), {
+      target: { value: "manchester" }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit drafted orders" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Recruitment order 1 requires city and troops greater than zero.")).toBeVisible();
+    });
+
+    expect(screen.getByText("Error code: invalid_order_draft")).toBeVisible();
+    expect(screen.getByText("HTTP status: 400")).toBeVisible();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Recruitment city 1")).toHaveValue("manchester");
+    expect(screen.getByLabelText("Recruitment troops 1")).toHaveValue(null);
+  });
+
+  it("preserves draft rows and shows structured command failure details when submission is rejected", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "http://127.0.0.1:8000",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    const fetchSpy = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === "http://127.0.0.1:8000/api/v1/matches/match-alpha") {
+        return {
+          ok: true,
+          json: async () => makePublicMatchDetailResponse()
+        };
+      }
+
+      if (url === "http://127.0.0.1:8000/api/v1/matches/match-alpha/commands") {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({
+            error: {
+              code: "tick_mismatch",
+              message: "Orders already closed for tick 143."
+            }
+          })
+        };
+      }
+
+      throw new Error(`Unexpected fetch call: ${url} ${init?.method ?? "GET"}`);
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket?.emitOpen();
+    socket?.emitMessage(makeEnvelope(143));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Order Drafts" })).toBeVisible();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add transfer order" }));
+    fireEvent.change(screen.getByLabelText("Transfer destination 1"), {
+      target: { value: "alliance-red" }
+    });
+    fireEvent.change(screen.getByLabelText("Transfer resource 1"), {
+      target: { value: "money" }
+    });
+    fireEvent.change(screen.getByLabelText("Transfer amount 1"), {
+      target: { value: "25" }
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit drafted orders" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Orders already closed for tick 143.")).toBeVisible();
+    });
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(2, "http://127.0.0.1:8000/api/v1/matches/match-alpha/commands", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        tick: 143,
+        orders: {
+          movements: [],
+          recruitment: [],
+          upgrades: [],
+          transfers: [{ to: "alliance-red", resource: "money", amount: 25 }]
+        },
+        messages: [],
+        treaties: [],
+        alliance: null
+      })
+    });
+    expect(screen.getByText("Error code: tick_mismatch")).toBeVisible();
+    expect(screen.getByText("HTTP status: 409")).toBeVisible();
+    expect(screen.getByLabelText("Transfer destination 1")).toHaveValue("alliance-red");
+    expect(screen.getByLabelText("Transfer resource 1")).toHaveValue("money");
+    expect(screen.getByLabelText("Transfer amount 1")).toHaveValue(25);
   });
 });
