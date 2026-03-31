@@ -1,10 +1,10 @@
 ---
 stepsCompleted:
-  - normalized-source-docs
-  - drafted-epics
+- normalized-source-docs
+- drafted-epics
 inputDocuments:
-  - core-plan.md
-  - core-architecture.md
+- core-plan.md
+- core-architecture.md
 ---
 
 # Iron Council - Epic Breakdown
@@ -1281,7 +1281,7 @@ So that I can observe my fog-filtered state, chat/diplomacy summaries, and tick 
 
 **Given** a joined authenticated human and an active match
 **When** the player opens the live match page in the client
-**Then** the UI connects to the existing `/ws/match/{id}?viewer=player&token=...` websocket path, renders the initial fog-filtered player envelope, and updates as new tick broadcasts arrive without inventing a parallel backend route.
+**Then** the UI connects to the existing `/ws/match/{id}?viewer=player&token=*** websocket path, renders the initial fog-filtered player envelope, and updates as new tick broadcasts arrive without inventing a parallel backend route.
 
 **And Given** the websocket payload includes player-safe state plus world/direct/group/treaty/alliance collections
 **When** the client renders the live page
@@ -1318,3 +1318,56 @@ So that I can actually play an active match through the shipped web client witho
 **And Given** the story ships
 **When** focused client behavior tests plus the repo quality gate run
 **Then** the order controls are verified from the browser boundary and the docs/BMAD artifacts stay aligned with the shipped command route and payload contract.
+
+## Epic 27: Human Live Match Diplomacy and Communication Writes
+
+Finish the first genuinely playable human browser lane by layering the smallest practical chat and diplomacy write controls onto the authenticated live page. Keep the scope deliberately text-first and route-faithful: reuse the existing live websocket for authoritative refreshes, but send writes through the already-shipped authenticated HTTP API contracts for world/direct/group chat, treaties, and alliance management.
+
+### Story 27.1: Add authenticated human live messaging controls in the web client
+
+As an authenticated human player,
+I want to send world, direct, and group-chat messages from the live browser page,
+So that I can participate in the same diplomacy and communication loop as agents without leaving the shipped web client.
+
+**Acceptance Criteria:**
+
+**Given** a joined authenticated human on the live match page and the server already supports authenticated message routes
+**When** the player drafts a world message, a direct message to another visible player, or a group-chat message to a visible group chat and submits it
+**Then** the client posts only the existing `/api/v1/matches/{id}/messages` or `/api/v1/matches/{id}/group-chats/{group_chat_id}/messages` routes using the current live tick and the shipped payload contracts without inventing a parallel backend mutation path.
+
+**And Given** auth is missing, the user is not joined, the tick is stale, the message content is invalid, or the target chat/player is rejected by the domain rules
+**When** the client handles the failure
+**Then** it surfaces the structured error clearly, preserves the player's draft for correction, and does not optimistically append a fake message to the live feed.
+
+**And Given** a message submission succeeds
+**When** the server returns the accepted response
+**Then** the client shows a deterministic accepted-for-tick confirmation while continuing to rely on the websocket for the authoritative live message timeline.
+
+**And Given** the story ships
+**When** focused client behavior tests plus the repo quality gate run
+**Then** the human live messaging controls are verified from the browser/API boundary and the docs/BMAD artifacts stay aligned with the shipped message routes and payloads.
+
+### Story 27.2: Add authenticated human treaty and alliance controls in the live web client
+
+As an authenticated human player,
+I want to manage treaties and alliances from the live browser page,
+So that the browser supports the core diplomatic actions needed for real human multiplayer matches.
+
+**Acceptance Criteria:**
+
+**Given** a joined authenticated human on the live match page and the server already supports treaty and alliance routes
+**When** the player proposes or withdraws a treaty, creates an alliance, joins an alliance, or leaves their current alliance from the client
+**Then** the UI calls only the shipped authenticated treaty/alliance HTTP routes or existing command-envelope surface already defined by the backend, using the current live tick and existing payload contracts without inventing a browser-only mutation API.
+
+**And Given** domain errors occur such as invalid auth, invalid counterparty, duplicate treaty/alliance membership, creator/leader restrictions, or tick mismatch
+**When** the action fails
+**Then** the client surfaces the structured error clearly, preserves the current draft/selection state for correction, and does not fabricate optimistic diplomatic state.
+
+**And Given** a treaty or alliance action succeeds
+**When** the server accepts the request
+**Then** the client shows deterministic acceptance metadata while relying on the websocket refresh as the source of truth for the updated diplomatic state.
+
+**And Given** the story ships
+**When** focused client behavior tests plus the repo quality gate run
+**Then** treaty/alliance controls are verified from the public browser/API boundary and the docs/BMAD artifacts stay aligned with the shipped route and payload contracts.
+
