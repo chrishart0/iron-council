@@ -1495,3 +1495,51 @@ So that I can see who is leading and why the current political situation matters
 **When** focused client behavior tests plus the repo quality gate run
 **Then** the spectator pressure board is verified from the shipped websocket/browser boundary and the docs/BMAD artifacts stay aligned.
 
+## Epic 31: Live Strategic Map Readability
+
+Turn the existing text-first live pages into legible strategic boards by rendering the canonical Britain map as a read-only SVG surface for both spectators and authenticated human players. Reuse the shipped websocket/public-detail contracts plus the canonical map definition already checked into the repo; do not invent a new live transport or hide business logic inside the client.
+
+### Story 31.1: Add a shared read-only strategic SVG map to the live web client
+
+As a spectator or human player,
+I want the live page to render the Britain board as a readable strategic map,
+So that I can understand city ownership, visible armies, and front-line pressure without decoding raw city lists.
+
+**Acceptance Criteria:**
+
+**Given** the repo already contains the canonical Britain map definition and the shipped live websocket payloads already expose city ownership plus visible army locations
+**When** the public spectator page or authenticated human live page renders an update
+**Then** the client shows a static SVG Britain map with deterministic city positions/edges and overlays for visible ownership, garrison/army presence, and current tick context without inventing a new live API.
+
+**And Given** the viewer is an authenticated human player with fog-of-war limits
+**When** the map renders partially visible or hidden state
+**Then** the UI masks unknown details and shows only visibility-safe labels/markers instead of leaking spectator-level data.
+
+**And Given** the live feed is disconnected, not active, or still waiting for the first snapshot
+**When** the page renders the map panel
+**Then** it shows deterministic read-only empty or not-live states rather than stale fabricated board state.
+
+**And Given** the story ships
+**When** focused browser-boundary client checks plus the repo quality gate run
+**Then** the shared live map surface is verified from the shipped browser/websocket boundary and the docs/BMAD artifacts stay aligned.
+
+### Story 31.2: Add click-assisted city inspection and order-draft helpers on the human live map
+
+As an authenticated human player,
+I want to use the live map as the entry point for city inspection and order drafting,
+So that the existing order controls become faster and more legible without inventing browser-only game logic.
+
+**Acceptance Criteria:**
+
+**Given** the authenticated human live page already exposes order-draft forms and visibility-safe state
+**When** the player clicks a visible city or army marker on the shared live map
+**Then** the client highlights the selected entity, shows a compact visibility-safe city/army inspector, and pre-fills the existing order-draft controls with the selected IDs where that action is valid.
+
+**And Given** the selected city, destination, or counterparty is not visible or is invalid for the current draft type
+**When** the player interacts with the map
+**Then** the UI preserves the current draft safely, avoids fabricating hidden data, and surfaces deterministic validation guidance instead of silently mutating the order.
+
+**And Given** the story ships
+**When** focused client behavior tests plus the repo quality gate run
+**Then** the human live map interactions are verified from the browser boundary and remain aligned with the shipped HTTP/websocket order contract.
+

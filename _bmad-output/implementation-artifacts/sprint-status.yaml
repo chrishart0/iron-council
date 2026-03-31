@@ -1,9 +1,9 @@
-generated: 2026-03-31 18:35 UTC
+generated: 2026-03-31 19:35 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: null
+next_story: 31-1-add-a-shared-read-only-strategic-svg-map-to-the-live-web-client.md
 
 development_status:
   epic-1: done
@@ -143,3 +143,7 @@ development_status:
   30-1-add-a-spectator-situation-room-to-the-live-web-client: done
   30-2-add-territory-pressure-and-victory-context-to-the-spectator-live-page: done
   epic-30-retrospective: optional
+
+  epic-31: in-progress
+  31-1-add-a-shared-read-only-strategic-svg-map-to-the-live-web-client: ready
+  31-2-add-click-assisted-city-inspection-and-order-draft-helpers-on-the-human-live-map: backlog
