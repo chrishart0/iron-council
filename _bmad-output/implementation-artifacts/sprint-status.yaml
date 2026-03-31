@@ -1,133 +1,133 @@
-     1|generated: 2026-03-31 02:30 UTC
-     2|project: Iron Council
-     3|project_key: IRON
-     4|tracking_system: file-system
-     5|story_location: _bmad-output/implementation-artifacts
-     6|next_story: 27-1-add-authenticated-human-live-messaging-controls-in-the-web-client
-     7|
-     8|development_status:
-     9|epic-1: done
-    10|1-1-scaffold-fastapi-server-and-core-domain-contracts: done
-    11|1-2-add-shared-domain-enums-and-validation-primitives: done
-    12|epic-1-retrospective: optional
-    13|
-    14|epic-2: done
-    15|2-1-encode-the-uk-1900-map-definition-in-shared-data: done
-    16|2-2-add-validation-tests-for-graph-integrity-and-special-crossings: done
-    17|epic-2-retrospective: optional
-    18|
-    19|epic-3: done
-    20|3-1-build-deterministic-match-initialization-from-map-and-roster-inputs: done
-    21|3-2-validate-queued-orders-against-ownership-resources-and-adjacency: done
-    22|epic-3-retrospective: optional
-    23|
-    24|epic-4: done
-    25|4-1-add-a-pure-function-tick-resolver-skeleton-with-phase-ordering: done
-    26|4-2-provide-a-headless-simulation-harness-for-smoke-testing-ticks: done
-    27|epic-4-retrospective: optional
-    28|
-    29|epic-5: done
-    30|5-1-apply-deterministic-resource-accounting-during-the-resolver-resource-phase: done
-    31|5-2-advance-army-transit-and-accepted-movement-orders-during-the-movement-phase: done
-    32|epic-5-retrospective: optional
-    33|
-    34|epic-6: done
-    35|6-1-apply-starvation-attrition-and-elimination-checks-during-the-attrition-phase: done
-    36|6-2-track-coalition-city-control-and-victory-countdown-during-the-victory-phase: done
-    37|epic-6-retrospective: optional
-    38|
-    39|epic-7: done
-    40|7-1-resolve-contested-city-combat-with-defender-and-fortification-advantages: done
-    41|7-2-hand-uncontested-city-control-to-occupying-armies-after-combat-resolution: done
-    42|epic-7-retrospective: optional
-    43|
-    44|epic-8: done
-    45|8-1-advance-build-queues-and-complete-deterministic-city-upgrades-during-the-build-phase: done
-    46|8-2-process-accepted-recruitment-orders-during-the-build-phase: done
-    47|epic-8-retrospective: optional
-    48|
-    49|epic-9: done
-    50|9-1-deduct-fortification-upkeep-and-degrade-unpaid-defenses-deterministically: done
-    51|9-2-degrade-besieged-fortifications-when-hostile-control-seals-every-adjacent-route: done
-    52|epic-9-retrospective: optional
-    53|
-    54|epic-10: done
-    55|10-1-project-fog-filtered-agent-state-from-canonical-match-data: done
-    56|10-2-expose-in-memory-agent-match-listing-state-polling-and-order-submission-endpoints: done
-    57|epic-10-retrospective: optional
-    58|
-    59|epic-12: done
-    60|12-1-add-a-local-support-services-stack-for-database-backed-development-and-validation: done
-    61|12-2-introduce-a-proper-database-migration-service-and-migration-driven-schema-lifecycle: done
-    62|12-3-add-deterministic-seed-reset-tooling-and-per-worktree-isolated-test-databases: done
-    63|12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: done
-    64|
-    65|epic-14: done
-    66|14-1-add-x-api-key-authentication-and-an-authenticated-current-agent-profile-endpoint: done
-    67|14-2-bind-match-joins-and-match-scoped-reads-writes-to-the-authenticated-agent-identity: done
-    68|
-    69|epic-15: done
-    70|15-1-add-a-reference-python-sdk-for-authenticated-agent-workflows: done
-    71|15-2-add-a-minimal-example-agent-and-sdk-quickstart-guide: done
-    72|
-    73|epic-16: done
-    74|16-1-add-authenticated-group-chat-creation-membership-and-message-workflows: done
-    75|16-2-extend-the-python-sdk-and-example-docs-for-group-chat-workflows: done
-    76|
-    77|epic-11: done
-    78|11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: done
-    79|11-2-add-realistic-scenario-based-smoke-tests-for-deterministic-gameplay-flows: done
-    80|11-3-add-a-large-batch-simulation-regression-harness-with-invariant-checks: done
-    81|11-4-add-critical-api-end-to-end-tests-for-agent-gameplay-journeys: done
-    82|
-    83|epic-13: done
-    84|13-1-add-agent-facing-match-message-inbox-and-send-endpoints: done
-    85|13-2-add-public-treaty-status-and-lifecycle-endpoints: done
-    86|13-3-add-alliance-create-join-leave-endpoints-with-deterministic-status-views: done
-    87|13-4-add-match-join-and-lightweight-agent-profile-scaffolding: done
-    88|
-    89|epic-17: done
-    90|17-1-add-an-authenticated-bundled-agent-briefing-endpoint: done
-    91|17-2-add-a-consolidated-authenticated-agent-command-endpoint: done
-    92|
-    93|epic-18: done
-    94|18-1-launch-an-in-process-async-tick-loop-for-active-matches: done
-    95|18-2-persist-live-tick-advancement-and-write-tick-log-history: done
-    96|18-3-broadcast-live-match-updates-over-websockets-for-human-clients-and-spectators: done
-    97|
-    98|epic-19: done
-    99|19-1-expose-persisted-tick-history-and-replay-snapshots: done
-   100|19-2-add-public-leaderboard-and-completed-match-summary-reads: done
-   101|
-   102|epic-20: done
-   103|20-1-add-db-backed-public-match-browse-summaries: done
-   104|20-2-add-a-public-match-lobby-detail-read: done
-   105|
-   106|epic-21: done
-   107|21-1-add-an-authenticated-match-lobby-creation-endpoint: done
-   108|
-   109|epic-22: done
-   110|22-1-add-an-authenticated-lobby-start-endpoint: done
-   111|epic-23: done
-   112|23-1-extend-the-python-sdk-and-example-quickstart-for-authenticated-lobby-lifecycle-flows: done
-   113|
-   114|epic-24: done
-   115|24-1-scaffold-a-next-js-client-and-public-match-browser: done
-   116|24-2-add-real-human-jwt-authentication-for-http-and-websocket-paths: done
-   117|24-3-add-client-side-auth-session-bootstrap-for-future-human-flows: done
-   118|
-   119|epic-25: done
-   120|25-1-add-a-public-match-detail-page-in-the-web-client: done
-   121|25-2-add-a-read-only-spectator-live-match-page-over-websockets: done
-   122|25-3-add-authenticated-human-lobby-create-join-start-flows-in-the-web-client: done
-   123|
-   124|epic-26: done
-   125|26-1-add-an-authenticated-human-live-match-page-over-the-player-websocket: done
-   126|26-2-add-authenticated-human-order-submission-controls-in-the-live-web-client: done
-   127|
-   128|
-   129|epic-27: in_progress
-   130|27-1-add-authenticated-human-live-messaging-controls-in-the-web-client: backlog
-   131|27-2-add-authenticated-human-treaty-and-alliance-controls-in-the-live-web-client: backlog
-   132|
-   133|
+generated: 2026-03-31 02:30 UTC
+project: Iron Council
+project_key: IRON
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+next_story: 27-2-add-authenticated-human-treaty-and-alliance-controls-in-the-live-web-client
+
+development_status:
+  epic-1: done
+  1-1-scaffold-fastapi-server-and-core-domain-contracts: done
+  1-2-add-shared-domain-enums-and-validation-primitives: done
+  epic-1-retrospective: optional
+
+  epic-2: done
+  2-1-encode-the-uk-1900-map-definition-in-shared-data: done
+  2-2-add-validation-tests-for-graph-integrity-and-special-crossings: done
+  epic-2-retrospective: optional
+
+  epic-3: done
+  3-1-build-deterministic-match-initialization-from-map-and-roster-inputs: done
+  3-2-validate-queued-orders-against-ownership-resources-and-adjacency: done
+  epic-3-retrospective: optional
+
+  epic-4: done
+  4-1-add-a-pure-function-tick-resolver-skeleton-with-phase-ordering: done
+  4-2-provide-a-headless-simulation-harness-for-smoke-testing-ticks: done
+  epic-4-retrospective: optional
+
+  epic-5: done
+  5-1-apply-deterministic-resource-accounting-during-the-resolver-resource-phase: done
+  5-2-advance-army-transit-and-accepted-movement-orders-during-the-movement-phase: done
+  epic-5-retrospective: optional
+
+  epic-6: done
+  6-1-apply-starvation-attrition-and-elimination-checks-during-the-attrition-phase: done
+  6-2-track-coalition-city-control-and-victory-countdown-during-the-victory-phase: done
+  epic-6-retrospective: optional
+
+  epic-7: done
+  7-1-resolve-contested-city-combat-with-defender-and-fortification-advantages: done
+  7-2-hand-uncontested-city-control-to-occupying-armies-after-combat-resolution: done
+  epic-7-retrospective: optional
+
+  epic-8: done
+  8-1-advance-build-queues-and-complete-deterministic-city-upgrades-during-the-build-phase: done
+  8-2-process-accepted-recruitment-orders-during-the-build-phase: done
+  epic-8-retrospective: optional
+
+  epic-9: done
+  9-1-deduct-fortification-upkeep-and-degrade-unpaid-defenses-deterministically: done
+  9-2-degrade-besieged-fortifications-when-hostile-control-seals-every-adjacent-route: done
+  epic-9-retrospective: optional
+
+  epic-10: done
+  10-1-project-fog-filtered-agent-state-from-canonical-match-data: done
+  10-2-expose-in-memory-agent-match-listing-state-polling-and-order-submission-endpoints: done
+  epic-10-retrospective: optional
+
+  epic-12: done
+  12-1-add-a-local-support-services-stack-for-database-backed-development-and-validation: done
+  12-2-introduce-a-proper-database-migration-service-and-migration-driven-schema-lifecycle: done
+  12-3-add-deterministic-seed-reset-tooling-and-per-worktree-isolated-test-databases: done
+  12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: done
+
+  epic-14: done
+  14-1-add-x-api-key-authentication-and-an-authenticated-current-agent-profile-endpoint: done
+  14-2-bind-match-joins-and-match-scoped-reads-writes-to-the-authenticated-agent-identity: done
+
+  epic-15: done
+  15-1-add-a-reference-python-sdk-for-authenticated-agent-workflows: done
+  15-2-add-a-minimal-example-agent-and-sdk-quickstart-guide: done
+
+  epic-16: done
+  16-1-add-authenticated-group-chat-creation-membership-and-message-workflows: done
+  16-2-extend-the-python-sdk-and-example-docs-for-group-chat-workflows: done
+
+  epic-11: done
+  11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: done
+  11-2-add-realistic-scenario-based-smoke-tests-for-deterministic-gameplay-flows: done
+  11-3-add-a-large-batch-simulation-regression-harness-with-invariant-checks: done
+  11-4-add-critical-api-end-to-end-tests-for-agent-gameplay-journeys: done
+
+  epic-13: done
+  13-1-add-agent-facing-match-message-inbox-and-send-endpoints: done
+  13-2-add-public-treaty-status-and-lifecycle-endpoints: done
+  13-3-add-alliance-create-join-leave-endpoints-with-deterministic-status-views: done
+  13-4-add-match-join-and-lightweight-agent-profile-scaffolding: done
+
+  epic-17: done
+  17-1-add-an-authenticated-bundled-agent-briefing-endpoint: done
+  17-2-add-a-consolidated-authenticated-agent-command-endpoint: done
+
+  epic-18: done
+  18-1-launch-an-in-process-async-tick-loop-for-active-matches: done
+  18-2-persist-live-tick-advancement-and-write-tick-log-history: done
+  18-3-broadcast-live-match-updates-over-websockets-for-human-clients-and-spectators: done
+
+  epic-19: done
+  19-1-expose-persisted-tick-history-and-replay-snapshots: done
+  19-2-add-public-leaderboard-and-completed-match-summary-reads: done
+
+  epic-20: done
+  20-1-add-db-backed-public-match-browse-summaries: done
+  20-2-add-a-public-match-lobby-detail-read: done
+
+  epic-21: done
+  21-1-add-an-authenticated-match-lobby-creation-endpoint: done
+
+  epic-22: done
+  22-1-add-an-authenticated-lobby-start-endpoint: done
+  epic-23: done
+  23-1-extend-the-python-sdk-and-example-quickstart-for-authenticated-lobby-lifecycle-flows: done
+
+  epic-24: done
+  24-1-scaffold-a-next-js-client-and-public-match-browser: done
+  24-2-add-real-human-jwt-authentication-for-http-and-websocket-paths: done
+  24-3-add-client-side-auth-session-bootstrap-for-future-human-flows: done
+
+  epic-25: done
+  25-1-add-a-public-match-detail-page-in-the-web-client: done
+  25-2-add-a-read-only-spectator-live-match-page-over-websockets: done
+  25-3-add-authenticated-human-lobby-create-join-start-flows-in-the-web-client: done
+
+  epic-26: done
+  26-1-add-an-authenticated-human-live-match-page-over-the-player-websocket: done
+  26-2-add-authenticated-human-order-submission-controls-in-the-live-web-client: done
+
+
+  epic-27: in_progress
+  27-1-add-authenticated-human-live-messaging-controls-in-the-web-client: done
+  27-2-add-authenticated-human-treaty-and-alliance-controls-in-the-live-web-client: backlog
+
+

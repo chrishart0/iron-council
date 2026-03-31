@@ -5,17 +5,22 @@ import { useEffect, useState } from "react";
 import {
   buildPlayerMatchWebSocketUrl,
   CommandSubmissionError,
+  MessageSubmissionError,
   fetchPublicMatchDetail,
   getPlayerWebSocketCloseMessage,
   parsePlayerMatchEnvelope,
   parseWebSocketApiErrorEnvelope,
   PublicMatchDetailError,
+  submitGroupChatMessage,
+  submitMatchMessage,
   submitMatchOrders
 } from "../../lib/api";
 import type {
   AllianceRecord,
   GroupChatRecord,
+  GroupChatMessageAcceptanceResponse,
   GroupMessageRecord,
+  MessageAcceptanceResponse,
   MatchOrdersCommandRequest,
   PlayerMatchEnvelope,
   PublicMatchDetailResponse,
@@ -326,6 +331,33 @@ type SubmissionFeedback =
       statusCode: number;
     };
 
+type LiveMessagingChannel = "world" | "direct" | "group";
+
+type MessageDraftState = {
+  channel: LiveMessagingChannel;
+  directRecipientId: string;
+  groupChatId: string;
+  content: string;
+};
+
+type MessageSubmissionFeedback =
+  | {
+      status: "idle";
+    }
+  | {
+      status: "submitting";
+    }
+  | {
+      status: "success";
+      message: string;
+    }
+  | {
+      status: "error";
+      message: string;
+      code: string;
+      statusCode: number;
+    };
+
 const emptyDraftState = (): OrderDraftState => ({
   movements: [],
   recruitment: [],
@@ -353,6 +385,16 @@ const emptyTransferDraft = (): TransferDraft => ({
   to: "",
   resource: "food",
   amount: ""
+});
+
+const emptyMessageDraft = (
+  directTargetIds: string[],
+  visibleGroupChats: GroupChatRecord[]
+): MessageDraftState => ({
+  channel: "world",
+  directRecipientId: directTargetIds[0] ?? "",
+  groupChatId: visibleGroupChats[0]?.group_chat_id ?? "",
+  content: ""
 });
 
 function parsePositiveInteger(value: string): number | null {
@@ -451,6 +493,50 @@ function buildOrderRequest(
   };
 }
 
+function collectVisiblePlayerIds(envelope: PlayerMatchEnvelope): string[] {
+  const visiblePlayerIds = new Set<string>();
+  const addPlayerId = (playerId: string | null | undefined) => {
+    if (!playerId || playerId === envelope.data.player_id) {
+      return;
+    }
+    visiblePlayerIds.add(playerId);
+  };
+
+  Object.values(envelope.data.state.cities).forEach((city) => addPlayerId(city.owner));
+  envelope.data.state.visible_armies.forEach((army) => addPlayerId(army.owner));
+  envelope.data.state.alliance_members.forEach((playerId) => addPlayerId(playerId));
+  envelope.data.world_messages.forEach((message) => addPlayerId(message.sender_id));
+  envelope.data.direct_messages.forEach((message) => {
+    addPlayerId(message.sender_id);
+    addPlayerId(message.recipient_id);
+  });
+  envelope.data.group_chats.forEach((groupChat) => {
+    addPlayerId(groupChat.created_by);
+    groupChat.member_ids.forEach((playerId) => addPlayerId(playerId));
+  });
+  envelope.data.group_messages.forEach((message) => addPlayerId(message.sender_id));
+  envelope.data.treaties.forEach((treaty) => {
+    addPlayerId(treaty.player_a_id);
+    addPlayerId(treaty.player_b_id);
+  });
+  envelope.data.alliances.forEach((alliance) => {
+    addPlayerId(alliance.leader_id);
+    alliance.members.forEach((member) => addPlayerId(member.player_id));
+  });
+
+  return Array.from(visiblePlayerIds).sort((left, right) => left.localeCompare(right));
+}
+
+function describeAcceptedMessage(
+  accepted: MessageAcceptanceResponse | GroupChatMessageAcceptanceResponse
+): string {
+  if ("group_chat_id" in accepted) {
+    return `Accepted group message ${accepted.message.message_id} in ${accepted.group_chat_id} for tick ${accepted.message.tick} from ${accepted.message.sender_id}.`;
+  }
+
+  return `Accepted ${accepted.channel} message ${accepted.message_id} for tick ${accepted.tick} from ${accepted.sender_id}.`;
+}
+
 function HumanMatchLiveSnapshot({
   envelope,
   apiBaseUrl,
@@ -466,6 +552,14 @@ function HumanMatchLiveSnapshot({
   const [submissionFeedback, setSubmissionFeedback] = useState<SubmissionFeedback>({
     status: "idle"
   });
+  const directTargetIds = collectVisiblePlayerIds(envelope);
+  const visibleGroupChats = envelope.data.group_chats;
+  const [messageDraft, setMessageDraft] = useState<MessageDraftState>(() =>
+    emptyMessageDraft(directTargetIds, visibleGroupChats)
+  );
+  const [messageSubmissionFeedback, setMessageSubmissionFeedback] = useState<MessageSubmissionFeedback>({
+    status: "idle"
+  });
   const latestWorldMessage = envelope.data.world_messages.at(-1) ?? null;
   const latestDirectMessage = envelope.data.direct_messages.at(-1) ?? null;
   const latestGroupChat = envelope.data.group_chats.at(-1) ?? null;
@@ -474,6 +568,42 @@ function HumanMatchLiveSnapshot({
   const latestAlliance = envelope.data.alliances.at(-1) ?? null;
   const partialArmy = envelope.data.state.visible_armies.find((army) => army.visibility === "partial") ?? null;
   const canSubmit = liveStatus === "live" && bearerToken !== null && submissionFeedback.status !== "submitting";
+  const canSubmitMessage =
+    liveStatus === "live" && bearerToken !== null && messageSubmissionFeedback.status !== "submitting";
+
+  useEffect(() => {
+    setMessageDraft((currentDraft) => {
+      const nextChannel =
+        currentDraft.channel === "direct" && directTargetIds.length === 0
+          ? "world"
+          : currentDraft.channel === "group" && visibleGroupChats.length === 0
+            ? "world"
+            : currentDraft.channel;
+      const nextDirectRecipientId = directTargetIds.includes(currentDraft.directRecipientId)
+        ? currentDraft.directRecipientId
+        : (directTargetIds[0] ?? "");
+      const nextGroupChatId = visibleGroupChats.some(
+        (groupChat) => groupChat.group_chat_id === currentDraft.groupChatId
+      )
+        ? currentDraft.groupChatId
+        : (visibleGroupChats[0]?.group_chat_id ?? "");
+
+      if (
+        nextChannel === currentDraft.channel &&
+        nextDirectRecipientId === currentDraft.directRecipientId &&
+        nextGroupChatId === currentDraft.groupChatId
+      ) {
+        return currentDraft;
+      }
+
+      return {
+        ...currentDraft,
+        channel: nextChannel,
+        directRecipientId: nextDirectRecipientId,
+        groupChatId: nextGroupChatId
+      };
+    });
+  }, [directTargetIds, visibleGroupChats]);
 
   const updateMovementDraft = (index: number, key: keyof MovementDraft, value: string) => {
     setDrafts((currentDrafts) => ({
@@ -626,6 +756,113 @@ function HumanMatchLiveSnapshot({
     }
   };
 
+  const updateMessageDraft = (updates: Partial<MessageDraftState>) => {
+    setMessageSubmissionFeedback({ status: "idle" });
+    setMessageDraft((currentDraft) => ({
+      ...currentDraft,
+      ...updates
+    }));
+  };
+
+  const submitMessageDraft = async () => {
+    if (bearerToken === null) {
+      setMessageSubmissionFeedback({
+        status: "error",
+        message: "A stored bearer token is required before submitting messages.",
+        code: "auth_missing",
+        statusCode: 401
+      });
+      return;
+    }
+
+    const content = messageDraft.content.trim();
+    if (content.length === 0) {
+      setMessageSubmissionFeedback({
+        status: "error",
+        message: "Message content is required before submitting.",
+        code: "invalid_message_draft",
+        statusCode: 400
+      });
+      return;
+    }
+
+    if (messageDraft.channel === "direct" && messageDraft.directRecipientId.length === 0) {
+      setMessageSubmissionFeedback({
+        status: "error",
+        message: "Choose a visible direct target before submitting.",
+        code: "invalid_message_draft",
+        statusCode: 400
+      });
+      return;
+    }
+
+    if (messageDraft.channel === "group" && messageDraft.groupChatId.length === 0) {
+      setMessageSubmissionFeedback({
+        status: "error",
+        message: "Choose a visible group chat before submitting.",
+        code: "invalid_message_draft",
+        statusCode: 400
+      });
+      return;
+    }
+
+    setMessageSubmissionFeedback({ status: "submitting" });
+
+    try {
+      const accepted =
+        messageDraft.channel === "group"
+          ? await submitGroupChatMessage(
+              messageDraft.groupChatId,
+              {
+                match_id: envelope.data.match_id,
+                tick: envelope.data.state.tick,
+                content
+              },
+              bearerToken,
+              fetch,
+              { apiBaseUrl }
+            )
+          : await submitMatchMessage(
+              {
+                match_id: envelope.data.match_id,
+                tick: envelope.data.state.tick,
+                channel: messageDraft.channel,
+                recipient_id: messageDraft.channel === "direct" ? messageDraft.directRecipientId : null,
+                content
+              },
+              bearerToken,
+              fetch,
+              { apiBaseUrl }
+            );
+
+      setMessageDraft((currentDraft) => ({
+        ...currentDraft,
+        content: ""
+      }));
+      setMessageSubmissionFeedback({
+        status: "success",
+        message: describeAcceptedMessage(accepted)
+      });
+    } catch (error: unknown) {
+      if (error instanceof MessageSubmissionError) {
+        setMessageSubmissionFeedback({
+          status: "error",
+          message: error.message,
+          code: error.code,
+          statusCode: error.statusCode
+        });
+        return;
+      }
+
+      setMessageSubmissionFeedback({
+        status: "error",
+        message: "Unable to submit message right now.",
+        code: "message_submission_unavailable",
+        statusCode: 500
+      });
+    }
+  };
+
   return (
     <>
       <section className="panel panel-section">
@@ -691,6 +928,83 @@ function HumanMatchLiveSnapshot({
             <span>{describeAlliance(latestAlliance)}</span>
           </li>
         </ul>
+      </section>
+
+      <section className="panel panel-section">
+        <h2>Live messaging</h2>
+        <p>Submit world, direct, or group messages for the current websocket tick. The live timeline stays read-only.</p>
+
+        {messageSubmissionFeedback.status === "success" ? (
+          <p role="status">{messageSubmissionFeedback.message}</p>
+        ) : null}
+
+        {messageSubmissionFeedback.status === "error" ? (
+          <div role="alert">
+            <p>{messageSubmissionFeedback.message}</p>
+            <p>{`Error code: ${messageSubmissionFeedback.code}`}</p>
+            <p>{`HTTP status: ${messageSubmissionFeedback.statusCode}`}</p>
+          </div>
+        ) : null}
+
+        <label>
+          Channel
+          <select
+            value={messageDraft.channel}
+            onChange={(event) =>
+              updateMessageDraft({ channel: event.target.value as LiveMessagingChannel })
+            }
+          >
+            <option value="world">world</option>
+            <option value="direct">direct</option>
+            <option value="group">group</option>
+          </select>
+        </label>
+
+        {messageDraft.channel === "direct" ? (
+          <label>
+            Direct target
+            <select
+              value={messageDraft.directRecipientId}
+              onChange={(event) => updateMessageDraft({ directRecipientId: event.target.value })}
+            >
+              {directTargetIds.length === 0 ? <option value="">No visible players</option> : null}
+              {directTargetIds.map((playerId) => (
+                <option key={playerId} value={playerId}>
+                  {playerId}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {messageDraft.channel === "group" ? (
+          <label>
+            Group chat
+            <select
+              value={messageDraft.groupChatId}
+              onChange={(event) => updateMessageDraft({ groupChatId: event.target.value })}
+            >
+              {visibleGroupChats.length === 0 ? <option value="">No visible group chats</option> : null}
+              {visibleGroupChats.map((groupChat) => (
+                <option key={groupChat.group_chat_id} value={groupChat.group_chat_id}>
+                  {groupChat.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        <label>
+          Message content
+          <textarea
+            value={messageDraft.content}
+            onChange={(event) => updateMessageDraft({ content: event.target.value })}
+          />
+        </label>
+
+        <button className="button-link" type="button" onClick={() => void submitMessageDraft()} disabled={!canSubmitMessage}>
+          {messageSubmissionFeedback.status === "submitting" ? "Submitting…" : "Submit message"}
+        </button>
       </section>
 
       <section className="panel panel-section">

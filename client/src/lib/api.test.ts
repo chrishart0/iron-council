@@ -9,11 +9,14 @@ import {
   getPlayerWebSocketCloseMessage,
   joinMatchLobby,
   LobbyActionError,
+  MessageSubmissionError,
   parsePlayerMatchEnvelope,
   parseWebSocketApiErrorEnvelope,
   parseSpectatorMatchEnvelope,
   PublicMatchDetailError,
   PublicMatchesError,
+  submitGroupChatMessage,
+  submitMatchMessage,
   submitMatchOrders,
   startMatchLobby
 } from "./api";
@@ -457,6 +460,252 @@ describe("submitMatchOrders", () => {
       new CommandSubmissionError(
         "Unable to submit orders right now.",
         "invalid_command_response",
+        202
+      )
+    );
+  });
+});
+
+describe("message submission helpers", () => {
+  it("posts the shipped world message request shape with bearer auth and returns typed accepted metadata", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: "accepted",
+        match_id: "match-alpha",
+        message_id: 16,
+        channel: "world",
+        sender_id: "player-2",
+        recipient_id: null,
+        tick: 143,
+        content: "Stand ready."
+      })
+    });
+
+    await expect(
+      submitMatchMessage(
+        {
+          match_id: "match-alpha",
+          tick: 143,
+          channel: "world",
+          recipient_id: null,
+          content: "Stand ready."
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).resolves.toEqual({
+      status: "accepted",
+      match_id: "match-alpha",
+      message_id: 16,
+      channel: "world",
+      sender_id: "player-2",
+      recipient_id: null,
+      tick: 143,
+      content: "Stand ready."
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("http://127.0.0.1:8000/api/v1/matches/match-alpha/messages", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        tick: 143,
+        channel: "world",
+        recipient_id: null,
+        content: "Stand ready."
+      })
+    });
+  });
+
+  it("posts the shipped world/direct message request shape with bearer auth and returns typed accepted metadata", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: "accepted",
+        match_id: "match-alpha",
+        message_id: 17,
+        channel: "direct",
+        sender_id: "player-2",
+        recipient_id: "player-3",
+        tick: 143,
+        content: "Hold the western road."
+      })
+    });
+
+    await expect(
+      submitMatchMessage(
+        {
+          match_id: "match-alpha",
+          tick: 143,
+          channel: "direct",
+          recipient_id: "player-3",
+          content: "Hold the western road."
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).resolves.toEqual({
+      status: "accepted",
+      match_id: "match-alpha",
+      message_id: 17,
+      channel: "direct",
+      sender_id: "player-2",
+      recipient_id: "player-3",
+      tick: 143,
+      content: "Hold the western road."
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("http://127.0.0.1:8000/api/v1/matches/match-alpha/messages", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        tick: 143,
+        channel: "direct",
+        recipient_id: "player-3",
+        content: "Hold the western road."
+      })
+    });
+  });
+
+  it("posts the shipped group-chat message request shape with bearer auth and returns typed accepted metadata", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: "accepted",
+        match_id: "match-alpha",
+        group_chat_id: "council-red",
+        message: {
+          message_id: 29,
+          group_chat_id: "council-red",
+          sender_id: "player-2",
+          tick: 144,
+          content: "Reinforce York at dawn."
+        }
+      })
+    });
+
+    await expect(
+      submitGroupChatMessage(
+        "council-red",
+        {
+          match_id: "match-alpha",
+          tick: 144,
+          content: "Reinforce York at dawn."
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).resolves.toEqual({
+      status: "accepted",
+      match_id: "match-alpha",
+      group_chat_id: "council-red",
+      message: {
+        message_id: 29,
+        group_chat_id: "council-red",
+        sender_id: "player-2",
+        tick: 144,
+        content: "Reinforce York at dawn."
+      }
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/v1/matches/match-alpha/group-chats/council-red/messages",
+      {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          accept: "application/json",
+          authorization: "Bearer human-token",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          match_id: "match-alpha",
+          tick: 144,
+          content: "Reinforce York at dawn."
+        })
+      }
+    );
+  });
+
+  it("turns structured message api error envelopes into a deterministic client error with code and status", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          code: "tick_mismatch",
+          message: "Message payload tick '142' does not match current match tick '143'."
+        }
+      })
+    });
+
+    await expect(
+      submitMatchMessage(
+        {
+          match_id: "match-alpha",
+          tick: 142,
+          channel: "world",
+          recipient_id: null,
+          content: "Stand ready."
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new MessageSubmissionError(
+        "Message payload tick '142' does not match current match tick '143'.",
+        "tick_mismatch",
+        400
+      )
+    );
+  });
+
+  it("raises a deterministic client error when an accepted world/direct response is malformed", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        status: "accepted",
+        match_id: "match-alpha",
+        message_id: 17,
+        channel: "world",
+        sender_id: "player-2",
+        recipient_id: null,
+        tick: 143
+      })
+    });
+
+    await expect(
+      submitMatchMessage(
+        {
+          match_id: "match-alpha",
+          tick: 143,
+          channel: "world",
+          recipient_id: null,
+          content: "Stand ready."
+        },
+        "human-token",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new MessageSubmissionError(
+        "Unable to submit message right now.",
+        "invalid_message_response",
         202
       )
     );

@@ -6,7 +6,10 @@ import type {
   CityUpgradeState,
   DirectMessageRecord,
   GroupChatRecord,
+  GroupChatMessageAcceptanceResponse,
+  GroupChatMessageCreateRequest,
   GroupMessageRecord,
+  MatchMessageCreateRequest,
   MatchOrdersCommandEnvelopeResponse,
   MatchOrdersCommandRequest,
   MatchJoinRequest,
@@ -16,6 +19,7 @@ import type {
   MatchLobbyCreateResponse,
   MatchLobbyStartResponse,
   MatchSummary,
+  MessageAcceptanceResponse,
   OrderAcceptanceResponse,
   PlayerMatchEnvelope,
   PlayerMatchState,
@@ -44,6 +48,7 @@ const PLAYER_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse player live match upd
 const SPECTATOR_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse spectator live match update.";
 const MATCH_LOBBY_ERROR_MESSAGE = "Unable to complete the requested lobby action right now.";
 const COMMAND_SUBMISSION_ERROR_MESSAGE = "Unable to submit orders right now.";
+const MESSAGE_SUBMISSION_ERROR_MESSAGE = "Unable to submit message right now.";
 const HUMAN_NOT_JOINED_MESSAGE =
   "Join this match as a human player before opening the authenticated live page.";
 const INVALID_WEBSOCKET_AUTH_MESSAGE =
@@ -86,6 +91,17 @@ export class CommandSubmissionError extends Error {
   ) {
     super(message);
     this.name = "CommandSubmissionError";
+  }
+}
+
+export class MessageSubmissionError extends Error {
+  constructor(
+    message = MESSAGE_SUBMISSION_ERROR_MESSAGE,
+    readonly code: string = "message_submission_unavailable",
+    readonly statusCode: number = 500
+  ) {
+    super(message);
+    this.name = "MessageSubmissionError";
   }
 }
 
@@ -244,6 +260,57 @@ export async function submitMatchOrders(
   return payload.orders;
 }
 
+export async function submitMatchMessage(
+  request: MatchMessageCreateRequest,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<MessageAcceptanceResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(request.match_id)}/messages`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: buildAuthenticatedJsonHeaders(bearerToken),
+      body: JSON.stringify(request)
+    }
+  ).catch(() => {
+    throw new MessageSubmissionError(
+      MESSAGE_SUBMISSION_ERROR_MESSAGE,
+      "message_submission_unavailable",
+      500
+    );
+  });
+
+  return handleMessageSubmissionResponse(response, isMessageAcceptanceResponse);
+}
+
+export async function submitGroupChatMessage(
+  groupChatId: string,
+  request: GroupChatMessageCreateRequest,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<GroupChatMessageAcceptanceResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(request.match_id)}/group-chats/${encodeURIComponent(groupChatId)}/messages`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: buildAuthenticatedJsonHeaders(bearerToken),
+      body: JSON.stringify(request)
+    }
+  ).catch(() => {
+    throw new MessageSubmissionError(
+      MESSAGE_SUBMISSION_ERROR_MESSAGE,
+      "message_submission_unavailable",
+      500
+    );
+  });
+
+  return handleMessageSubmissionResponse(response, isGroupChatMessageAcceptanceResponse);
+}
+
 export function buildSpectatorMatchWebSocketUrl(
   matchId: string,
   options?: { apiBaseUrl?: string }
@@ -339,6 +406,27 @@ async function handleLobbyResponse<T>(
   return payload;
 }
 
+async function handleMessageSubmissionResponse<T>(
+  response: ResponseLike,
+  validator: (payload: unknown) => payload is T
+): Promise<T> {
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    throw toMessageSubmissionError(payload, response.status);
+  }
+
+  const payload: unknown = await response.json();
+  if (!validator(payload)) {
+    throw new MessageSubmissionError(
+      MESSAGE_SUBMISSION_ERROR_MESSAGE,
+      "invalid_message_response",
+      response.status
+    );
+  }
+
+  return payload;
+}
+
 type ResponseLike = {
   ok: boolean;
   status: number;
@@ -360,6 +448,18 @@ function toCommandSubmissionError(payload: unknown, status: number): CommandSubm
   return new CommandSubmissionError(
     COMMAND_SUBMISSION_ERROR_MESSAGE,
     "command_submission_unavailable",
+    status
+  );
+}
+
+function toMessageSubmissionError(payload: unknown, status: number): MessageSubmissionError {
+  if (isApiErrorEnvelope(payload)) {
+    return new MessageSubmissionError(payload.error.message, payload.error.code, status);
+  }
+
+  return new MessageSubmissionError(
+    MESSAGE_SUBMISSION_ERROR_MESSAGE,
+    "message_submission_unavailable",
     status
   );
 }
@@ -411,6 +511,33 @@ function isOrderAcceptanceResponse(payload: unknown): payload is OrderAcceptance
     typeof payload.player_id === "string" &&
     typeof payload.tick === "number" &&
     typeof payload.submission_index === "number"
+  );
+}
+
+function isMessageAcceptanceResponse(payload: unknown): payload is MessageAcceptanceResponse {
+  return (
+    isRecord(payload) &&
+    payload.status === "accepted" &&
+    typeof payload.match_id === "string" &&
+    typeof payload.message_id === "number" &&
+    (payload.channel === "world" || payload.channel === "direct") &&
+    typeof payload.sender_id === "string" &&
+    (typeof payload.recipient_id === "string" || payload.recipient_id === null) &&
+    typeof payload.tick === "number" &&
+    typeof payload.content === "string"
+  );
+}
+
+function isGroupChatMessageAcceptanceResponse(
+  payload: unknown
+): payload is GroupChatMessageAcceptanceResponse {
+  return (
+    isRecord(payload) &&
+    payload.status === "accepted" &&
+    typeof payload.match_id === "string" &&
+    typeof payload.group_chat_id === "string" &&
+    isGroupMessageRecord(payload.message) &&
+    payload.message.group_chat_id === payload.group_chat_id
   );
 }
 

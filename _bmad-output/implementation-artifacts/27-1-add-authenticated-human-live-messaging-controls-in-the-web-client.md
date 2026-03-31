@@ -1,6 +1,6 @@
 # Story 27.1: Add authenticated human live messaging controls in the web client
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -22,10 +22,10 @@ So that I can participate in the same diplomacy and communication loop as agents
 
 ## Tasks / Subtasks
 
-- [ ] Add typed authenticated client request/response helpers for match-message and group-chat-message submissions. (AC: 1, 2, 3)
-- [ ] Add a text-first live-page message composer for world, direct, and group-chat messages using only the shipped routes. (AC: 1, 2, 3)
-- [ ] Add behavior-first tests covering success, structured-error handling, and draft preservation at the browser boundary. (AC: 2, 3)
-- [ ] Re-run focused client checks and the repo quality gate, then close docs/BMAD artifacts. (AC: 4)
+- [x] Add typed authenticated client request/response helpers for match-message and group-chat-message submissions. (AC: 1, 2, 3)
+- [x] Add a text-first live-page message composer for world, direct, and group-chat messages using only the shipped routes. (AC: 1, 2, 3)
+- [x] Add behavior-first tests covering success, structured-error handling, and draft preservation at the browser boundary. (AC: 2, 3)
+- [x] Re-run focused client checks and the repo quality gate, then close docs/BMAD artifacts. (AC: 4)
 
 ## Dev Notes
 
@@ -48,23 +48,41 @@ So that I can participate in the same diplomacy and communication loop as agents
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
-Pending implementation.
+- OpenAI Codex CLI via `codex --yolo exec` for implementation in a dedicated story worktree.
+- Hermes subagent reviewers for spec compliance, code quality, and final integration review.
 
 ### Debug Log References
 
-- Pending.
+- `cd client && npm test -- --run src/lib/api.test.ts`
+- `cd client && npm test -- --run src/components/matches/human-match-live-page.test.tsx src/lib/api.test.ts`
+- `cd client && npm run build`
+- `make client-lint`
+- `uv sync --extra dev --frozen` (worktree bootstrap after `make quality` initially failed because `mypy` was missing)
+- `make quality`
 
 ### Completion Notes List
 
-- Pending.
+- Added typed authenticated client request/response models plus thin `submitMatchMessage()` and `submitGroupChatMessage()` helpers for the shipped match-message and group-chat-message routes only.
+- Added a text-first live-page messaging composer that derives direct-player and group-chat targets from the current websocket snapshot, submits against the current live tick, and never fabricates optimistic timeline entries.
+- Successful submissions now show deterministic acceptance metadata and clear only the accepted message draft content while leaving target/channel state intact.
+- Structured failures now preserve the message draft and surface server-provided `message`, `code`, and `status` details at the live-page boundary.
+- Browser-facing tests assert the real shipped fetch POST contracts for world/direct/group submissions rather than only mocking internal helper wiring.
+- Verified the full repo quality gate after bootstrapping missing dev dependencies in the fresh worktree; `make quality` passed.
 
 ### File List
 
-- Pending.
+- README.md
+- _bmad-output/implementation-artifacts/27-1-add-authenticated-human-live-messaging-controls-in-the-web-client.md
+- _bmad-output/implementation-artifacts/sprint-status.yaml
+- client/src/components/matches/human-match-live-page.test.tsx
+- client/src/components/matches/human-match-live-page.tsx
+- client/src/lib/api.test.ts
+- client/src/lib/api.ts
+- client/src/lib/types.ts

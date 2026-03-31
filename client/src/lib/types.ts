@@ -56,6 +56,8 @@ export type ApiErrorEnvelope = {
   };
 };
 
+export type MessageChannel = "world" | "direct";
+
 export type UpgradeTrack = "economy" | "military" | "fortification";
 export type ResourceType = "food" | "production" | "money";
 
@@ -92,6 +94,38 @@ export type MatchOrdersCommandRequest = {
   match_id: string;
   tick: number;
   orders: OrderBatch;
+};
+
+export type MatchMessageCreateRequest = {
+  match_id: string;
+  tick: number;
+  channel: MessageChannel;
+  recipient_id: string | null;
+  content: string;
+};
+
+export type MessageAcceptanceResponse = {
+  status: "accepted";
+  match_id: string;
+  message_id: number;
+  channel: MessageChannel;
+  sender_id: string;
+  recipient_id: string | null;
+  tick: number;
+  content: string;
+};
+
+export type GroupChatMessageCreateRequest = {
+  match_id: string;
+  tick: number;
+  content: string;
+};
+
+export type GroupChatMessageAcceptanceResponse = {
+  status: "accepted";
+  match_id: string;
+  group_chat_id: string;
+  message: GroupMessageRecord;
 };
 
 export type OrderAcceptanceResponse = {
