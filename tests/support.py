@@ -6,6 +6,7 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import ModuleType
 
+from server.db import registry as db_registry_module
 from sqlalchemy import create_engine, text
 
 
@@ -42,6 +43,16 @@ _SEEDED_HUMAN_PLAYER_ROWS = {
         "elo_rating": 1190,
     },
 }
+
+
+def build_persisted_player_id(*, match_id: str, public_player_id: str) -> str:
+    prefix = "player-"
+    if not public_player_id.startswith(prefix):
+        raise ValueError(f"Unsupported public player id: {public_player_id!r}")
+    return db_registry_module._build_match_scoped_player_id(
+        match_id=match_id,
+        join_index=int(public_player_id.removeprefix(prefix)),
+    )
 
 
 def insert_seeded_agent_player(
@@ -179,7 +190,10 @@ def insert_completed_match_fixture(database_url: str) -> None:
                 "id": "00000000-0000-0000-0000-000000000801",
                 "match_id": "00000000-0000-0000-0000-000000000201",
                 "name": "Iron Crown",
-                "leader_id": "00000000-0000-0000-0000-000000000701",
+                "leader_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000201",
+                    public_player_id="player-1",
+                ),
                 "formed_tick": 120,
                 "dissolved_tick": None,
             },
@@ -198,7 +212,10 @@ def insert_completed_match_fixture(database_url: str) -> None:
             ),
             [
                 {
-                    "id": "00000000-0000-0000-0000-000000000701",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000201",
+                        public_player_id="player-1",
+                    ),
                     "user_id": "00000000-0000-0000-0000-000000000301",
                     "match_id": "00000000-0000-0000-0000-000000000201",
                     "display_name": "Arthur",
@@ -210,7 +227,10 @@ def insert_completed_match_fixture(database_url: str) -> None:
                     "eliminated_at": None,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000702",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000201",
+                        public_player_id="player-2",
+                    ),
                     "user_id": "00000000-0000-0000-0000-000000000302",
                     "match_id": "00000000-0000-0000-0000-000000000201",
                     "display_name": "Morgana",
@@ -222,7 +242,10 @@ def insert_completed_match_fixture(database_url: str) -> None:
                     "eliminated_at": None,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000703",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000201",
+                        public_player_id="player-3",
+                    ),
                     "user_id": "00000000-0000-0000-0000-000000000303",
                     "match_id": "00000000-0000-0000-0000-000000000201",
                     "display_name": "Gawain",
@@ -234,7 +257,10 @@ def insert_completed_match_fixture(database_url: str) -> None:
                     "eliminated_at": None,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000704",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000202",
+                        public_player_id="player-1",
+                    ),
                     "user_id": "00000000-0000-0000-0000-000000000302",
                     "match_id": "00000000-0000-0000-0000-000000000202",
                     "display_name": "Morgana",
@@ -246,7 +272,10 @@ def insert_completed_match_fixture(database_url: str) -> None:
                     "eliminated_at": None,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000705",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000202",
+                        public_player_id="player-2",
+                    ),
                     "user_id": "00000000-0000-0000-0000-000000000304",
                     "match_id": "00000000-0000-0000-0000-000000000202",
                     "display_name": "Bedivere",

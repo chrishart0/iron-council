@@ -12,6 +12,7 @@ from server.agent_registry import build_seeded_agent_api_key, build_seeded_match
 from server.auth import hash_api_key
 from server.db.config import configure_alembic_database_url
 from server.db.migrations import reset_database, upgrade_database
+from server.db.registry import _build_match_scoped_player_id
 
 ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 
@@ -183,7 +184,10 @@ def seed_database(database_url: str) -> None:
                     "id": "00000000-0000-0000-0000-000000000401",
                     "match_id": "00000000-0000-0000-0000-000000000101",
                     "name": "Western Accord",
-                    "leader_id": "00000000-0000-0000-0000-000000000501",
+                    "leader_id": _build_match_scoped_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        join_index=1,
+                    ),
                     "formed_tick": 120,
                     "dissolved_tick": None,
                 }
@@ -203,7 +207,10 @@ def seed_database(database_url: str) -> None:
             ),
             [
                 {
-                    "id": "00000000-0000-0000-0000-000000000501",
+                    "id": _build_match_scoped_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        join_index=1,
+                    ),
                     "user_id": "00000000-0000-0000-0000-000000000301",
                     "match_id": "00000000-0000-0000-0000-000000000101",
                     "display_name": "Arthur",
@@ -215,7 +222,10 @@ def seed_database(database_url: str) -> None:
                     "eliminated_at": None,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000502",
+                    "id": _build_match_scoped_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        join_index=2,
+                    ),
                     "user_id": "00000000-0000-0000-0000-000000000302",
                     "match_id": "00000000-0000-0000-0000-000000000101",
                     "display_name": "Morgana",
@@ -227,7 +237,10 @@ def seed_database(database_url: str) -> None:
                     "eliminated_at": None,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000503",
+                    "id": _build_match_scoped_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        join_index=3,
+                    ),
                     "user_id": "00000000-0000-0000-0000-000000000303",
                     "match_id": "00000000-0000-0000-0000-000000000101",
                     "display_name": "Gawain",
@@ -256,7 +269,10 @@ def seed_database(database_url: str) -> None:
                 {
                     "id": "00000000-0000-0000-0000-000000000601",
                     "match_id": "00000000-0000-0000-0000-000000000101",
-                    "sender_id": "00000000-0000-0000-0000-000000000501",
+                    "sender_id": _build_match_scoped_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        join_index=1,
+                    ),
                     "channel_type": "group",
                     "channel_id": "00000000-0000-0000-0000-000000000401",
                     "recipient_id": None,
@@ -282,8 +298,14 @@ def seed_database(database_url: str) -> None:
                 {
                     "id": "00000000-0000-0000-0000-000000000701",
                     "match_id": "00000000-0000-0000-0000-000000000101",
-                    "player_a_id": "00000000-0000-0000-0000-000000000501",
-                    "player_b_id": "00000000-0000-0000-0000-000000000503",
+                    "player_a_id": _build_match_scoped_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        join_index=1,
+                    ),
+                    "player_b_id": _build_match_scoped_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        join_index=3,
+                    ),
                     "treaty_type": "trade",
                     "status": "active",
                     "signed_tick": 141,

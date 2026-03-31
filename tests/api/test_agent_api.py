@@ -35,6 +35,7 @@ from server.websocket import MatchWebSocketManager, build_match_realtime_envelop
 from sqlalchemy import create_engine, text
 from starlette.websockets import WebSocketDisconnect
 from tests.support import (
+    build_persisted_player_id,
     insert_completed_match_fixture,
     insert_seeded_agent_player,
 )
@@ -379,9 +380,21 @@ async def test_public_match_detail_route_returns_compact_db_backed_metadata_and_
         "max_player_count": 5,
         "open_slot_count": 2,
         "roster": [
-            {"display_name": "Arthur", "competitor_kind": "human"},
-            {"display_name": "Gawain", "competitor_kind": "agent"},
-            {"display_name": "Morgana", "competitor_kind": "agent"},
+            {
+                "player_id": "player-1",
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+            },
+            {
+                "player_id": "player-3",
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+            },
+            {
+                "player_id": "player-2",
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+            },
         ],
     }
 
@@ -450,11 +463,53 @@ async def test_public_match_detail_route_preserves_seeded_memory_fallback_contra
         "max_player_count": 5,
         "open_slot_count": 2,
         "roster": [
-            {"display_name": "Arthur", "competitor_kind": "agent"},
-            {"display_name": "Gawain", "competitor_kind": "agent"},
-            {"display_name": "Lancelot", "competitor_kind": "agent"},
+            {
+                "player_id": "player-1",
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+            },
+            {
+                "player_id": "player-3",
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+            },
+            {
+                "player_id": "player-2",
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+            },
         ],
     }
+
+
+@pytest.mark.asyncio
+async def test_public_match_detail_route_uses_visible_players_when_memory_join_maps_are_empty() -> (
+    None
+):
+    record = build_seeded_match_records(primary_match_id="match-visible-fallback")[0]
+    record.joined_agents = {}
+    record.joined_humans = {}
+    record.current_player_count = 1
+    record.public_competitor_kinds = {"player-1": "human"}
+
+    registry = InMemoryMatchRegistry()
+    registry.seed_match(record)
+    app = create_app(match_registry=registry)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/api/v1/matches/match-visible-fallback")
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["roster"] == [
+        {
+            "player_id": "player-1",
+            "display_name": "Arthur",
+            "competitor_kind": "human",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -2854,7 +2909,9 @@ async def test_create_match_lobby_route_creates_browseable_lobby_and_creator_mem
         "current_player_count": 1,
         "max_player_count": 4,
         "open_slot_count": 3,
-        "roster": [{"display_name": "Morgana", "competitor_kind": "agent"}],
+        "roster": [
+            {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"}
+        ],
     }
     assert "api_key" not in detail_response.text.lower()
     assert state_response.status_code == HTTPStatus.OK
@@ -3175,7 +3232,10 @@ async def test_start_match_lobby_route_transitions_ready_creator_lobby_to_active
             database_url=database_url,
             match_id=created_payload["match_id"],
             agent_id="agent-player-3",
-            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff1",
+            persisted_player_id=build_persisted_player_id(
+                match_id=created_payload["match_id"],
+                public_player_id="player-2",
+            ),
         )
 
         start_response = await client.post(
@@ -3207,8 +3267,8 @@ async def test_start_match_lobby_route_transitions_ready_creator_lobby_to_active
     assert detail_response.json() == {
         **start_response.json(),
         "roster": [
-            {"display_name": "Gawain", "competitor_kind": "agent"},
-            {"display_name": "Morgana", "competitor_kind": "agent"},
+            {"player_id": "player-2", "display_name": "Gawain", "competitor_kind": "agent"},
+            {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"},
         ],
     }
     assert state_response.status_code == HTTPStatus.OK
@@ -3301,7 +3361,10 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
             database_url=database_url,
             match_id=outsider_response.json()["match_id"],
             agent_id="agent-player-3",
-            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff2",
+            persisted_player_id=build_persisted_player_id(
+                match_id=outsider_response.json()["match_id"],
+                public_player_id="player-2",
+            ),
         )
         outsider_start = await client.post(
             f"/api/v1/matches/{outsider_response.json()['match_id']}/start",
@@ -3347,7 +3410,10 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
             database_url=database_url,
             match_id=active_response.json()["match_id"],
             agent_id="agent-player-3",
-            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff3",
+            persisted_player_id=build_persisted_player_id(
+                match_id=active_response.json()["match_id"],
+                public_player_id="player-2",
+            ),
         )
         with engine.begin() as connection:
             connection.execute(
@@ -3374,7 +3440,10 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
             database_url=database_url,
             match_id=completed_response.json()["match_id"],
             agent_id="agent-player-3",
-            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff4",
+            persisted_player_id=build_persisted_player_id(
+                match_id=completed_response.json()["match_id"],
+                public_player_id="player-2",
+            ),
         )
         with engine.begin() as connection:
             connection.execute(
@@ -3459,7 +3528,10 @@ async def test_start_match_lobby_route_rejects_missing_match_and_paused_lobby(
             database_url=database_url,
             match_id=created_payload["match_id"],
             agent_id="agent-player-3",
-            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff7",
+            persisted_player_id=build_persisted_player_id(
+                match_id=created_payload["match_id"],
+                public_player_id="player-2",
+            ),
         )
         with engine.begin() as connection:
             connection.execute(

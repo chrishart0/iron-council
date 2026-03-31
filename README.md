@@ -169,7 +169,10 @@ Completed-match cards now link to the shipped replay/history inspector at
 `http://127.0.0.1:3000/matches/<match_id>/history`, which reads only the public
 `GET /api/v1/matches/{id}/history` and `GET /api/v1/matches/{id}/history/{tick}`
 routes and renders one persisted snapshot/orders/events payload at a time.
-`http://127.0.0.1:3000/matches/<match_id>/live` is the spectator websocket page,
+`http://127.0.0.1:3000/matches/<match_id>/live` is the spectator websocket page
+with a text-first situation room for readable world chat, treaty status, and
+alliance membership sourced from the shipped public match detail plus spectator
+websocket contracts,
 `http://127.0.0.1:3000/matches/<match_id>/play` is the authenticated human live
 page with text-first movement/recruitment/upgrade/transfer order drafting
 through the shipped `/api/v1/matches/{id}/commands` route plus

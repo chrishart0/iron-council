@@ -13,6 +13,7 @@ from server.db.registry import load_match_registry_from_database
 from server.models.domain import MatchStatus
 from tests.support import (
     RunningApp,
+    build_persisted_player_id,
     insert_completed_match_fixture,
     insert_seeded_agent_player,
     insert_seeded_human_player,
@@ -325,9 +326,21 @@ def test_public_match_detail_smoke_flow_runs_through_real_process_with_compact_p
         "max_player_count": 5,
         "open_slot_count": 2,
         "roster": [
-            {"display_name": "Arthur", "competitor_kind": "human"},
-            {"display_name": "Gawain", "competitor_kind": "agent"},
-            {"display_name": "Morgana", "competitor_kind": "agent"},
+            {
+                "player_id": "player-1",
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+            },
+            {
+                "player_id": "player-3",
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+            },
+            {
+                "player_id": "player-2",
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+            },
         ],
     }
     assert "history" not in response.json()
@@ -483,7 +496,7 @@ def test_create_match_lobby_smoke_flow_runs_through_real_process(
     assert browse_response.json()["matches"][0]["open_slot_count"] == 3
     assert detail_response.status_code == HTTPStatus.OK
     assert detail_response.json()["roster"] == [
-        {"display_name": "Morgana", "competitor_kind": "agent"}
+        {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"}
     ]
     assert "api_key" not in detail_response.text.lower()
     assert state_response.status_code == HTTPStatus.OK
@@ -512,7 +525,10 @@ def test_start_match_lobby_smoke_flow_runs_through_real_process(
             database_url=running_seeded_app.database_url,
             match_id=created_payload["match_id"],
             agent_id="agent-player-3",
-            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff1",
+            persisted_player_id=build_persisted_player_id(
+                match_id=created_payload["match_id"],
+                public_player_id="player-2",
+            ),
         )
 
         start_response = client.post(
@@ -552,8 +568,8 @@ def test_start_match_lobby_smoke_flow_runs_through_real_process(
     assert detail_response.json() == {
         **start_response.json(),
         "roster": [
-            {"display_name": "Gawain", "competitor_kind": "agent"},
-            {"display_name": "Morgana", "competitor_kind": "agent"},
+            {"player_id": "player-2", "display_name": "Gawain", "competitor_kind": "agent"},
+            {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"},
         ],
     }
     assert latest_state is not None
@@ -657,7 +673,10 @@ def test_human_lobby_start_smoke_flow_surfaces_not_ready_and_non_creator_errors(
             database_url=running_seeded_app.database_url,
             match_id=created_payload["match_id"],
             user_id="00000000-0000-0000-0000-000000000301",
-            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff8",
+            persisted_player_id=build_persisted_player_id(
+                match_id=created_payload["match_id"],
+                public_player_id="player-2",
+            ),
         )
         non_creator_start_response = client.post(
             f"/api/v1/matches/{created_payload['match_id']}/start",

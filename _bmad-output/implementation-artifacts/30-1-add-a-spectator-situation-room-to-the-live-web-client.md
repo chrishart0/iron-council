@@ -1,6 +1,6 @@
 # Story 30.1: Add a spectator situation room to the live web client
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -22,10 +22,10 @@ So that I can understand the political state of a live match without decoding ra
 
 ## Tasks / Subtasks
 
-- [ ] Extend the compact public match-detail roster contract with stable `player_id` values and update the server/API tests. (AC: 1)
-- [ ] Reuse the fetched public roster map inside the spectator live page to render readable world-chat, treaty, and alliance panels from the shipped websocket payload. (AC: 2, 3)
-- [ ] Add focused browser-boundary tests for readable label resolution, empty states, and disconnected-state behavior. (AC: 2, 3)
-- [ ] Re-run focused verification plus the repo quality gate, then close docs/BMAD artifacts. (AC: 4)
+- [x] Extend the compact public match-detail roster contract with stable `player_id` values and update the server/API tests. (AC: 1)
+- [x] Reuse the fetched public roster map inside the spectator live page to render readable world-chat, treaty, and alliance panels from the shipped websocket payload. (AC: 2, 3)
+- [x] Add focused browser-boundary tests for readable label resolution, empty states, and disconnected-state behavior. (AC: 2, 3)
+- [x] Re-run focused verification plus the repo quality gate, then close docs/BMAD artifacts. (AC: 4)
 
 ## Dev Notes
 
@@ -47,5 +47,38 @@ So that I can understand the political state of a live match without decoding ra
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
+
+## Debug Log References
+
+- `source .venv/bin/activate && uv run pytest --no-cov tests/test_db_registry.py tests/api/test_agent_api.py tests/e2e/test_api_smoke.py`
+- `cd client && npm test -- --run src/lib/api.test.ts src/components/matches/match-detail.test.tsx src/components/matches/public-match-live-page.test.tsx src/components/matches/match-live-view.test.tsx`
+- `cd client && npm run build`
+- `source .venv/bin/activate && make quality`
+
+## Completion Notes
+
+- Added canonical public `player_id` values to the compact roster rows returned by `/api/v1/matches/{match_id}` in both DB-backed and in-memory fallback paths.
+- Reused the fetched public roster on the spectator live page to render text-first world chat, treaty status, and alliance membership summaries with deterministic raw-ID fallback when a player label is unavailable.
+- Replaced stale situation-room content after disconnect with explicit not-live copy and added deterministic empty states when no public chat, treaties, or alliances are visible.
+
+## Files
+
+- `server/models/api.py`
+- `server/db/registry.py`
+- `server/main.py`
+- `tests/test_db_registry.py`
+- `tests/api/test_agent_api.py`
+- `tests/e2e/test_api_smoke.py`
+- `client/src/lib/types.ts`
+- `client/src/lib/api.ts`
+- `client/src/lib/api.test.ts`
+- `client/src/components/matches/match-detail.tsx`
+- `client/src/components/matches/match-detail.test.tsx`
+- `client/src/components/matches/public-match-live-page.tsx`
+- `client/src/components/matches/public-match-live-page.test.tsx`
+- `client/src/components/matches/match-live-view.tsx`
+- `client/src/components/matches/match-live-view.test.tsx`
+- `README.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`

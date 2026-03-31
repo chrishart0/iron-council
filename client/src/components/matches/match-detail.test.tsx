@@ -25,8 +25,8 @@ describe("MatchDetail", () => {
           max_player_count: 5,
           open_slot_count: 2,
           roster: [
-            { display_name: "Arthur", competitor_kind: "human" },
-            { display_name: "Morgana", competitor_kind: "agent" }
+            { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
+            { player_id: "player-2", display_name: "Morgana", competitor_kind: "agent" }
           ]
         }}
       />
@@ -81,9 +81,9 @@ describe("MatchDetail", () => {
           max_player_count: 5,
           open_slot_count: 2,
           roster: [
-            { display_name: "Arthur", competitor_kind: "human" },
-            { display_name: "Arthur", competitor_kind: "human" },
-            { display_name: "Arthur", competitor_kind: "agent" }
+            { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
+            { player_id: "player-2", display_name: "Arthur", competitor_kind: "human" },
+            { player_id: "player-3", display_name: "Arthur", competitor_kind: "agent" }
           ]
         }}
       />

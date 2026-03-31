@@ -1,7 +1,13 @@
-import type { SpectatorMatchEnvelope } from "../../lib/types";
+import type {
+  PublicMatchRosterRow,
+  SpectatorMatchEnvelope,
+  TreatyRecord,
+  AllianceRecord
+} from "../../lib/types";
 
 type MatchLiveViewProps = {
   envelope: SpectatorMatchEnvelope;
+  roster: PublicMatchRosterRow[];
   liveStatus: "live" | "not_live";
 };
 
@@ -22,8 +28,29 @@ const summaryRows: Array<{
   { label: "Alliances", value: (envelope) => envelope.data.alliances.length }
 ];
 
-export function MatchLiveView({ envelope, liveStatus }: MatchLiveViewProps) {
-  const latestWorldMessage = envelope.data.world_messages.at(-1) ?? null;
+export function MatchLiveView({ envelope, roster, liveStatus }: MatchLiveViewProps) {
+  const playerLabels = new Map(roster.map((entry) => [entry.player_id, entry.display_name]));
+  const resolvePlayerLabel = (playerId: string) => playerLabels.get(playerId) ?? playerId;
+
+  const renderUnavailable = (message: string) => {
+    if (liveStatus === "not_live") {
+      return <p>{message}</p>;
+    }
+
+    return null;
+  };
+
+  const renderTreatySummary = (treaty: TreatyRecord) => {
+    const treatyType = treaty.treaty_type.replaceAll("_", " ");
+    return `${resolvePlayerLabel(treaty.player_a_id)} and ${resolvePlayerLabel(
+      treaty.player_b_id
+    )} • ${treatyType} • ${treaty.status}`;
+  };
+
+  const renderAllianceSummary = (alliance: AllianceRecord) => {
+    const memberLabels = alliance.members.map((member) => resolvePlayerLabel(member.player_id));
+    return `${alliance.name}: ${memberLabels.join(", ")}`;
+  };
 
   return (
     <>
@@ -61,12 +88,56 @@ export function MatchLiveView({ envelope, liveStatus }: MatchLiveViewProps) {
       </section>
 
       <section className="panel panel-section">
-        <h2>Latest world message</h2>
-        {latestWorldMessage === null ? (
-          <p>No public world message has been broadcast yet.</p>
+        <h2>World chat</h2>
+        {renderUnavailable("World chat is unavailable while the spectator feed is not live.") ??
+        (envelope.data.world_messages.length === 0 ? (
+          <p>No public world chat has been broadcast yet.</p>
         ) : (
-          <p>{latestWorldMessage.content}</p>
-        )}
+          <ul className="roster-list" aria-label="World chat">
+            {envelope.data.world_messages
+              .slice(-5)
+              .toReversed()
+              .map((message) => (
+                <li key={message.message_id} className="roster-row">
+                  <span>{`${resolvePlayerLabel(message.sender_id)}: ${message.content}`}</span>
+                </li>
+              ))}
+          </ul>
+        ))}
+      </section>
+
+      <section className="panel panel-section">
+        <h2>Treaty status</h2>
+        {renderUnavailable("Treaty status is unavailable while the spectator feed is not live.") ??
+        (envelope.data.treaties.length === 0 ? (
+          <p>No public treaties are active right now.</p>
+        ) : (
+          <ul className="roster-list" aria-label="Treaty status">
+            {envelope.data.treaties.map((treaty) => (
+              <li key={treaty.treaty_id} className="roster-row">
+                <span>{renderTreatySummary(treaty)}</span>
+              </li>
+            ))}
+          </ul>
+        ))}
+      </section>
+
+      <section className="panel panel-section">
+        <h2>Alliance membership</h2>
+        {renderUnavailable(
+          "Alliance membership is unavailable while the spectator feed is not live."
+        ) ??
+        (envelope.data.alliances.length === 0 ? (
+          <p>No public alliances are visible right now.</p>
+        ) : (
+          <ul className="roster-list" aria-label="Alliance membership">
+            {envelope.data.alliances.map((alliance) => (
+              <li key={alliance.alliance_id} className="roster-row">
+                <span>{renderAllianceSummary(alliance)}</span>
+              </li>
+            ))}
+          </ul>
+        ))}
       </section>
     </>
   );

@@ -58,6 +58,7 @@ CompetitorKind = Literal["human", "agent"]
 
 
 class PublicMatchRosterRow(StrictModel):
+    player_id: str
     display_name: str
     competitor_kind: CompetitorKind
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from server.auth import hash_api_key
 from server.data.maps import load_uk_1900_map
@@ -148,6 +148,7 @@ class MatchRecord:
     current_player_count: int | None = None
     joinable_player_ids: list[str] = field(default_factory=list)
     agent_profiles: list[AgentProfileResponse] = field(default_factory=list)
+    public_competitor_kinds: dict[str, Literal["human", "agent"]] = field(default_factory=dict)
     joined_agents: dict[str, str] = field(default_factory=dict)
     joined_humans: dict[str, str] = field(default_factory=dict)
     order_submissions: list[OrderEnvelope] = field(default_factory=list)
@@ -226,6 +227,7 @@ class InMemoryMatchRegistry:
             current_player_count=record.current_player_count,
             joinable_player_ids=list(record.joinable_player_ids),
             agent_profiles=[],
+            public_competitor_kinds=dict(record.public_competitor_kinds),
             joined_agents=dict(record.joined_agents),
             joined_humans=dict(record.joined_humans),
             order_submissions=[
@@ -1398,6 +1400,11 @@ def build_seeded_match_records(
             max_player_count=5,
             current_player_count=3,
             agent_profiles=seeded_profiles,
+            public_competitor_kinds={
+                "player-1": "human",
+                "player-2": "agent",
+                "player-3": "agent",
+            },
             joined_agents={
                 f"agent-{player_id}": player_id
                 for player_id in _seeded_match_state_payload()["players"]

@@ -80,10 +80,38 @@ describe("MatchLiveView", () => {
             direct_messages: [],
             group_chats: [],
             group_messages: [],
-            treaties: [],
-            alliances: []
+            treaties: [
+              {
+                treaty_id: 7,
+                player_a_id: "player-1",
+                player_b_id: "player-9",
+                treaty_type: "trade",
+                status: "active",
+                proposed_by: "player-1",
+                proposed_tick: 140,
+                signed_tick: 141,
+                withdrawn_by: null,
+                withdrawn_tick: null
+              }
+            ],
+            alliances: [
+              {
+                alliance_id: "alliance-red",
+                name: "Western Accord",
+                leader_id: "player-1",
+                formed_tick: 120,
+                members: [
+                  { player_id: "player-1", joined_tick: 120 },
+                  { player_id: "player-9", joined_tick: 121 }
+                ]
+              }
+            ]
           }
         }}
+        roster={[
+          { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
+          { player_id: "player-2", display_name: "Morgana", competitor_kind: "agent" }
+        ]}
         liveStatus="live"
       />
     );
@@ -93,8 +121,50 @@ describe("MatchLiveView", () => {
     const summary = screen.getByLabelText("Live spectator summary");
     expect(within(summary).getByText("143")).toBeVisible();
     expect(within(summary).getAllByText("1").length).toBeGreaterThan(0);
-    expect(screen.getByText("War drums.")).toBeVisible();
+    expect(screen.getByText("Arthur: War drums.")).toBeVisible();
     expect(screen.getByText("player-2")).toBeVisible();
     expect(screen.getByText("manchester")).toBeVisible();
+    expect(screen.getByText("Arthur and player-9 • trade • active")).toBeVisible();
+    expect(screen.getByText("Western Accord: Arthur, player-9")).toBeVisible();
+  });
+
+  it("renders explicit empty states for text-first situation-room panels", () => {
+    render(
+      <MatchLiveView
+        envelope={{
+          type: "tick_update",
+          data: {
+            match_id: "match-empty",
+            viewer_role: "spectator",
+            player_id: null,
+            state: {
+              match_id: "match-empty",
+              tick: 1,
+              cities: {},
+              armies: [],
+              players: {},
+              victory: {
+                leading_alliance: null,
+                cities_held: 0,
+                threshold: 13,
+                countdown_ticks_remaining: null
+              }
+            },
+            world_messages: [],
+            direct_messages: [],
+            group_chats: [],
+            group_messages: [],
+            treaties: [],
+            alliances: []
+          }
+        }}
+        roster={[]}
+        liveStatus="live"
+      />
+    );
+
+    expect(screen.getByText("No public world chat has been broadcast yet.")).toBeVisible();
+    expect(screen.getByText("No public treaties are active right now.")).toBeVisible();
+    expect(screen.getByText("No public alliances are visible right now.")).toBeVisible();
   });
 });

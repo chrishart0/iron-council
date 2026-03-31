@@ -111,8 +111,32 @@ function makeEnvelope(tick: number) {
       direct_messages: [],
       group_chats: [],
       group_messages: [],
-      treaties: [],
-      alliances: []
+      treaties: [
+        {
+          treaty_id: tick,
+          player_a_id: "player-1",
+          player_b_id: "player-9",
+          treaty_type: "trade",
+          status: "active",
+          proposed_by: "player-1",
+          proposed_tick: tick - 2,
+          signed_tick: tick - 1,
+          withdrawn_by: null,
+          withdrawn_tick: null
+        }
+      ],
+      alliances: [
+        {
+          alliance_id: "alliance-red",
+          name: "Western Accord",
+          leader_id: "player-1",
+          formed_tick: 120,
+          members: [
+            { player_id: "player-1", joined_tick: 120 },
+            { player_id: "player-9", joined_tick: 121 }
+          ]
+        }
+      ]
     }
   };
 }
@@ -149,7 +173,10 @@ describe("PublicMatchLivePage", () => {
         current_player_count: 3,
         max_player_count: 5,
         open_slot_count: 2,
-        roster: []
+        roster: [
+          { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
+          { player_id: "player-2", display_name: "Morgana", competitor_kind: "agent" }
+        ]
       })
     });
 
@@ -188,7 +215,10 @@ describe("PublicMatchLivePage", () => {
         current_player_count: 3,
         max_player_count: 5,
         open_slot_count: 2,
-        roster: []
+        roster: [
+          { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
+          { player_id: "player-2", display_name: "Morgana", competitor_kind: "agent" }
+        ]
       })
     });
 
@@ -212,8 +242,10 @@ describe("PublicMatchLivePage", () => {
       expect(screen.getByText("143")).toBeVisible();
     });
 
-    expect(screen.getByText("War drums.")).toBeVisible();
+    expect(screen.getByText("Arthur: War drums.")).toBeVisible();
     expect(screen.getByText("manchester")).toBeVisible();
+    expect(screen.getByText("Arthur and player-9 • trade • active")).toBeVisible();
+    expect(screen.getByText("Western Accord: Arthur, player-9")).toBeVisible();
 
     socket?.emitMessage(makeEnvelope(144));
 
@@ -221,7 +253,7 @@ describe("PublicMatchLivePage", () => {
       expect(screen.getByText("144")).toBeVisible();
     });
 
-    expect(screen.getByText("Advance at dawn.")).toBeVisible();
+    expect(screen.getByText("Arthur: Advance at dawn.")).toBeVisible();
     expect(screen.getByText("leeds")).toBeVisible();
   });
 
@@ -237,7 +269,7 @@ describe("PublicMatchLivePage", () => {
         current_player_count: 3,
         max_player_count: 5,
         open_slot_count: 2,
-        roster: []
+        roster: [{ player_id: "player-1", display_name: "Arthur", competitor_kind: "human" }]
       })
     });
 
@@ -269,7 +301,7 @@ describe("PublicMatchLivePage", () => {
         current_player_count: 3,
         max_player_count: 5,
         open_slot_count: 2,
-        roster: []
+        roster: [{ player_id: "player-1", display_name: "Arthur", competitor_kind: "human" }]
       })
     });
 
@@ -301,5 +333,15 @@ describe("PublicMatchLivePage", () => {
 
     expect(screen.getByText("Showing the last spectator update. Reconnect to resume live viewing.")).toBeVisible();
     expect(screen.getAllByText("Not live").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("World chat is unavailable while the spectator feed is not live.")
+    ).toBeVisible();
+    expect(
+      screen.getByText("Treaty status is unavailable while the spectator feed is not live.")
+    ).toBeVisible();
+    expect(
+      screen.getByText("Alliance membership is unavailable while the spectator feed is not live.")
+    ).toBeVisible();
+    expect(screen.queryByText("Arthur: War drums.")).not.toBeInTheDocument();
   });
 });

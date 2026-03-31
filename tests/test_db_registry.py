@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from server.agent_registry import (
@@ -11,6 +14,7 @@ from server.agent_registry import (
 )
 from server.auth import hash_api_key
 from server.db import registry as db_registry_module
+from server.db.models import Player
 from server.db.registry import (
     MatchHistoryNotFoundError,
     MatchLobbyCreationError,
@@ -36,7 +40,11 @@ from server.models.orders import OrderEnvelope
 from server.runtime import MatchRuntime
 from sqlalchemy import create_engine, text
 
-from tests.support import insert_completed_match_fixture, insert_seeded_agent_player
+from tests.support import (
+    build_persisted_player_id,
+    insert_completed_match_fixture,
+    insert_seeded_agent_player,
+)
 
 
 def test_load_match_registry_from_database_preserves_persisted_alliance_metadata(
@@ -82,7 +90,10 @@ def test_load_match_registry_from_database_falls_back_to_derived_alliances(
                 "id": "00000000-0000-0000-0000-000000000499",
                 "match_id": "00000000-0000-0000-0000-000000000101",
                 "name": "Contradictory Persisted Alliance",
-                "leader_id": "00000000-0000-0000-0000-000000000501",
+                "leader_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000101",
+                    public_player_id="player-1",
+                ),
                 "formed_tick": 119,
                 "dissolved_tick": None,
             },
@@ -148,7 +159,9 @@ def test_create_match_lobby_persists_match_and_creator_membership_atomically(
         "current_player_count": 1,
         "max_player_count": 4,
         "open_slot_count": 3,
-        "roster": [{"display_name": "Morgana", "competitor_kind": "agent"}],
+        "roster": [
+            {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"}
+        ],
     }
 
     engine = create_engine(database_url)
@@ -332,7 +345,10 @@ def test_start_match_lobby_persists_active_transition_and_reloadable_runtime_sta
         database_url=database_url,
         match_id=created.response.match_id,
         agent_id="agent-player-3",
-        persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff1",
+        persisted_player_id=build_persisted_player_id(
+            match_id=created.response.match_id,
+            public_player_id="player-2",
+        ),
     )
 
     started = start_match_lobby(
@@ -369,8 +385,8 @@ def test_start_match_lobby_persists_active_transition_and_reloadable_runtime_sta
         "max_player_count": 4,
         "open_slot_count": 2,
         "roster": [
-            {"display_name": "Gawain", "competitor_kind": "agent"},
-            {"display_name": "Morgana", "competitor_kind": "agent"},
+            {"player_id": "player-2", "display_name": "Gawain", "competitor_kind": "agent"},
+            {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"},
         ],
     }
 
@@ -449,7 +465,10 @@ def test_start_match_lobby_rejects_non_creator_not_ready_and_terminal_matches(
         database_url=database_url,
         match_id=outsider.response.match_id,
         agent_id="agent-player-3",
-        persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff2",
+        persisted_player_id=build_persisted_player_id(
+            match_id=outsider.response.match_id,
+            public_player_id="player-2",
+        ),
     )
     with pytest.raises(MatchLobbyStartError) as outsider_error:
         start_match_lobby(
@@ -476,7 +495,10 @@ def test_start_match_lobby_rejects_non_creator_not_ready_and_terminal_matches(
         database_url=database_url,
         match_id=active.response.match_id,
         agent_id="agent-player-3",
-        persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff3",
+        persisted_player_id=build_persisted_player_id(
+            match_id=active.response.match_id,
+            public_player_id="player-2",
+        ),
     )
     engine = create_engine(database_url)
     with engine.begin() as connection:
@@ -509,7 +531,10 @@ def test_start_match_lobby_rejects_non_creator_not_ready_and_terminal_matches(
         database_url=database_url,
         match_id=completed.response.match_id,
         agent_id="agent-player-3",
-        persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff4",
+        persisted_player_id=build_persisted_player_id(
+            match_id=completed.response.match_id,
+            public_player_id="player-2",
+        ),
     )
     with engine.begin() as connection:
         connection.execute(
@@ -573,7 +598,10 @@ def test_start_match_lobby_rejects_same_user_different_api_key(
         database_url=database_url,
         match_id=created.response.match_id,
         agent_id="agent-player-3",
-        persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff8",
+        persisted_player_id=build_persisted_player_id(
+            match_id=created.response.match_id,
+            public_player_id="player-2",
+        ),
     )
 
     sibling_api_key = "sibling-morgana-key"
@@ -646,7 +674,10 @@ def test_start_match_lobby_rejects_invalid_api_key_missing_match_and_paused_matc
         database_url=database_url,
         match_id=created.response.match_id,
         agent_id="agent-player-3",
-        persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff5",
+        persisted_player_id=build_persisted_player_id(
+            match_id=created.response.match_id,
+            public_player_id="player-2",
+        ),
     )
 
     engine = create_engine(database_url)
@@ -689,7 +720,10 @@ def test_start_match_lobby_builds_started_record_without_registry_reload(
         database_url=database_url,
         match_id=created.response.match_id,
         agent_id="agent-player-3",
-        persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff6",
+        persisted_player_id=build_persisted_player_id(
+            match_id=created.response.match_id,
+            public_player_id="player-2",
+        ),
     )
 
     def fail_registry_reload(*args: object, **kwargs: object) -> InMemoryMatchRegistry:
@@ -811,7 +845,10 @@ def test_load_match_registry_from_database_matches_persisted_alliances_by_member
                 "id": "00000000-0000-0000-0000-000000000402",
                 "match_id": "00000000-0000-0000-0000-000000000101",
                 "name": "Blue Banner",
-                "leader_id": "00000000-0000-0000-0000-000000000503",
+                "leader_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000101",
+                    public_player_id="player-3",
+                ),
                 "formed_tick": 130,
                 "dissolved_tick": None,
             },
@@ -826,7 +863,10 @@ def test_load_match_registry_from_database_matches_persisted_alliances_by_member
             ),
             {
                 "id": "00000000-0000-0000-0000-000000000401",
-                "leader_id": "00000000-0000-0000-0000-000000000501",
+                "leader_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000101",
+                    public_player_id="player-1",
+                ),
                 "formed_tick": 120,
             },
         )
@@ -840,17 +880,26 @@ def test_load_match_registry_from_database_matches_persisted_alliances_by_member
             ),
             [
                 {
-                    "id": "00000000-0000-0000-0000-000000000501",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-1",
+                    ),
                     "alliance_id": "00000000-0000-0000-0000-000000000401",
                     "alliance_joined_tick": 125,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000502",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-2",
+                    ),
                     "alliance_id": "00000000-0000-0000-0000-000000000401",
                     "alliance_joined_tick": 120,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000503",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-3",
+                    ),
                     "alliance_id": "00000000-0000-0000-0000-000000000402",
                     "alliance_joined_tick": 130,
                 },
@@ -910,7 +959,10 @@ def test_load_match_registry_from_database_falls_back_when_persisted_leader_is_n
             ),
             {
                 "id": "00000000-0000-0000-0000-000000000401",
-                "leader_id": "00000000-0000-0000-0000-000000000503",
+                "leader_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000101",
+                    public_player_id="player-3",
+                ),
             },
         )
 
@@ -959,7 +1011,10 @@ def test_load_match_registry_from_database_falls_back_when_membership_sets_do_no
                 "id": "00000000-0000-0000-0000-000000000402",
                 "match_id": "00000000-0000-0000-0000-000000000101",
                 "name": "Blue Banner",
-                "leader_id": "00000000-0000-0000-0000-000000000503",
+                "leader_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000101",
+                    public_player_id="player-3",
+                ),
                 "formed_tick": 130,
                 "dissolved_tick": None,
             },
@@ -974,17 +1029,26 @@ def test_load_match_registry_from_database_falls_back_when_membership_sets_do_no
             ),
             [
                 {
-                    "id": "00000000-0000-0000-0000-000000000501",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-1",
+                    ),
                     "alliance_id": "00000000-0000-0000-0000-000000000401",
                     "alliance_joined_tick": 120,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000502",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-2",
+                    ),
                     "alliance_id": "00000000-0000-0000-0000-000000000402",
                     "alliance_joined_tick": 120,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000503",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-3",
+                    ),
                     "alliance_id": "00000000-0000-0000-0000-000000000402",
                     "alliance_joined_tick": 130,
                 },
@@ -1277,8 +1341,14 @@ def test_get_public_leaderboard_keeps_agent_rows_distinct_when_same_user_has_mul
             ),
             {
                 "shared_user_id": "00000000-0000-0000-0000-000000009999",
-                "player_one_id": "00000000-0000-0000-0000-000000000702",
-                "player_two_id": "00000000-0000-0000-0000-000000000703",
+                "player_one_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000201",
+                    public_player_id="player-2",
+                ),
+                "player_two_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000201",
+                    public_player_id="player-3",
+                ),
             },
         )
 
@@ -1383,9 +1453,21 @@ def test_get_public_match_detail_returns_compact_public_metadata_and_sorted_rost
         "max_player_count": 5,
         "open_slot_count": 2,
         "roster": [
-            {"display_name": "Arthur", "competitor_kind": "human"},
-            {"display_name": "Gawain", "competitor_kind": "agent"},
-            {"display_name": "Morgana", "competitor_kind": "agent"},
+            {
+                "player_id": "player-1",
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+            },
+            {
+                "player_id": "player-3",
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+            },
+            {
+                "player_id": "player-2",
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+            },
         ],
     }
 
@@ -1416,7 +1498,10 @@ def test_get_public_match_detail_stably_orders_visible_roster_rows(
             ),
             [
                 {
-                    "id": "00000000-0000-0000-0000-000000000771",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-1",
+                    ),
                     "user_id": "00000000-0000-0000-0000-000000000371",
                     "match_id": "00000000-0000-0000-0000-000000000101",
                     "display_name": "Alex",
@@ -1428,7 +1513,10 @@ def test_get_public_match_detail_stably_orders_visible_roster_rows(
                     "eliminated_at": None,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000772",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-2",
+                    ),
                     "user_id": "00000000-0000-0000-0000-000000000372",
                     "match_id": "00000000-0000-0000-0000-000000000101",
                     "display_name": "Alex",
@@ -1440,7 +1528,10 @@ def test_get_public_match_detail_stably_orders_visible_roster_rows(
                     "eliminated_at": None,
                 },
                 {
-                    "id": "00000000-0000-0000-0000-000000000773",
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-3",
+                    ),
                     "user_id": "00000000-0000-0000-0000-000000000373",
                     "match_id": "00000000-0000-0000-0000-000000000101",
                     "display_name": "alex",
@@ -1460,10 +1551,119 @@ def test_get_public_match_detail_stably_orders_visible_roster_rows(
     )
 
     assert [row.model_dump(mode="json") for row in detail.roster] == [
-        {"display_name": "Alex", "competitor_kind": "human"},
-        {"display_name": "alex", "competitor_kind": "human"},
-        {"display_name": "Alex", "competitor_kind": "agent"},
+        {"player_id": "player-2", "display_name": "Alex", "competitor_kind": "human"},
+        {"player_id": "player-3", "display_name": "alex", "competitor_kind": "human"},
+        {"player_id": "player-1", "display_name": "Alex", "competitor_kind": "agent"},
     ]
+
+
+def test_get_public_match_detail_maps_canonical_player_ids_from_persisted_ids_not_row_order(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-public-match-detail-player-ids.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM players WHERE match_id = :match_id"),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO players (
+                    id, user_id, match_id, display_name, is_agent, api_key_id, elo_rating,
+                    alliance_id, alliance_joined_tick, eliminated_at
+                ) VALUES (
+                    :id, :user_id, :match_id, :display_name, :is_agent, :api_key_id, :elo_rating,
+                    :alliance_id, :alliance_joined_tick, :eliminated_at
+                )
+                """
+            ),
+            [
+                {
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-3",
+                    ),
+                    "user_id": "00000000-0000-0000-0000-000000000303",
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "display_name": "Gawain",
+                    "is_agent": True,
+                    "api_key_id": "00000000-0000-0000-0000-000000000203",
+                    "elo_rating": 1175,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-1",
+                    ),
+                    "user_id": "00000000-0000-0000-0000-000000000301",
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "display_name": "Arthur",
+                    "is_agent": False,
+                    "api_key_id": "00000000-0000-0000-0000-000000000201",
+                    "elo_rating": 1210,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-2",
+                    ),
+                    "user_id": "00000000-0000-0000-0000-000000000302",
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "display_name": "Morgana",
+                    "is_agent": True,
+                    "api_key_id": "00000000-0000-0000-0000-000000000202",
+                    "elo_rating": 1190,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+            ],
+        )
+
+    detail = get_public_match_detail(
+        database_url=database_url,
+        match_id="00000000-0000-0000-0000-000000000101",
+    )
+
+    assert [row.model_dump(mode="json") for row in detail.roster] == [
+        {"player_id": "player-1", "display_name": "Arthur", "competitor_kind": "human"},
+        {"player_id": "player-3", "display_name": "Gawain", "competitor_kind": "agent"},
+        {"player_id": "player-2", "display_name": "Morgana", "competitor_kind": "agent"},
+    ]
+
+
+def test_build_persisted_player_mapping_ignores_invalid_ids_and_rejects_duplicates() -> None:
+    assert (
+        db_registry_module._build_persisted_player_mapping(
+            canonical_player_ids=["player-1"],
+            persisted_players=cast(Sequence[Player], [SimpleNamespace(id="not-a-player-row-id")]),
+        )
+        == {}
+    )
+
+    assert (
+        db_registry_module._build_persisted_player_mapping(
+            canonical_player_ids=["player-1", "player-2"],
+            persisted_players=cast(
+                Sequence[Player],
+                [
+                    SimpleNamespace(id="00000000-0000-0000-0001-000000000001"),
+                    SimpleNamespace(id="00000000-0000-0000-0002-000000000001"),
+                ],
+            ),
+        )
+        == {}
+    )
 
 
 def test_get_public_match_detail_treats_completed_and_unknown_matches_as_not_found(

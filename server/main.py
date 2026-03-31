@@ -2092,18 +2092,38 @@ def _build_in_memory_public_match_roster(
         for player_id, player_state in sorted(record.state.players.items())
         if player_state.cities_owned and not player_state.is_eliminated
     ]
-    if not visible_player_ids:
-        visible_player_ids = [
-            agent_id.removeprefix("agent-")
-            for agent_id in sorted(record.joined_agents)
+    joined_human_player_ids = sorted(set(record.joined_humans.values()))
+    joined_agent_player_ids = sorted(
+        {
+            player_id
+            for agent_id, player_id in record.joined_agents.items()
             if agent_id.startswith("agent-")
-        ]
+        }
+    )
+
+    if (
+        joined_human_player_ids
+        and len(joined_human_player_ids) == record.public_current_player_count
+    ):
+        roster_player_ids = joined_human_player_ids
+    else:
+        joined_player_ids = sorted(set(joined_human_player_ids) | set(joined_agent_player_ids))
+        roster_player_ids = joined_player_ids or visible_player_ids
+
+    if not roster_player_ids:
+        roster_player_ids = visible_player_ids
+
+    human_player_ids = set(joined_human_player_ids)
     roster = [
         PublicMatchRosterRow(
+            player_id=player_id,
             display_name=profile.display_name,
-            competitor_kind="agent",
+            competitor_kind=record.public_competitor_kinds.get(
+                player_id,
+                "human" if player_id in human_player_ids else "agent",
+            ),
         )
-        for player_id in visible_player_ids
+        for player_id in roster_player_ids
         if (profile := registry.get_agent_profile(f"agent-{player_id}")) is not None
     ]
     ordered_roster = sorted(

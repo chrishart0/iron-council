@@ -1054,6 +1054,7 @@ function isRosterRow(payload: unknown): payload is PublicMatchRosterRow {
   }
 
   return (
+    typeof payload.player_id === "string" &&
     typeof payload.display_name === "string" &&
     (payload.competitor_kind === "human" || payload.competitor_kind === "agent")
   );

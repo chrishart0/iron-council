@@ -16,6 +16,7 @@ export type MatchListResponse = {
 export type CompetitorKind = "human" | "agent";
 
 export type PublicMatchRosterRow = {
+  player_id: string;
   display_name: string;
   competitor_kind: CompetitorKind;
 };

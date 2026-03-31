@@ -157,6 +157,10 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
             matches=matches,
             player_rows=player_rows,
         )
+        public_competitor_kinds_by_match = _load_public_competitor_kinds_by_match(
+            matches=matches,
+            player_rows=player_rows,
+        )
 
         for match in matches:
             match_id = str(match.id)
@@ -180,6 +184,7 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
                     else []
                 ),
                 agent_profiles=agent_profiles_by_match.get(match_id, build_seeded_agent_profiles()),
+                public_competitor_kinds=public_competitor_kinds_by_match.get(match_id, {}),
                 joined_agents=joined_agents,
                 joined_humans=joined_humans,
                 alliances=persisted_alliances,
@@ -298,7 +303,7 @@ def create_match_lobby(
         )
         session.add(
             Player(
-                id=str(uuid4()),
+                id=_build_match_scoped_player_id(match_id=match_id, join_index=1),
                 user_id=creator_user_id,
                 match_id=match_id,
                 display_name=creator_display_name or authenticated_human_user_id or "Human player",
@@ -359,6 +364,7 @@ def create_match_lobby(
                 f"player-{player_index}" for player_index in range(2, request.max_players + 1)
             ],
             agent_profiles=[creator_profile] if creator_profile is not None else [],
+            public_competitor_kinds={creator_player_id: "agent" if creator_is_agent else "human"},
             joined_agents=(
                 {creator_profile.agent_id: creator_player_id} if creator_profile is not None else {}
             ),
@@ -436,8 +442,11 @@ def join_match(
 
             session.add(
                 Player(
-                    id=_build_joined_player_id(
-                        len(joined_record.joined_agents) + len(joined_record.joined_humans) + 1
+                    id=_build_match_scoped_player_id(
+                        match_id=match_id,
+                        join_index=len(joined_record.joined_agents)
+                        + len(joined_record.joined_humans)
+                        + 1,
                     ),
                     user_id=authenticated_agent_resolution.user_id,
                     match_id=match_id,
@@ -487,8 +496,11 @@ def join_match(
 
         session.add(
             Player(
-                id=_build_joined_player_id(
-                    len(joined_record.joined_agents) + len(joined_record.joined_humans) + 1
+                id=_build_match_scoped_player_id(
+                    match_id=match_id,
+                    join_index=len(joined_record.joined_agents)
+                    + len(joined_record.joined_humans)
+                    + 1,
                 ),
                 user_id=authenticated_human_user_id,
                 match_id=match_id,
@@ -654,6 +666,10 @@ def _load_match_record_from_session(*, session: Session, match: Match) -> MatchR
         player_rows=player_rows,
         api_key_rows=api_key_rows,
     ).get(match_id, [])
+    public_competitor_kinds = _load_public_competitor_kinds_by_match(
+        matches=[match],
+        player_rows=player_rows,
+    ).get(match_id, {})
     joinable_player_ids = (
         sorted(
             player_id
@@ -673,6 +689,7 @@ def _load_match_record_from_session(*, session: Session, match: Match) -> MatchR
         current_player_count=len(joined_agents) + len(joined_humans),
         joinable_player_ids=joinable_player_ids,
         agent_profiles=agent_profiles,
+        public_competitor_kinds=public_competitor_kinds,
         joined_agents=joined_agents,
         joined_humans=joined_humans,
         authenticated_agent_keys=authenticated_agent_keys,
@@ -868,11 +885,16 @@ def get_public_match_detail(*, database_url: str, match_id: str) -> PublicMatchD
         if match is None:
             raise PublicMatchDetailNotFoundError(match_id)
 
+        state = MatchState.model_validate(match.state)
         players = session.scalars(
             select(Player)
             .where(Player.match_id == match.id)
             .order_by(Player.display_name, Player.is_agent, Player.id)
         ).all()
+        persisted_player_mapping = _build_persisted_player_mapping(
+            canonical_player_ids=sorted(state.players),
+            persisted_players=players,
+        )
 
     return PublicMatchDetailResponse(
         match_id=str(match.id),
@@ -885,10 +907,12 @@ def get_public_match_detail(*, database_url: str, match_id: str) -> PublicMatchD
         open_slot_count=max(int(match.config.get("max_players", 0)) - len(players), 0),
         roster=[
             PublicMatchRosterRow(
+                player_id=canonical_player_id,
                 display_name=player.display_name,
                 competitor_kind="agent" if player.is_agent else "human",
             )
             for player in sorted(players, key=_public_match_roster_sort_key)
+            if (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None
         ],
     )
 
@@ -1223,22 +1247,88 @@ def _load_joined_humans_by_match(
     return joined_humans_by_match
 
 
+def _load_public_competitor_kinds_by_match(
+    *,
+    matches: Sequence[Match],
+    player_rows: Sequence[Player],
+) -> dict[str, dict[str, Literal["human", "agent"]]]:
+    players_by_match: dict[str, list[Player]] = defaultdict(list)
+    for player in player_rows:
+        players_by_match[str(player.match_id)].append(player)
+
+    competitor_kinds_by_match: dict[str, dict[str, Literal["human", "agent"]]] = {}
+    for match in matches:
+        match_id = str(match.id)
+        state = MatchState.model_validate(match.state)
+        persisted_player_mapping = _build_persisted_player_mapping(
+            canonical_player_ids=sorted(state.players),
+            persisted_players=players_by_match.get(match_id, []),
+        )
+        competitor_kinds: dict[str, Literal["human", "agent"]] = {
+            canonical_player_id: ("agent" if player.is_agent else "human")
+            for player in players_by_match.get(match_id, [])
+            if (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None
+        }
+        if competitor_kinds:
+            competitor_kinds_by_match[match_id] = competitor_kinds
+
+    return competitor_kinds_by_match
+
+
 def _build_persisted_player_mapping(
     *,
     canonical_player_ids: list[str],
     persisted_players: Sequence[Player],
 ) -> dict[str, str]:
-    sorted_players = sorted(persisted_players, key=lambda player: str(player.id))
-    if len(sorted_players) > len(canonical_player_ids):
-        return {}
+    canonical_player_id_set = set(canonical_player_ids)
+    persisted_player_mapping: dict[str, str] = {}
+    seen_canonical_player_ids: set[str] = set()
+    for player in persisted_players:
+        canonical_player_id = _canonical_player_id_from_persisted_player_id(
+            persisted_player_id=str(player.id),
+            canonical_player_ids=canonical_player_id_set,
+        )
+        if canonical_player_id is None:
+            continue
+        if canonical_player_id in seen_canonical_player_ids:
+            return {}
+        persisted_player_mapping[str(player.id)] = canonical_player_id
+        seen_canonical_player_ids.add(canonical_player_id)
 
-    return {
-        str(player.id): canonical_player_ids[index] for index, player in enumerate(sorted_players)
-    }
+    return persisted_player_mapping
+
+
+def _canonical_player_id_from_persisted_player_id(
+    *, persisted_player_id: str, canonical_player_ids: set[str]
+) -> str | None:
+    persisted_segments = persisted_player_id.split("-")
+    if len(persisted_segments) != 5:
+        return None
+    try:
+        join_index = int(persisted_segments[-1], 16)
+    except ValueError:
+        return None
+
+    canonical_player_id = f"player-{join_index}"
+    if canonical_player_id not in canonical_player_ids:
+        return None
+    return canonical_player_id
 
 
 def _build_joined_player_id(join_index: int) -> str:
     return f"ffffffff-ffff-ffff-ffff-{join_index:012x}"
+
+
+def _build_match_scoped_player_id(*, match_id: str, join_index: int) -> str:
+    cleaned_match_id = match_id.replace("-", "")
+    match_prefix = (cleaned_match_id[:16] + cleaned_match_id[-4:]).ljust(20, "f")
+    return (
+        f"{match_prefix[:8]}-"
+        f"{match_prefix[8:12]}-"
+        f"{match_prefix[12:16]}-"
+        f"{match_prefix[16:20]}-"
+        f"{join_index:012x}"
+    )
 
 
 def _build_human_actor_id(user_id: str) -> str:

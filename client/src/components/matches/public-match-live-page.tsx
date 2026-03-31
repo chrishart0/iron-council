@@ -247,6 +247,7 @@ export function PublicMatchLivePage({ matchId }: PublicMatchLivePageProps) {
       {liveState.envelope !== null ? (
         <MatchLiveView
           envelope={liveState.envelope}
+          roster={matchState.match.roster}
           liveStatus={liveState.status === "live" ? "live" : "not_live"}
         />
       ) : null}

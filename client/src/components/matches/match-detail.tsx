@@ -57,12 +57,11 @@ export function MatchDetail({ match }: MatchDetailProps) {
         ) : (
           <ul className="roster-list" aria-label="Public roster">
             {match.roster.map((entry, index) => (
-              <li
-                key={`${entry.competitor_kind}-${entry.display_name}-${index}`}
-                className="roster-row"
-              >
+              <li key={entry.player_id} className="roster-row">
                 <span>{entry.display_name}</span>
-                <span className="status-pill">{entry.competitor_kind === "human" ? "Human" : "Agent"}</span>
+                <span className="status-pill">
+                  {entry.competitor_kind === "human" ? "Human" : "Agent"}
+                </span>
               </li>
             ))}
           </ul>
