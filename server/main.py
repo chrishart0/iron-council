@@ -3,8 +3,9 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Annotated, Any, Final, cast
+from typing import Annotated, Any, Final, Literal, cast
 
 from fastapi import (
     APIRouter,
@@ -134,6 +135,14 @@ API_ERROR_RESPONSE_SCHEMA: dict[str, Any] = {"model": ApiErrorResponse}
 AUTHENTICATED_API_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class AuthenticatedLobbyActor:
+    kind: Literal["agent", "human"]
+    agent: AuthenticatedAgentContext | None = None
+    api_key: str | None = None
+    human_user_id: str | None = None
 
 
 def _authenticated_route_responses(
@@ -418,20 +427,11 @@ def get_authenticated_agent(
     registry: MatchRegistryDependency,
     api_key: ApiKeyHeader = None,
 ) -> AuthenticatedAgentContext:
-    if api_key is None:
-        raise ApiError(
-            status_code=HTTPStatus.UNAUTHORIZED,
-            code="invalid_api_key",
-            message="A valid active X-API-Key header is required.",
-        )
-
-    authenticated_agent = registry.resolve_authenticated_agent(api_key)
-    database_url = cast(str | None, request.app.state.history_database_url)
-    if authenticated_agent is None and database_url is not None:
-        authenticated_agent = resolve_authenticated_agent_context_from_db(
-            database_url=database_url,
-            api_key=api_key,
-        )
+    authenticated_agent = _resolve_authenticated_agent_context(
+        registry=registry,
+        history_database_url=cast(str | None, request.app.state.history_database_url),
+        api_key=api_key,
+    )
     if authenticated_agent is None:
         raise ApiError(
             status_code=HTTPStatus.UNAUTHORIZED,
@@ -439,6 +439,88 @@ def get_authenticated_agent(
             message="A valid active X-API-Key header is required.",
         )
     return authenticated_agent
+
+
+def _resolve_authenticated_agent_context(
+    *,
+    registry: InMemoryMatchRegistry,
+    history_database_url: str | None,
+    api_key: str | None,
+) -> AuthenticatedAgentContext | None:
+    if api_key is None:
+        return None
+
+    authenticated_agent = registry.resolve_authenticated_agent(api_key)
+    if authenticated_agent is None and history_database_url is not None:
+        authenticated_agent = resolve_authenticated_agent_context_from_db(
+            database_url=history_database_url,
+            api_key=api_key,
+        )
+    return authenticated_agent
+
+
+def _resolve_authenticated_human_user_id(
+    *,
+    settings: Settings,
+    authorization: str | None,
+) -> str:
+    if authorization is None:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code="invalid_player_auth",
+            message="Player routes require a valid Bearer token or active X-API-Key header.",
+        )
+
+    try:
+        token = extract_bearer_token(authorization)
+        human_context = validate_human_jwt(token, settings=settings)
+    except HumanJwtValidationError as exc:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code=exc.code,
+            message=exc.message,
+        ) from exc
+    return human_context.user_id
+
+
+def _resolve_authenticated_lobby_actor(
+    *,
+    registry: InMemoryMatchRegistry,
+    settings: Settings,
+    history_database_url: str | None,
+    api_key: str | None,
+    authorization: str | None,
+) -> AuthenticatedLobbyActor:
+    authenticated_agent = _resolve_authenticated_agent_context(
+        registry=registry,
+        history_database_url=history_database_url,
+        api_key=api_key,
+    )
+    if authenticated_agent is not None and api_key is not None:
+        return AuthenticatedLobbyActor(
+            kind="agent",
+            agent=authenticated_agent,
+            api_key=api_key,
+        )
+    if api_key is not None:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code="invalid_api_key",
+            message="A valid active X-API-Key header is required.",
+        )
+    if authorization is None and settings.human_jwt_secret is None:
+        raise ApiError(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            code="invalid_api_key",
+            message="A valid active X-API-Key header is required.",
+        )
+    return AuthenticatedLobbyActor(
+        kind="human",
+        human_user_id=_resolve_authenticated_human_user_id(
+            settings=settings,
+            authorization=authorization,
+        ),
+    )
 
 
 def _require_joined_player_id(
@@ -515,12 +597,11 @@ def _resolve_match_player_id(
     authorization: str | None,
 ) -> str:
     if api_key is not None:
-        authenticated_agent = registry.resolve_authenticated_agent(api_key)
-        if authenticated_agent is None and history_database_url is not None:
-            authenticated_agent = resolve_authenticated_agent_context_from_db(
-                database_url=history_database_url,
-                api_key=api_key,
-            )
+        authenticated_agent = _resolve_authenticated_agent_context(
+            registry=registry,
+            history_database_url=history_database_url,
+            api_key=api_key,
+        )
         if authenticated_agent is None:
             raise ApiError(
                 status_code=HTTPStatus.UNAUTHORIZED,
@@ -538,20 +619,14 @@ def _resolve_match_player_id(
             code="invalid_player_auth",
             message="Player routes require a valid Bearer token or active X-API-Key header.",
         )
-    try:
-        token = extract_bearer_token(authorization)
-        human_context = validate_human_jwt(token, settings=settings)
-    except HumanJwtValidationError as exc:
-        raise ApiError(
-            status_code=HTTPStatus.UNAUTHORIZED,
-            code=exc.code,
-            message=exc.message,
-        ) from exc
     return _resolve_human_player_id(
         registry=registry,
         history_database_url=history_database_url,
         match_id=match_id,
-        user_id=human_context.user_id,
+        user_id=_resolve_authenticated_human_user_id(
+            settings=settings,
+            authorization=authorization,
+        ),
     )
 
 
@@ -849,37 +924,56 @@ def create_app(
         ),
     )
     async def create_match_lobby_route(
-        request: MatchLobbyCreateRequest,
+        create_request: MatchLobbyCreateRequest,
         registry: MatchRegistryDependency,
-        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
         api_key: ApiKeyHeader = None,
+        authorization: AuthorizationHeader = None,
     ) -> MatchLobbyCreateResponse:
+        if history_database_url is None and api_key is None and authorization is None:
+            raise ApiError(
+                status_code=HTTPStatus.UNAUTHORIZED,
+                code="invalid_api_key",
+                message="A valid active X-API-Key header is required.",
+            )
+        authenticated_actor = _resolve_authenticated_lobby_actor(
+            registry=registry,
+            settings=settings,
+            history_database_url=history_database_url,
+            api_key=api_key,
+            authorization=authorization,
+        )
         if history_database_url is None:
             raise ApiError(
                 status_code=HTTPStatus.SERVICE_UNAVAILABLE,
                 code="match_lobby_creation_unavailable",
                 message="Authenticated match lobby creation is only available in DB-backed mode.",
             )
-        if api_key is None:
-            raise ApiError(
-                status_code=HTTPStatus.UNAUTHORIZED,
-                code="invalid_api_key",
-                message="A valid active X-API-Key header is required.",
-            )
-
         try:
             created_lobby = create_match_lobby(
                 database_url=history_database_url,
-                authenticated_agent_id=authenticated_agent.agent_id,
-                authenticated_agent_display_name=authenticated_agent.display_name,
-                authenticated_api_key_hash=hash_api_key(api_key),
-                request=request,
+                authenticated_agent_id=(
+                    authenticated_actor.agent.agent_id
+                    if authenticated_actor.agent is not None
+                    else None
+                ),
+                authenticated_agent_display_name=(
+                    authenticated_actor.agent.display_name
+                    if authenticated_actor.agent is not None
+                    else None
+                ),
+                authenticated_api_key_hash=(
+                    hash_api_key(authenticated_actor.api_key)
+                    if authenticated_actor.api_key is not None
+                    else None
+                ),
+                authenticated_human_user_id=authenticated_actor.human_user_id,
+                request=create_request,
             )
         except MatchLobbyCreationError as exc:
             raise ApiError(
                 status_code=(
                     HTTPStatus.UNAUTHORIZED
-                    if exc.code == "invalid_api_key"
+                    if exc.code in {"invalid_api_key", "invalid_player_auth"}
                     else HTTPStatus.BAD_REQUEST
                 ),
                 code=exc.code,
@@ -903,32 +997,42 @@ def create_app(
         match_id: str,
         request: Request,
         registry: MatchRegistryDependency,
-        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
         api_key: ApiKeyHeader = None,
+        authorization: AuthorizationHeader = None,
     ) -> MatchLobbyStartResponse:
-        del authenticated_agent
+        if history_database_url is None and api_key is None and authorization is None:
+            raise ApiError(
+                status_code=HTTPStatus.UNAUTHORIZED,
+                code="invalid_api_key",
+                message="A valid active X-API-Key header is required.",
+            )
+        authenticated_actor = _resolve_authenticated_lobby_actor(
+            registry=registry,
+            settings=settings,
+            history_database_url=history_database_url,
+            api_key=api_key,
+            authorization=authorization,
+        )
         if history_database_url is None:
             raise ApiError(
                 status_code=HTTPStatus.SERVICE_UNAVAILABLE,
                 code="match_lobby_start_unavailable",
                 message="Authenticated lobby start is only available in DB-backed mode.",
             )
-        if api_key is None:
-            raise ApiError(
-                status_code=HTTPStatus.UNAUTHORIZED,
-                code="invalid_api_key",
-                message="A valid active X-API-Key header is required.",
-            )
-
         try:
             started_lobby = start_match_lobby(
                 database_url=history_database_url,
                 match_id=match_id,
-                authenticated_api_key_hash=hash_api_key(api_key),
+                authenticated_api_key_hash=(
+                    hash_api_key(authenticated_actor.api_key)
+                    if authenticated_actor.api_key is not None
+                    else None
+                ),
+                authenticated_human_user_id=authenticated_actor.human_user_id,
             )
         except MatchLobbyStartError as exc:
             status_code = HTTPStatus.BAD_REQUEST
-            if exc.code == "invalid_api_key":
+            if exc.code in {"invalid_api_key", "invalid_player_auth"}:
                 status_code = HTTPStatus.UNAUTHORIZED
             elif exc.code == "match_not_found":
                 status_code = HTTPStatus.NOT_FOUND
@@ -1211,8 +1315,8 @@ def create_app(
         match_id: str,
         join_request: MatchJoinRequest,
         registry: MatchRegistryDependency,
-        authenticated_agent: Annotated[AuthenticatedAgentContext, Depends(get_authenticated_agent)],
         api_key: ApiKeyHeader = None,
+        authorization: AuthorizationHeader = None,
     ) -> MatchJoinResponse:
         record = registry.get_match(match_id)
         if record is None:
@@ -1220,6 +1324,12 @@ def create_app(
                 status_code=HTTPStatus.NOT_FOUND,
                 code="match_not_found",
                 message=f"Match '{match_id}' was not found.",
+            )
+        if api_key is None and authorization is None and record.status is not MatchStatus.LOBBY:
+            raise ApiError(
+                status_code=HTTPStatus.UNAUTHORIZED,
+                code="invalid_api_key",
+                message="A valid active X-API-Key header is required.",
             )
         if join_request.match_id != match_id:
             raise ApiError(
@@ -1231,19 +1341,40 @@ def create_app(
                 ),
             )
 
+        authenticated_actor = _resolve_authenticated_lobby_actor(
+            registry=registry,
+            settings=settings,
+            history_database_url=history_database_url,
+            api_key=api_key,
+            authorization=authorization,
+        )
         try:
-            if history_database_url is not None and api_key is not None:
+            if history_database_url is not None:
                 joined_match = join_db_match(
                     database_url=history_database_url,
                     match_id=match_id,
-                    authenticated_api_key_hash=hash_api_key(api_key),
+                    authenticated_api_key_hash=(
+                        hash_api_key(authenticated_actor.api_key)
+                        if authenticated_actor.api_key is not None
+                        else None
+                    ),
+                    authenticated_human_user_id=authenticated_actor.human_user_id,
                 )
                 registry.seed_match(joined_match.record)
                 return joined_match.response
-            return registry.join_match(match_id=match_id, agent_id=authenticated_agent.agent_id)
+            if authenticated_actor.agent is None:
+                raise ApiError(
+                    status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                    code="match_join_unavailable",
+                    message="Authenticated human joins are only available in DB-backed mode.",
+                )
+            return registry.join_match(
+                match_id=match_id,
+                agent_id=authenticated_actor.agent.agent_id,
+            )
         except MatchJoinError as exc:
             status_code = HTTPStatus.BAD_REQUEST
-            if exc.code == "invalid_api_key":
+            if exc.code in {"invalid_api_key", "invalid_player_auth"}:
                 status_code = HTTPStatus.UNAUTHORIZED
             elif exc.code == "match_not_found":
                 status_code = HTTPStatus.NOT_FOUND

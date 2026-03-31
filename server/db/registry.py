@@ -153,12 +153,17 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
             player_rows=player_rows,
             api_key_rows=api_key_rows,
         )
+        joined_humans_by_match = _load_joined_humans_by_match(
+            matches=matches,
+            player_rows=player_rows,
+        )
 
         for match in matches:
             match_id = str(match.id)
             persisted_alliances = alliances_by_match.get(match_id, [])
             state = MatchState.model_validate(match.state)
             joined_agents = joined_agents_by_match.get(match_id, {})
+            joined_humans = joined_humans_by_match.get(match_id, {})
             record = MatchRecord(
                 match_id=match_id,
                 status=MatchStatus(match.status),
@@ -169,12 +174,14 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
                         player_id
                         for player_id in state.players
                         if player_id not in joined_agents.values()
+                        and player_id not in joined_humans.values()
                     )
                     if match.status in {MatchStatus.LOBBY.value, MatchStatus.PAUSED.value}
                     else []
                 ),
                 agent_profiles=agent_profiles_by_match.get(match_id, build_seeded_agent_profiles()),
                 joined_agents=joined_agents,
+                joined_humans=joined_humans,
                 alliances=persisted_alliances,
                 authenticated_agent_keys=authenticated_keys_by_match.get(match_id, []),
             )
@@ -206,9 +213,10 @@ def persist_advanced_match_tick(*, database_url: str, advanced_tick: AdvancedMat
 def create_match_lobby(
     *,
     database_url: str,
-    authenticated_agent_id: str,
-    authenticated_agent_display_name: str,
-    authenticated_api_key_hash: str,
+    authenticated_agent_id: str | None = None,
+    authenticated_agent_display_name: str | None = None,
+    authenticated_api_key_hash: str | None = None,
+    authenticated_human_user_id: str | None = None,
     request: MatchLobbyCreateRequest,
 ) -> CreatedMatchLobby:
     creator_player_id = "player-1"
@@ -234,21 +242,41 @@ def create_match_lobby(
     creator_user_id: str | None = None
     creator_elo_rating = 0
     resolved_authenticated_agent: AuthenticatedAgentContext | None = None
+    creator_display_name: str | None = None
+    creator_is_agent = False
     engine = create_engine(database_url)
     with Session(engine) as session, session.begin():
-        authenticated_agent_resolution = _resolve_authenticated_agent_from_db_key_hash(
-            session=session,
-            key_hash=authenticated_api_key_hash,
-        )
-        if authenticated_agent_resolution is None:
-            raise MatchLobbyCreationError(
-                code="invalid_api_key",
-                message="A valid active X-API-Key header is required.",
+        if authenticated_api_key_hash is not None:
+            authenticated_agent_resolution = _resolve_authenticated_agent_from_db_key_hash(
+                session=session,
+                key_hash=authenticated_api_key_hash,
             )
-        resolved_authenticated_agent = authenticated_agent_resolution.context
-        creator_api_key_id = authenticated_agent_resolution.api_key_id
-        creator_user_id = authenticated_agent_resolution.user_id
-        creator_elo_rating = authenticated_agent_resolution.elo_rating
+            if authenticated_agent_resolution is None:
+                raise MatchLobbyCreationError(
+                    code="invalid_api_key",
+                    message="A valid active X-API-Key header is required.",
+                )
+            resolved_authenticated_agent = authenticated_agent_resolution.context
+            creator_api_key_id = authenticated_agent_resolution.api_key_id
+            creator_user_id = authenticated_agent_resolution.user_id
+            creator_elo_rating = authenticated_agent_resolution.elo_rating
+            creator_display_name = authenticated_agent_resolution.context.display_name
+            creator_is_agent = True
+        elif authenticated_human_user_id is not None:
+            creator_user_id = authenticated_human_user_id
+            creator_display_name = _resolve_human_display_name(
+                session=session,
+                user_id=authenticated_human_user_id,
+            )
+            creator_elo_rating = _resolve_human_elo_rating(
+                session=session,
+                user_id=authenticated_human_user_id,
+            )
+        else:
+            raise MatchLobbyCreationError(
+                code="invalid_player_auth",
+                message="Player routes require a valid Bearer token or active X-API-Key header.",
+            )
 
         session.add(
             Match(
@@ -260,6 +288,7 @@ def create_match_lobby(
                     "victory_city_threshold": request.victory_city_threshold,
                     "starting_cities_per_player": request.starting_cities_per_player,
                     "creator_api_key_id": creator_api_key_id,
+                    "creator_user_id": creator_user_id,
                 },
                 status=MatchStatus.LOBBY.value,
                 current_tick=initial_state.tick,
@@ -272,8 +301,8 @@ def create_match_lobby(
                 id=str(uuid4()),
                 user_id=creator_user_id,
                 match_id=match_id,
-                display_name=resolved_authenticated_agent.display_name,
-                is_agent=True,
+                display_name=creator_display_name or authenticated_human_user_id or "Human player",
+                is_agent=creator_is_agent,
                 api_key_id=creator_api_key_id,
                 elo_rating=creator_elo_rating,
                 alliance_id=None,
@@ -282,19 +311,29 @@ def create_match_lobby(
             )
         )
 
-    creator_profile = AgentProfileResponse(
-        agent_id=resolved_authenticated_agent.agent_id
-        if resolved_authenticated_agent is not None
-        else authenticated_agent_id,
-        display_name=resolved_authenticated_agent.display_name
-        if resolved_authenticated_agent is not None
-        else authenticated_agent_display_name,
-        is_seeded=resolved_authenticated_agent.is_seeded
-        if resolved_authenticated_agent is not None
-        else True,
-        rating=AgentProfileRating(elo=creator_elo_rating, provisional=True),
-        history=AgentProfileHistory(matches_played=0, wins=0, losses=0, draws=0),
-    )
+    creator_profile: AgentProfileResponse | None = None
+    if creator_is_agent:
+        creator_agent_id = (
+            resolved_authenticated_agent.agent_id
+            if resolved_authenticated_agent is not None
+            else authenticated_agent_id
+        )
+        creator_agent_display_name = (
+            resolved_authenticated_agent.display_name
+            if resolved_authenticated_agent is not None
+            else authenticated_agent_display_name
+        )
+        assert creator_agent_id is not None
+        assert creator_agent_display_name is not None
+        creator_profile = AgentProfileResponse(
+            agent_id=creator_agent_id,
+            display_name=creator_agent_display_name,
+            is_seeded=resolved_authenticated_agent.is_seeded
+            if resolved_authenticated_agent is not None
+            else True,
+            rating=AgentProfileRating(elo=creator_elo_rating, provisional=True),
+            history=AgentProfileHistory(matches_played=0, wins=0, losses=0, draws=0),
+        )
 
     return CreatedMatchLobby(
         response=MatchLobbyCreateResponse(
@@ -319,15 +358,26 @@ def create_match_lobby(
             joinable_player_ids=[
                 f"player-{player_index}" for player_index in range(2, request.max_players + 1)
             ],
-            agent_profiles=[creator_profile],
-            joined_agents={creator_profile.agent_id: creator_player_id},
-            authenticated_agent_keys=[
-                AuthenticatedAgentKeyRecord(
-                    agent_id=creator_profile.agent_id,
-                    key_hash=authenticated_api_key_hash,
-                    is_active=True,
-                )
-            ],
+            agent_profiles=[creator_profile] if creator_profile is not None else [],
+            joined_agents=(
+                {creator_profile.agent_id: creator_player_id} if creator_profile is not None else {}
+            ),
+            joined_humans=(
+                {authenticated_human_user_id: creator_player_id}
+                if authenticated_human_user_id is not None
+                else {}
+            ),
+            authenticated_agent_keys=(
+                [
+                    AuthenticatedAgentKeyRecord(
+                        agent_id=creator_profile.agent_id,
+                        key_hash=authenticated_api_key_hash,
+                        is_active=True,
+                    )
+                ]
+                if creator_profile is not None and authenticated_api_key_hash is not None
+                else []
+            ),
         ),
     )
 
@@ -336,20 +386,11 @@ def join_match(
     *,
     database_url: str,
     match_id: str,
-    authenticated_api_key_hash: str,
+    authenticated_api_key_hash: str | None = None,
+    authenticated_human_user_id: str | None = None,
 ) -> JoinedMatch:
     engine = create_engine(database_url)
     with Session(engine) as session, session.begin():
-        authenticated_agent_resolution = _resolve_authenticated_agent_from_db_key_hash(
-            session=session,
-            key_hash=authenticated_api_key_hash,
-        )
-        if authenticated_agent_resolution is None:
-            raise MatchJoinError(
-                code="invalid_api_key",
-                message="A valid active X-API-Key header is required.",
-            )
-
         match = session.get(Match, match_id)
         if match is None:
             raise MatchJoinError(
@@ -358,36 +399,109 @@ def join_match(
             )
 
         joined_record = _load_match_record_from_session(session=session, match=match)
-        existing_player_id = joined_record.joined_agents.get(
-            authenticated_agent_resolution.context.agent_id
+        assigned_player_id = (
+            joined_record.joinable_player_ids[0] if joined_record.joinable_player_ids else None
         )
-        if existing_player_id is not None:
+
+        if authenticated_api_key_hash is not None:
+            authenticated_agent_resolution = _resolve_authenticated_agent_from_db_key_hash(
+                session=session,
+                key_hash=authenticated_api_key_hash,
+            )
+            if authenticated_agent_resolution is None:
+                raise MatchJoinError(
+                    code="invalid_api_key",
+                    message="A valid active X-API-Key header is required.",
+                )
+
+            existing_player_id = joined_record.joined_agents.get(
+                authenticated_agent_resolution.context.agent_id
+            )
+            if existing_player_id is not None:
+                return JoinedMatch(
+                    response=MatchJoinResponse(
+                        status="accepted",
+                        match_id=match_id,
+                        agent_id=authenticated_agent_resolution.context.agent_id,
+                        player_id=existing_player_id,
+                    ),
+                    record=joined_record,
+                )
+
+            if assigned_player_id is None:
+                raise MatchJoinError(
+                    code="match_not_joinable",
+                    message=f"Match '{match_id}' does not support agent joins.",
+                )
+
+            session.add(
+                Player(
+                    id=_build_joined_player_id(
+                        len(joined_record.joined_agents) + len(joined_record.joined_humans) + 1
+                    ),
+                    user_id=authenticated_agent_resolution.user_id,
+                    match_id=match_id,
+                    display_name=authenticated_agent_resolution.context.display_name,
+                    is_agent=True,
+                    api_key_id=authenticated_agent_resolution.api_key_id,
+                    elo_rating=authenticated_agent_resolution.elo_rating,
+                    alliance_id=None,
+                    alliance_joined_tick=None,
+                    eliminated_at=None,
+                )
+            )
+            updated_record = _load_match_record_from_session(session=session, match=match)
             return JoinedMatch(
                 response=MatchJoinResponse(
                     status="accepted",
                     match_id=match_id,
                     agent_id=authenticated_agent_resolution.context.agent_id,
+                    player_id=assigned_player_id,
+                ),
+                record=updated_record,
+            )
+
+        if authenticated_human_user_id is None:
+            raise MatchJoinError(
+                code="invalid_player_auth",
+                message="Player routes require a valid Bearer token or active X-API-Key header.",
+            )
+
+        existing_player_id = joined_record.joined_humans.get(authenticated_human_user_id)
+        if existing_player_id is not None:
+            return JoinedMatch(
+                response=MatchJoinResponse(
+                    status="accepted",
+                    match_id=match_id,
+                    agent_id=_build_human_actor_id(authenticated_human_user_id),
                     player_id=existing_player_id,
                 ),
                 record=joined_record,
             )
 
-        if not joined_record.joinable_player_ids:
+        if assigned_player_id is None:
             raise MatchJoinError(
                 code="match_not_joinable",
-                message=f"Match '{match_id}' does not support agent joins.",
+                message=f"Match '{match_id}' does not support player joins.",
             )
 
-        assigned_player_id = joined_record.joinable_player_ids[0]
         session.add(
             Player(
-                id=_build_joined_player_id(len(joined_record.joined_agents) + 1),
-                user_id=authenticated_agent_resolution.user_id,
+                id=_build_joined_player_id(
+                    len(joined_record.joined_agents) + len(joined_record.joined_humans) + 1
+                ),
+                user_id=authenticated_human_user_id,
                 match_id=match_id,
-                display_name=authenticated_agent_resolution.context.display_name,
-                is_agent=True,
-                api_key_id=authenticated_agent_resolution.api_key_id,
-                elo_rating=authenticated_agent_resolution.elo_rating,
+                display_name=_resolve_human_display_name(
+                    session=session,
+                    user_id=authenticated_human_user_id,
+                ),
+                is_agent=False,
+                api_key_id=None,
+                elo_rating=_resolve_human_elo_rating(
+                    session=session,
+                    user_id=authenticated_human_user_id,
+                ),
                 alliance_id=None,
                 alliance_joined_tick=None,
                 eliminated_at=None,
@@ -399,7 +513,7 @@ def join_match(
         response=MatchJoinResponse(
             status="accepted",
             match_id=match_id,
-            agent_id=authenticated_agent_resolution.context.agent_id,
+            agent_id=_build_human_actor_id(authenticated_human_user_id),
             player_id=assigned_player_id,
         ),
         record=updated_record,
@@ -410,18 +524,26 @@ def start_match_lobby(
     *,
     database_url: str,
     match_id: str,
-    authenticated_api_key_hash: str,
+    authenticated_api_key_hash: str | None = None,
+    authenticated_human_user_id: str | None = None,
 ) -> StartedMatchLobby:
     engine = create_engine(database_url)
     with Session(engine) as session, session.begin():
-        authenticated_agent_resolution = _resolve_authenticated_agent_from_db_key_hash(
-            session=session,
-            key_hash=authenticated_api_key_hash,
-        )
-        if authenticated_agent_resolution is None:
+        authenticated_agent_resolution: _ResolvedAuthenticatedDbAgent | None = None
+        if authenticated_api_key_hash is not None:
+            authenticated_agent_resolution = _resolve_authenticated_agent_from_db_key_hash(
+                session=session,
+                key_hash=authenticated_api_key_hash,
+            )
+            if authenticated_agent_resolution is None:
+                raise MatchLobbyStartError(
+                    code="invalid_api_key",
+                    message="A valid active X-API-Key header is required.",
+                )
+        elif authenticated_human_user_id is None:
             raise MatchLobbyStartError(
-                code="invalid_api_key",
-                message="A valid active X-API-Key header is required.",
+                code="invalid_player_auth",
+                message="Player routes require a valid Bearer token or active X-API-Key header.",
             )
 
         match = session.get(Match, match_id)
@@ -447,12 +569,31 @@ def start_match_lobby(
                 message=f"Match '{match_id}' cannot be started from status '{match.status}'.",
             )
 
-        creator_api_key_id = str(match.config.get("creator_api_key_id", ""))
-        if creator_api_key_id != authenticated_agent_resolution.api_key_id:
-            raise MatchLobbyStartError(
-                code="match_start_forbidden",
-                message=f"Authenticated agent does not own lobby '{match_id}'.",
-            )
+        raw_creator_api_key_id = match.config.get("creator_api_key_id")
+        creator_api_key_id = (
+            raw_creator_api_key_id
+            if isinstance(raw_creator_api_key_id, str) and raw_creator_api_key_id
+            else None
+        )
+        raw_creator_user_id = match.config.get("creator_user_id")
+        creator_user_id = (
+            raw_creator_user_id
+            if isinstance(raw_creator_user_id, str) and raw_creator_user_id
+            else None
+        )
+        if authenticated_api_key_hash is not None:
+            assert authenticated_agent_resolution is not None
+            if creator_api_key_id != authenticated_agent_resolution.api_key_id:
+                raise MatchLobbyStartError(
+                    code="match_start_forbidden",
+                    message=f"Authenticated agent does not own lobby '{match_id}'.",
+                )
+        elif authenticated_human_user_id is not None:
+            if creator_user_id != authenticated_human_user_id or creator_api_key_id is not None:
+                raise MatchLobbyStartError(
+                    code="match_start_forbidden",
+                    message=f"Authenticated human does not own lobby '{match_id}'.",
+                )
 
         player_count = session.scalar(
             select(func.count()).select_from(Player).where(Player.match_id == match_id)
@@ -499,6 +640,10 @@ def _load_match_record_from_session(*, session: Session, match: Match) -> MatchR
         player_rows=player_rows,
         api_key_rows=api_key_rows,
     ).get(match_id, {})
+    joined_humans = _load_joined_humans_by_match(
+        matches=[match],
+        player_rows=player_rows,
+    ).get(match_id, {})
     agent_profiles = _load_agent_profiles_by_match(
         matches=[match],
         player_rows=player_rows,
@@ -510,7 +655,11 @@ def _load_match_record_from_session(*, session: Session, match: Match) -> MatchR
         api_key_rows=api_key_rows,
     ).get(match_id, [])
     joinable_player_ids = (
-        sorted(player_id for player_id in state.players if player_id not in joined_agents.values())
+        sorted(
+            player_id
+            for player_id in state.players
+            if player_id not in joined_agents.values() and player_id not in joined_humans.values()
+        )
         if match.status in {MatchStatus.LOBBY.value, MatchStatus.PAUSED.value}
         else []
     )
@@ -521,10 +670,11 @@ def _load_match_record_from_session(*, session: Session, match: Match) -> MatchR
         state=state,
         map_id=str(match.config.get("map", "britain")),
         max_player_count=int(match.config.get("max_players", len(state.players))),
-        current_player_count=len(joined_agents),
+        current_player_count=len(joined_agents) + len(joined_humans),
         joinable_player_ids=joinable_player_ids,
         agent_profiles=agent_profiles,
         joined_agents=joined_agents,
+        joined_humans=joined_humans,
         authenticated_agent_keys=authenticated_agent_keys,
     )
 
@@ -1044,6 +1194,35 @@ def _load_joined_agents_by_match(
     return joined_agents_by_match
 
 
+def _load_joined_humans_by_match(
+    *,
+    matches: Sequence[Match],
+    player_rows: Sequence[Player],
+) -> dict[str, dict[str, str]]:
+    players_by_match: dict[str, list[Player]] = defaultdict(list)
+    for player in player_rows:
+        players_by_match[str(player.match_id)].append(player)
+
+    joined_humans_by_match: dict[str, dict[str, str]] = {}
+    for match in matches:
+        match_id = str(match.id)
+        state = MatchState.model_validate(match.state)
+        persisted_player_mapping = _build_persisted_player_mapping(
+            canonical_player_ids=sorted(state.players),
+            persisted_players=players_by_match.get(match_id, []),
+        )
+        joined_humans = {
+            str(player.user_id): canonical_player_id
+            for player in players_by_match.get(match_id, [])
+            if not player.is_agent
+            and (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None
+        }
+        if joined_humans:
+            joined_humans_by_match[match_id] = joined_humans
+
+    return joined_humans_by_match
+
+
 def _build_persisted_player_mapping(
     *,
     canonical_player_ids: list[str],
@@ -1060,6 +1239,32 @@ def _build_persisted_player_mapping(
 
 def _build_joined_player_id(join_index: int) -> str:
     return f"ffffffff-ffff-ffff-ffff-{join_index:012x}"
+
+
+def _build_human_actor_id(user_id: str) -> str:
+    return f"human:{user_id}"
+
+
+def _resolve_human_display_name(*, session: Session, user_id: str) -> str:
+    existing_player = session.scalar(
+        select(Player)
+        .where(Player.user_id == user_id)
+        .order_by(Player.is_agent.asc(), Player.id.asc())
+    )
+    if existing_player is not None:
+        return existing_player.display_name
+    return user_id
+
+
+def _resolve_human_elo_rating(*, session: Session, user_id: str) -> int:
+    existing_player = session.scalar(
+        select(Player)
+        .where(Player.user_id == user_id)
+        .order_by(Player.is_agent.asc(), Player.id.asc())
+    )
+    if existing_player is not None:
+        return int(existing_player.elo_rating)
+    return 0
 
 
 @dataclass(frozen=True)

@@ -1,12 +1,18 @@
 import type {
   AllianceRecord,
   AllianceMemberRecord,
+  ApiErrorEnvelope,
   BuildingQueueItem,
   CityUpgradeState,
   DirectMessageRecord,
   GroupChatRecord,
   GroupMessageRecord,
+  MatchJoinRequest,
+  MatchJoinResponse,
   MatchListResponse,
+  MatchLobbyCreateRequest,
+  MatchLobbyCreateResponse,
+  MatchLobbyStartResponse,
   MatchSummary,
   PublicMatchDetailResponse,
   PublicMatchRosterRow,
@@ -27,6 +33,7 @@ const PUBLIC_MATCH_DETAIL_ERROR_MESSAGE = "Unable to load this public match righ
 const PUBLIC_MATCH_DETAIL_NOT_FOUND_MESSAGE =
   "This match is unavailable. It may not exist or may already be completed.";
 const SPECTATOR_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse spectator live match update.";
+const MATCH_LOBBY_ERROR_MESSAGE = "Unable to complete the requested lobby action right now.";
 
 export class PublicMatchesError extends Error {
   constructor(message = PUBLIC_MATCHES_ERROR_MESSAGE) {
@@ -42,6 +49,17 @@ export class PublicMatchDetailError extends Error {
   ) {
     super(message);
     this.name = "PublicMatchDetailError";
+  }
+}
+
+export class LobbyActionError extends Error {
+  constructor(
+    message = MATCH_LOBBY_ERROR_MESSAGE,
+    readonly code: string = "lobby_action_unavailable",
+    readonly statusCode: number = 500
+  ) {
+    super(message);
+    this.name = "LobbyActionError";
   }
 }
 
@@ -103,6 +121,59 @@ export async function fetchPublicMatchDetail(
   return payload;
 }
 
+export async function createMatchLobby(
+  request: MatchLobbyCreateRequest,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<MatchLobbyCreateResponse> {
+  const response = await fetchImpl(`${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches`, {
+    method: "POST",
+    cache: "no-store",
+    headers: buildAuthenticatedJsonHeaders(bearerToken),
+    body: JSON.stringify(request)
+  });
+
+  return handleLobbyResponse(response, isMatchLobbyCreateResponse);
+}
+
+export async function joinMatchLobby(
+  request: MatchJoinRequest,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<MatchJoinResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(request.match_id)}/join`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: buildAuthenticatedJsonHeaders(bearerToken),
+      body: JSON.stringify(request)
+    }
+  );
+
+  return handleLobbyResponse(response, isMatchJoinResponse);
+}
+
+export async function startMatchLobby(
+  matchId: string,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<MatchLobbyStartResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(matchId)}/start`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: buildAuthenticatedHeaders(bearerToken)
+    }
+  );
+
+  return handleLobbyResponse(response, isMatchSummary);
+}
+
 export function buildSpectatorMatchWebSocketUrl(
   matchId: string,
   options?: { apiBaseUrl?: string }
@@ -122,6 +193,72 @@ export function parseSpectatorMatchEnvelope(payload: unknown): SpectatorMatchEnv
   }
 
   return payload;
+}
+
+function buildAuthenticatedHeaders(bearerToken: string): HeadersInit {
+  return {
+    accept: "application/json",
+    authorization: `Bearer ${bearerToken}`
+  };
+}
+
+function buildAuthenticatedJsonHeaders(bearerToken: string): HeadersInit {
+  return {
+    ...buildAuthenticatedHeaders(bearerToken),
+    "content-type": "application/json"
+  };
+}
+
+async function handleLobbyResponse<T>(
+  response: ResponseLike,
+  validator: (payload: unknown) => payload is T
+): Promise<T> {
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    throw toLobbyActionError(payload, response.status);
+  }
+
+  const payload: unknown = await response.json();
+  if (!validator(payload)) {
+    throw new LobbyActionError(MATCH_LOBBY_ERROR_MESSAGE, "invalid_lobby_response", response.status);
+  }
+  return payload;
+}
+
+type ResponseLike = {
+  ok: boolean;
+  status: number;
+  json(): Promise<unknown>;
+};
+
+function toLobbyActionError(payload: unknown, status: number): LobbyActionError {
+  if (isApiErrorEnvelope(payload)) {
+    return new LobbyActionError(payload.error.message, payload.error.code, status);
+  }
+  return new LobbyActionError(MATCH_LOBBY_ERROR_MESSAGE, "lobby_action_unavailable", status);
+}
+
+function isApiErrorEnvelope(payload: unknown): payload is ApiErrorEnvelope {
+  return (
+    isRecord(payload) &&
+    isRecord(payload.error) &&
+    typeof payload.error.code === "string" &&
+    typeof payload.error.message === "string"
+  );
+}
+
+function isMatchLobbyCreateResponse(payload: unknown): payload is MatchLobbyCreateResponse {
+  return isMatchSummary(payload) && typeof (payload as Record<string, unknown>).creator_player_id === "string";
+}
+
+function isMatchJoinResponse(payload: unknown): payload is MatchJoinResponse {
+  return (
+    isRecord(payload) &&
+    payload.status === "accepted" &&
+    typeof payload.match_id === "string" &&
+    typeof payload.agent_id === "string" &&
+    typeof payload.player_id === "string"
+  );
 }
 
 function resolveApiBaseUrl(explicitBaseUrl?: string): string {

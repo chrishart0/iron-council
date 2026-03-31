@@ -167,8 +167,8 @@ class MatchRecord:
     def public_current_player_count(self) -> int:
         if self.current_player_count is not None:
             return self.current_player_count
-        if self.joined_agents:
-            return len(self.joined_agents)
+        if self.joined_agents or self.joined_humans:
+            return len(self.joined_agents) + len(self.joined_humans)
         return max(len(self.state.players) - len(self.joinable_player_ids), 0)
 
     @property

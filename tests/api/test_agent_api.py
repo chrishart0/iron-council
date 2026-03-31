@@ -34,7 +34,10 @@ from server.models.orders import OrderEnvelope
 from server.websocket import MatchWebSocketManager, build_match_realtime_envelope
 from sqlalchemy import create_engine, text
 from starlette.websockets import WebSocketDisconnect
-from tests.support import insert_completed_match_fixture, insert_seeded_agent_player
+from tests.support import (
+    insert_completed_match_fixture,
+    insert_seeded_agent_player,
+)
 
 
 def _army_by_id(payload: dict[str, Any], army_id: str) -> dict[str, Any]:
@@ -2936,6 +2939,110 @@ async def test_create_match_lobby_route_allows_first_time_valid_db_api_key(
 
 
 @pytest.mark.asyncio
+async def test_human_lobby_routes_accept_valid_bearer_for_create_join_and_creator_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'human-lobby-routes.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        create_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000304"),
+        )
+        created_payload = create_response.json()
+
+        join_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json=_join_payload(match_id=created_payload["match_id"]),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000301"),
+        )
+        start_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/start",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000304"),
+        )
+        creator_state_response = await client.get(
+            f"/api/v1/matches/{created_payload['match_id']}/state",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000304"),
+        )
+        joined_state_response = await client.get(
+            f"/api/v1/matches/{created_payload['match_id']}/state",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000301"),
+        )
+
+    reloaded_app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=reloaded_app),
+        base_url="http://testserver",
+    ) as client:
+        reloaded_creator_state_response = await client.get(
+            f"/api/v1/matches/{created_payload['match_id']}/state",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000304"),
+        )
+
+    assert create_response.status_code == HTTPStatus.CREATED
+    assert created_payload == {
+        "match_id": created_payload["match_id"],
+        "status": "lobby",
+        "map": "britain",
+        "tick": 0,
+        "tick_interval_seconds": 20,
+        "current_player_count": 1,
+        "max_player_count": 4,
+        "open_slot_count": 3,
+        "creator_player_id": "player-1",
+    }
+    assert join_response.status_code == HTTPStatus.ACCEPTED
+    assert join_response.json() == {
+        "status": "accepted",
+        "match_id": created_payload["match_id"],
+        "agent_id": "human:00000000-0000-0000-0000-000000000301",
+        "player_id": "player-2",
+    }
+    assert start_response.status_code == HTTPStatus.OK
+    assert start_response.json() == {
+        "match_id": created_payload["match_id"],
+        "status": "active",
+        "map": "britain",
+        "tick": 0,
+        "tick_interval_seconds": 20,
+        "current_player_count": 2,
+        "max_player_count": 4,
+        "open_slot_count": 2,
+    }
+    assert creator_state_response.status_code == HTTPStatus.OK
+    assert creator_state_response.json()["player_id"] == "player-1"
+    assert joined_state_response.status_code == HTTPStatus.OK
+    assert joined_state_response.json()["player_id"] == "player-2"
+    assert reloaded_creator_state_response.status_code == HTTPStatus.OK
+    assert reloaded_creator_state_response.json()["player_id"] == "player-1"
+    reloaded_match = reloaded_app.state.match_registry.get_match(created_payload["match_id"])
+    assert reloaded_match is not None
+    assert reloaded_match.joined_humans == {
+        "00000000-0000-0000-0000-000000000301": "player-2",
+        "00000000-0000-0000-0000-000000000304": "player-1",
+    }
+
+
+@pytest.mark.asyncio
 async def test_create_match_lobby_route_rejects_invalid_requests_without_partial_persistence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3378,6 +3485,123 @@ async def test_start_match_lobby_route_rejects_missing_match_and_paused_lobby(
             "message": (
                 f"Match '{created_payload['match_id']}' cannot be started from status 'paused'."
             ),
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_human_lobby_routes_reject_invalid_auth_non_creator_and_not_ready_states(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'human-lobby-route-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        missing_create_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+        )
+        invalid_create_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers={"Authorization": "Bearer not-a-jwt"},
+        )
+
+        create_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000304"),
+        )
+        created_payload = create_response.json()
+
+        missing_join_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json=_join_payload(match_id=created_payload["match_id"]),
+        )
+        invalid_join_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json=_join_payload(match_id=created_payload["match_id"]),
+            headers={"Authorization": "Token nope"},
+        )
+        not_ready_start_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/start",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000304"),
+        )
+
+        join_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json=_join_payload(match_id=created_payload["match_id"]),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000301"),
+        )
+        non_creator_start_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/start",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000301"),
+        )
+
+    assert create_response.status_code == HTTPStatus.CREATED
+    assert missing_create_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_create_response.json() == {
+        "error": {
+            "code": "invalid_player_auth",
+            "message": "Player routes require a valid Bearer token or active X-API-Key header.",
+        }
+    }
+    assert invalid_create_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert invalid_create_response.json() == {
+        "error": {
+            "code": "invalid_human_token",
+            "message": "A valid human Bearer token is required.",
+        }
+    }
+    assert missing_join_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_join_response.json() == missing_create_response.json()
+    assert invalid_join_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert invalid_join_response.json() == invalid_create_response.json()
+    assert not_ready_start_response.status_code == HTTPStatus.CONFLICT
+    assert not_ready_start_response.json() == {
+        "error": {
+            "code": "match_lobby_not_ready",
+            "message": (
+                f"Match '{created_payload['match_id']}' needs at least 2 joined players "
+                "before it can start."
+            ),
+        }
+    }
+    assert join_response.status_code == HTTPStatus.ACCEPTED
+    assert non_creator_start_response.status_code == HTTPStatus.FORBIDDEN
+    assert non_creator_start_response.json() == {
+        "error": {
+            "code": "match_start_forbidden",
+            "message": (f"Authenticated human does not own lobby '{created_payload['match_id']}'."),
         }
     }
 

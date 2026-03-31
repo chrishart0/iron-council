@@ -32,6 +32,17 @@ _SEEDED_AGENT_PLAYER_ROWS = {
     },
 }
 
+_SEEDED_HUMAN_PLAYER_ROWS = {
+    "00000000-0000-0000-0000-000000000301": {
+        "display_name": "Arthur",
+        "elo_rating": 1210,
+    },
+    "00000000-0000-0000-0000-000000000304": {
+        "display_name": "Bedivere",
+        "elo_rating": 1190,
+    },
+}
+
 
 def insert_seeded_agent_player(
     *,
@@ -62,6 +73,43 @@ def insert_seeded_agent_player(
                 "display_name": seeded_player["display_name"],
                 "is_agent": True,
                 "api_key_id": seeded_player["api_key_id"],
+                "elo_rating": seeded_player["elo_rating"],
+                "alliance_id": None,
+                "alliance_joined_tick": None,
+                "eliminated_at": None,
+            },
+        )
+
+
+def insert_seeded_human_player(
+    *,
+    database_url: str,
+    match_id: str,
+    user_id: str,
+    persisted_player_id: str,
+) -> None:
+    seeded_player = _SEEDED_HUMAN_PLAYER_ROWS[user_id]
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO players (
+                    id, user_id, match_id, display_name, is_agent, api_key_id, elo_rating,
+                    alliance_id, alliance_joined_tick, eliminated_at
+                ) VALUES (
+                    :id, :user_id, :match_id, :display_name, :is_agent, :api_key_id, :elo_rating,
+                    :alliance_id, :alliance_joined_tick, :eliminated_at
+                )
+                """
+            ),
+            {
+                "id": persisted_player_id,
+                "user_id": user_id,
+                "match_id": match_id,
+                "display_name": seeded_player["display_name"],
+                "is_agent": False,
+                "api_key_id": None,
                 "elo_rating": seeded_player["elo_rating"],
                 "alliance_id": None,
                 "alliance_joined_tick": None,

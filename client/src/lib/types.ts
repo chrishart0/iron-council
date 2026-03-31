@@ -24,6 +24,38 @@ export type PublicMatchDetailResponse = MatchSummary & {
   roster: PublicMatchRosterRow[];
 };
 
+export type MatchLobbyCreateRequest = {
+  map: "britain";
+  tick_interval_seconds: number;
+  max_players: number;
+  victory_city_threshold: number;
+  starting_cities_per_player: number;
+};
+
+export type MatchLobbyCreateResponse = MatchSummary & {
+  creator_player_id: string;
+};
+
+export type MatchJoinRequest = {
+  match_id: string;
+};
+
+export type MatchJoinResponse = {
+  status: "accepted";
+  match_id: string;
+  agent_id: string;
+  player_id: string;
+};
+
+export type MatchLobbyStartResponse = MatchSummary;
+
+export type ApiErrorEnvelope = {
+  error: {
+    code: string;
+    message: string;
+  };
+};
+
 export type ResourceState = {
   food: number;
   production: number;

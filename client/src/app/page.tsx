@@ -13,7 +13,7 @@ export default function HomePage() {
           View public matches
         </Link>
         <Link className="button-link secondary" href="/lobby">
-          Open authenticated placeholder
+          Open human lobby
         </Link>
       </div>
     </section>

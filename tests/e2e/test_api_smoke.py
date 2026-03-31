@@ -11,7 +11,12 @@ import jwt
 from server.agent_registry import build_seeded_agent_api_key
 from server.db.registry import load_match_registry_from_database
 from server.models.domain import MatchStatus
-from tests.support import RunningApp, insert_completed_match_fixture, insert_seeded_agent_player
+from tests.support import (
+    RunningApp,
+    insert_completed_match_fixture,
+    insert_seeded_agent_player,
+    insert_seeded_human_player,
+)
 from websockets.sync.client import connect as connect_websocket
 
 
@@ -31,6 +36,10 @@ def _human_jwt_token(user_id: str) -> str:
         "test-human-secret-key-material-1234",
         algorithm="HS256",
     )
+
+
+def _human_headers(user_id: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {_human_jwt_token(user_id)}"}
 
 
 def test_agent_api_smoke_flow_runs_through_real_process_and_seeded_database(
@@ -557,6 +566,135 @@ def test_start_match_lobby_smoke_flow_runs_through_real_process(
     assert reloaded_match is not None
     assert reloaded_match.status == MatchStatus.ACTIVE
     assert reloaded_match.state.tick >= 1
+
+
+def test_human_lobby_smoke_flow_runs_through_real_process(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        create_response = client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_human_headers("00000000-0000-0000-0000-000000000304"),
+        )
+        assert create_response.status_code == HTTPStatus.CREATED
+        created_payload = create_response.json()
+
+        join_response = client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json={"match_id": created_payload["match_id"]},
+            headers=_human_headers("00000000-0000-0000-0000-000000000301"),
+        )
+        start_response = client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/start",
+            headers=_human_headers("00000000-0000-0000-0000-000000000304"),
+        )
+        creator_state_response = client.get(
+            f"/api/v1/matches/{created_payload['match_id']}/state",
+            headers=_human_headers("00000000-0000-0000-0000-000000000304"),
+        )
+        joiner_state_response = client.get(
+            f"/api/v1/matches/{created_payload['match_id']}/state",
+            headers=_human_headers("00000000-0000-0000-0000-000000000301"),
+        )
+
+    assert join_response.status_code == HTTPStatus.ACCEPTED
+    assert join_response.json()["player_id"] == "player-2"
+    assert start_response.status_code == HTTPStatus.OK
+    assert start_response.json()["status"] == "active"
+    assert start_response.json()["current_player_count"] == 2
+    assert creator_state_response.status_code == HTTPStatus.OK
+    assert creator_state_response.json()["player_id"] == "player-1"
+    assert joiner_state_response.status_code == HTTPStatus.OK
+    assert joiner_state_response.json()["player_id"] == "player-2"
+
+
+def test_human_lobby_start_smoke_flow_surfaces_not_ready_and_non_creator_errors(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        create_response = client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_human_headers("00000000-0000-0000-0000-000000000304"),
+        )
+        assert create_response.status_code == HTTPStatus.CREATED
+        created_payload = create_response.json()
+
+        missing_auth_response = client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+        )
+        invalid_join_response = client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json={"match_id": created_payload["match_id"]},
+            headers={"Authorization": "Token nope"},
+        )
+        not_ready_start_response = client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/start",
+            headers=_human_headers("00000000-0000-0000-0000-000000000304"),
+        )
+
+        insert_seeded_human_player(
+            database_url=running_seeded_app.database_url,
+            match_id=created_payload["match_id"],
+            user_id="00000000-0000-0000-0000-000000000301",
+            persisted_player_id="ffffffff-ffff-ffff-ffff-fffffffffff8",
+        )
+        non_creator_start_response = client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/start",
+            headers=_human_headers("00000000-0000-0000-0000-000000000301"),
+        )
+
+    assert missing_auth_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_auth_response.json() == {
+        "error": {
+            "code": "invalid_player_auth",
+            "message": "Player routes require a valid Bearer token or active X-API-Key header.",
+        }
+    }
+    assert invalid_join_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert invalid_join_response.json() == {
+        "error": {
+            "code": "invalid_human_token",
+            "message": "A valid human Bearer token is required.",
+        }
+    }
+    assert not_ready_start_response.status_code == HTTPStatus.CONFLICT
+    assert not_ready_start_response.json() == {
+        "error": {
+            "code": "match_lobby_not_ready",
+            "message": (
+                f"Match '{created_payload['match_id']}' needs at least 2 joined players "
+                "before it can start."
+            ),
+        }
+    }
+    assert non_creator_start_response.status_code == HTTPStatus.FORBIDDEN
+    assert non_creator_start_response.json() == {
+        "error": {
+            "code": "match_start_forbidden",
+            "message": f"Authenticated human does not own lobby '{created_payload['match_id']}'.",
+        }
+    }
 
 
 def test_authenticated_current_agent_profile_smoke_flow_runs_through_real_process(
