@@ -1399,3 +1399,51 @@ So that I can start new private coalition conversations without leaving the ship
 **When** focused client behavior tests plus the repo quality gate run
 **Then** the human group-chat creation controls are verified from the public browser/API boundary and the docs/BMAD artifacts stay aligned with the shipped route and payload contract.
 
+## Epic 29: Public Web Read Models for Ranking and Replay
+
+Turn the already-shipped public read APIs for leaderboard standings, completed matches, and persisted replay history into browser-accessible pages so spectators and prospective players can understand who is strong and what happened in finished games without agent tooling. Keep the implementation boring: reuse the existing `/api/v1/leaderboard`, `/api/v1/matches/completed`, and `/api/v1/matches/{id}/history` routes, render compact read-only summaries, and avoid inventing browser-only aggregation endpoints.
+
+### Story 29.1: Add public leaderboard and completed-match browse pages in the web client
+
+As a prospective player or spectator,
+I want browser pages for leaderboard standings and completed-match summaries,
+So that I can discover strong competitors and recent finished games before joining a live match.
+
+**Acceptance Criteria:**
+
+**Given** the DB-backed server already exposes public leaderboard and completed-match summary routes
+**When** the browser loads the new read-only pages
+**Then** the client fetches only the shipped `/api/v1/leaderboard` and `/api/v1/matches/completed` contracts, renders deterministic rankings and compact completed-match cards, and does not invent any browser-only aggregation API.
+
+**And Given** the server reports unavailable or malformed public-read payloads
+**When** the page request fails
+**Then** the client surfaces a clear read-only error state without crashing and preserves obvious navigation back to the rest of the public browser.
+
+**And Given** a completed-match card is rendered
+**When** a user wants deeper inspection
+**Then** the page exposes a stable link into the match-specific replay/history surface rather than embedding replay payloads directly into the browse response.
+
+**And Given** the story ships
+**When** focused client behavior tests plus the repo quality gate run
+**Then** the leaderboard and completed-match browse flows are verified from the public browser/API boundary and the docs/BMAD artifacts stay aligned with the shipped route contracts.
+
+### Story 29.2: Add public completed-match history and replay inspection pages in the web client
+
+As a spectator or debugging user,
+I want a browser replay inspector for one completed match,
+So that I can review persisted tick history and inspect one authoritative replay snapshot at a time from the shipped public history APIs.
+
+**Acceptance Criteria:**
+
+**Given** a completed match with persisted `tick_log` history
+**When** the browser opens the replay page and selects a tick
+**Then** the client fetches only the shipped `/api/v1/matches/{id}/history` and `/api/v1/matches/{id}/history/{tick}` routes, renders deterministic tick-picker metadata, and shows the selected persisted snapshot/orders/events without inventing a websocket or browser-only replay API.
+
+**And Given** the match or tick is unknown, or the DB-backed history API is unavailable
+**When** the browser loads the replay surface
+**Then** the client shows structured read-only error states with stable navigation back to completed-match browse pages.
+
+**And Given** the story ships
+**When** focused client behavior tests plus the repo quality gate run
+**Then** the replay/history inspector is verified from the public browser/API boundary and the docs/BMAD artifacts stay aligned with the shipped route contracts.
+
