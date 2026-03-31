@@ -1266,3 +1266,31 @@ So that I can enter matches through the same product surface instead of relying 
 **And Given** domain errors occur such as invalid auth, not-ready, or forbidden start
 **When** the action fails
 **Then** the client surfaces the structured error clearly and does not leave optimistic state that disagrees with the server.
+
+## Epic 26: Authenticated Human Live Match Operations
+
+Carry the authenticated human browser lane from pregame into the active-match surface by connecting the client to the already-shipped player websocket contract first, then layering in the smallest practical read/write gameplay affordances. Sequence the work so the first story proves the browser can receive fog-filtered player state plus messaging/diplomacy summaries over the real player websocket before adding any order-entry UI.
+
+### Story 26.1: Add an authenticated human live match page over the player websocket
+
+As an authenticated human player,
+I want a browser page for my live match feed,
+So that I can observe my fog-filtered state, chat/diplomacy summaries, and tick updates through the same shipped player websocket contract used by the backend.
+
+**Acceptance Criteria:**
+
+**Given** a joined authenticated human and an active match
+**When** the player opens the live match page in the client
+**Then** the UI connects to the existing `/ws/match/{id}?viewer=player&token=...` websocket path, renders the initial fog-filtered player envelope, and updates as new tick broadcasts arrive without inventing a parallel backend route.
+
+**And Given** the websocket payload includes player-safe state plus world/direct/group/treaty/alliance collections
+**When** the client renders the live page
+**Then** it shows concise player-facing summaries derived from that existing contract and clearly identifies the authenticated player id currently being viewed.
+
+**And Given** auth is missing/invalid, the user is not joined to the match, the match is not active, or the socket disconnects
+**When** the client handles the condition
+**Then** it surfaces a deterministic guard/error/reconnect state and preserves the last confirmed live snapshot instead of silently freezing or showing stale optimistic UI.
+
+**And Given** the story ships
+**When** focused client behavior tests plus the repo quality gate run
+**Then** the human live page is verified from the public browser boundary and the docs/BMAD artifacts stay aligned with the shipped route and contract.

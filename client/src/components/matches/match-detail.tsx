@@ -27,10 +27,13 @@ export function MatchDetail({ match }: MatchDetailProps) {
       <section className="hero">
         <h2>{`Public Match ${match.match_id}`}</h2>
         <p>Read-only public match metadata from the live server.</p>
-        <p>Browse the public summary here, or open the spectator live page for realtime updates.</p>
+        <p>Browse the public summary here, open the spectator page, or use the authenticated player page with a stored browser token.</p>
         <div className="actions">
           <Link className="button-link" href={`/matches/${match.match_id}/live`}>
             Watch live spectator view
+          </Link>
+          <Link className="button-link secondary" href={`/matches/${match.match_id}/play`}>
+            Open authenticated player view
           </Link>
           <Link className="button-link secondary" href="/matches">
             Back to matches

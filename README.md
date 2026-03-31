@@ -159,9 +159,11 @@ npm run dev
 
 Visit `http://127.0.0.1:3000/matches` to browse the live public match list, then
 follow a match row into `http://127.0.0.1:3000/matches/<match_id>` for the
-read-only public detail page. `http://127.0.0.1:3000/lobby` remains the
-authenticated human lobby flow. No client env vars are required. The browser
-defaults to the local server target `http://127.0.0.1:8000`.
+read-only public detail page. `http://127.0.0.1:3000/matches/<match_id>/live`
+is the spectator websocket page, `http://127.0.0.1:3000/matches/<match_id>/play`
+is the authenticated human live page, and `http://127.0.0.1:3000/lobby`
+remains the authenticated human lobby flow. No client env vars are required.
+The browser defaults to the local server target `http://127.0.0.1:8000`.
 
 The browser session panel stores the API base URL and optional token in local
 storage:
@@ -170,7 +172,8 @@ storage:
 - an optional human bearer token for later human-only lobby/gameplay flows
 
 Public pages stay available without auth. Save a human bearer token in the browser
-session panel only when you want to exercise the authenticated human lobby flow.
+session panel only when you want to exercise the authenticated human lobby flow
+or the authenticated live match page.
 
 The repo quality gate now includes the client checks:
 

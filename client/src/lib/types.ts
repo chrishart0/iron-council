@@ -62,6 +62,9 @@ export type ResourceState = {
   money: number;
 };
 
+export type FogVisibility = "full" | "partial";
+export type UnknownField = "unknown";
+
 export type CityUpgradeState = {
   economy: number;
   military: number;
@@ -113,6 +116,39 @@ export type SpectatorMatchState = {
   cities: Record<string, SpectatorCityState>;
   armies: SpectatorArmyState[];
   players: Record<string, SpectatorPlayerState>;
+  victory: VictoryState;
+};
+
+export type VisibleCityState = {
+  owner: string | null;
+  visibility: FogVisibility;
+  population: number | UnknownField;
+  resources: ResourceState | UnknownField;
+  upgrades: CityUpgradeState | UnknownField;
+  garrison: number | UnknownField;
+  building_queue: BuildingQueueItem[] | UnknownField;
+};
+
+export type VisibleArmyState = {
+  id: string;
+  owner: string;
+  visibility: FogVisibility;
+  troops: number | UnknownField;
+  location: string | null;
+  destination: string | null;
+  path: string[] | UnknownField | null;
+  ticks_remaining: number;
+};
+
+export type PlayerMatchState = {
+  match_id: string;
+  tick: number;
+  player_id: string;
+  resources: ResourceState;
+  cities: Record<string, VisibleCityState>;
+  visible_armies: VisibleArmyState[];
+  alliance_id: string | null;
+  alliance_members: string[];
   victory: VictoryState;
 };
 
@@ -183,6 +219,22 @@ export type SpectatorMatchEnvelope = {
     viewer_role: "spectator";
     player_id: null;
     state: SpectatorMatchState;
+    world_messages: WorldMessageRecord[];
+    direct_messages: DirectMessageRecord[];
+    group_chats: GroupChatRecord[];
+    group_messages: GroupMessageRecord[];
+    treaties: TreatyRecord[];
+    alliances: AllianceRecord[];
+  };
+};
+
+export type PlayerMatchEnvelope = {
+  type: "tick_update";
+  data: {
+    match_id: string;
+    viewer_role: "player";
+    player_id: string;
+    state: PlayerMatchState;
     world_messages: WorldMessageRecord[];
     direct_messages: DirectMessageRecord[];
     group_chats: GroupChatRecord[];

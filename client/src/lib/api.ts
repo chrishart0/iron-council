@@ -14,9 +14,14 @@ import type {
   MatchLobbyCreateResponse,
   MatchLobbyStartResponse,
   MatchSummary,
+  PlayerMatchEnvelope,
+  PlayerMatchState,
   PublicMatchDetailResponse,
   PublicMatchRosterRow,
   ResourceState,
+  UnknownField,
+  VisibleArmyState,
+  VisibleCityState,
   SpectatorArmyState,
   SpectatorCityState,
   SpectatorMatchEnvelope,
@@ -32,8 +37,14 @@ const PUBLIC_MATCHES_ERROR_MESSAGE = "Unable to load public matches right now.";
 const PUBLIC_MATCH_DETAIL_ERROR_MESSAGE = "Unable to load this public match right now.";
 const PUBLIC_MATCH_DETAIL_NOT_FOUND_MESSAGE =
   "This match is unavailable. It may not exist or may already be completed.";
+const PLAYER_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse player live match update.";
 const SPECTATOR_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse spectator live match update.";
 const MATCH_LOBBY_ERROR_MESSAGE = "Unable to complete the requested lobby action right now.";
+const HUMAN_NOT_JOINED_MESSAGE =
+  "Join this match as a human player before opening the authenticated live page.";
+const INVALID_WEBSOCKET_AUTH_MESSAGE =
+  "This live player page requires a valid human bearer token before it can connect.";
+const PLAYER_AUTH_MISMATCH_MESSAGE = "This bearer token does not belong to the requested player.";
 
 export class PublicMatchesError extends Error {
   constructor(message = PUBLIC_MATCHES_ERROR_MESSAGE) {
@@ -178,13 +189,28 @@ export function buildSpectatorMatchWebSocketUrl(
   matchId: string,
   options?: { apiBaseUrl?: string }
 ): string {
-  const httpUrl = new URL(resolveApiBaseUrl(options?.apiBaseUrl));
-  const basePath = httpUrl.pathname === "/" ? "" : httpUrl.pathname.replace(/\/$/, "");
-
-  httpUrl.protocol = httpUrl.protocol === "https:" ? "wss:" : "ws:";
-  httpUrl.pathname = `${basePath}/ws/match/${encodeURIComponent(matchId)}`;
+  const httpUrl = buildMatchWebSocketUrl(matchId, options);
   httpUrl.search = "viewer=spectator";
   return httpUrl.toString();
+}
+
+export function buildPlayerMatchWebSocketUrl(
+  matchId: string,
+  bearerToken: string,
+  options?: { apiBaseUrl?: string }
+): string {
+  const httpUrl = buildMatchWebSocketUrl(matchId, options);
+  httpUrl.searchParams.set("viewer", "player");
+  httpUrl.searchParams.set("token", bearerToken);
+  return httpUrl.toString();
+}
+
+export function parsePlayerMatchEnvelope(payload: unknown): PlayerMatchEnvelope {
+  if (!isPlayerMatchEnvelope(payload)) {
+    throw new Error(PLAYER_MATCH_UPDATE_ERROR_MESSAGE);
+  }
+
+  return payload;
 }
 
 export function parseSpectatorMatchEnvelope(payload: unknown): SpectatorMatchEnvelope {
@@ -193,6 +219,35 @@ export function parseSpectatorMatchEnvelope(payload: unknown): SpectatorMatchEnv
   }
 
   return payload;
+}
+
+export function parseWebSocketApiErrorEnvelope(payload: unknown): ApiErrorEnvelope | null {
+  return isApiErrorEnvelope(payload) ? payload : null;
+}
+
+export function getPlayerWebSocketCloseMessage(reason: string): string | null {
+  switch (reason) {
+    case "human_not_joined":
+      return HUMAN_NOT_JOINED_MESSAGE;
+    case "match_not_found":
+      return PUBLIC_MATCH_DETAIL_NOT_FOUND_MESSAGE;
+    case "invalid_websocket_auth":
+      return INVALID_WEBSOCKET_AUTH_MESSAGE;
+    case "player_auth_mismatch":
+      return PLAYER_AUTH_MISMATCH_MESSAGE;
+    default:
+      return null;
+  }
+}
+
+function buildMatchWebSocketUrl(matchId: string, options?: { apiBaseUrl?: string }): URL {
+  const httpUrl = new URL(resolveApiBaseUrl(options?.apiBaseUrl));
+  const basePath = httpUrl.pathname === "/" ? "" : httpUrl.pathname.replace(/\/$/, "");
+
+  httpUrl.protocol = httpUrl.protocol === "https:" ? "wss:" : "ws:";
+  httpUrl.pathname = `${basePath}/ws/match/${encodeURIComponent(matchId)}`;
+  httpUrl.search = "";
+  return httpUrl;
 }
 
 function buildAuthenticatedHeaders(bearerToken: string): HeadersInit {
@@ -356,6 +411,53 @@ function isSpectatorMatchEnvelope(payload: unknown): payload is SpectatorMatchEn
   );
 }
 
+function isPlayerMatchEnvelope(payload: unknown): payload is PlayerMatchEnvelope {
+  if (!isRecord(payload) || payload.type !== "tick_update" || !isRecord(payload.data)) {
+    return false;
+  }
+
+  return (
+    typeof payload.data.match_id === "string" &&
+    payload.data.viewer_role === "player" &&
+    typeof payload.data.player_id === "string" &&
+    isPlayerMatchState(payload.data.state) &&
+    payload.data.player_id === payload.data.state.player_id &&
+    Array.isArray(payload.data.world_messages) &&
+    payload.data.world_messages.every(isWorldMessageRecord) &&
+    Array.isArray(payload.data.direct_messages) &&
+    payload.data.direct_messages.every(isDirectMessageRecord) &&
+    Array.isArray(payload.data.group_chats) &&
+    payload.data.group_chats.every(isGroupChatRecord) &&
+    Array.isArray(payload.data.group_messages) &&
+    payload.data.group_messages.every(isGroupMessageRecord) &&
+    Array.isArray(payload.data.treaties) &&
+    payload.data.treaties.every(isTreatyRecord) &&
+    Array.isArray(payload.data.alliances) &&
+    payload.data.alliances.every(isAllianceRecord)
+  );
+}
+
+function isPlayerMatchState(payload: unknown): payload is PlayerMatchState {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  return (
+    typeof payload.match_id === "string" &&
+    typeof payload.tick === "number" &&
+    typeof payload.player_id === "string" &&
+    isResourceState(payload.resources) &&
+    isRecord(payload.cities) &&
+    Object.values(payload.cities).every(isVisibleCityState) &&
+    Array.isArray(payload.visible_armies) &&
+    payload.visible_armies.every(isVisibleArmyState) &&
+    (typeof payload.alliance_id === "string" || payload.alliance_id === null) &&
+    Array.isArray(payload.alliance_members) &&
+    payload.alliance_members.every((memberId) => typeof memberId === "string") &&
+    isVictoryState(payload.victory)
+  );
+}
+
 function isSpectatorMatchState(payload: unknown): payload is SpectatorMatchState {
   if (!isRecord(payload)) {
     return false;
@@ -390,6 +492,27 @@ function isSpectatorCityState(payload: unknown): payload is SpectatorCityState {
   );
 }
 
+function isUnknownField(payload: unknown): payload is UnknownField {
+  return payload === "unknown";
+}
+
+function isVisibleCityState(payload: unknown): payload is VisibleCityState {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  return (
+    (typeof payload.owner === "string" || payload.owner === null) &&
+    isFogVisibility(payload.visibility) &&
+    (typeof payload.population === "number" || isUnknownField(payload.population)) &&
+    (isResourceState(payload.resources) || isUnknownField(payload.resources)) &&
+    (isCityUpgradeState(payload.upgrades) || isUnknownField(payload.upgrades)) &&
+    (typeof payload.garrison === "number" || isUnknownField(payload.garrison)) &&
+    ((Array.isArray(payload.building_queue) && payload.building_queue.every(isBuildingQueueItem)) ||
+      isUnknownField(payload.building_queue))
+  );
+}
+
 function isResourceState(payload: unknown): payload is ResourceState {
   return (
     isRecord(payload) &&
@@ -397,6 +520,10 @@ function isResourceState(payload: unknown): payload is ResourceState {
     typeof payload.production === "number" &&
     typeof payload.money === "number"
   );
+}
+
+function isFogVisibility(payload: unknown): payload is "full" | "partial" {
+  return payload === "full" || payload === "partial";
 }
 
 function isCityUpgradeState(payload: unknown): payload is CityUpgradeState {
@@ -413,6 +540,27 @@ function isBuildingQueueItem(payload: unknown): payload is BuildingQueueItem {
     isRecord(payload) &&
     typeof payload.type === "string" &&
     typeof payload.tier === "number" &&
+    typeof payload.ticks_remaining === "number"
+  );
+}
+
+function isVisibleArmyState(payload: unknown): payload is VisibleArmyState {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  const path = payload.path;
+
+  return (
+    typeof payload.id === "string" &&
+    typeof payload.owner === "string" &&
+    isFogVisibility(payload.visibility) &&
+    (typeof payload.troops === "number" || isUnknownField(payload.troops)) &&
+    (typeof payload.location === "string" || payload.location === null) &&
+    (typeof payload.destination === "string" || payload.destination === null) &&
+    (path === null ||
+      isUnknownField(path) ||
+      (Array.isArray(path) && path.every((segment) => typeof segment === "string"))) &&
     typeof payload.ticks_remaining === "number"
   );
 }

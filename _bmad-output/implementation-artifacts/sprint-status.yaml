@@ -1,4 +1,4 @@
-generated: 2026-03-30 18:06 UTC
+generated: 2026-03-31 02:30 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
@@ -116,7 +116,10 @@ development_status:
   24-2-add-real-human-jwt-authentication-for-http-and-websocket-paths: done
   24-3-add-client-side-auth-session-bootstrap-for-future-human-flows: done
 
-  epic-25: in-progress
+  epic-25: done
   25-1-add-a-public-match-detail-page-in-the-web-client: done
   25-2-add-a-read-only-spectator-live-match-page-over-websockets: done
   25-3-add-authenticated-human-lobby-create-join-start-flows-in-the-web-client: done
+
+  epic-26: done
+  26-1-add-an-authenticated-human-live-match-page-over-the-player-websocket: done

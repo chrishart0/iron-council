@@ -38,6 +38,10 @@ describe("MatchDetail", () => {
       "href",
       "/matches/match-alpha/live"
     );
+    expect(screen.getByRole("link", { name: "Open authenticated player view" })).toHaveAttribute(
+      "href",
+      "/matches/match-alpha/play"
+    );
     expect(screen.getByText("Match ID")).toBeVisible();
     expect(screen.getByText("match-alpha")).toBeVisible();
     expect(screen.getByText("active")).toBeVisible();
