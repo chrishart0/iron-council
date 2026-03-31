@@ -1294,3 +1294,27 @@ So that I can observe my fog-filtered state, chat/diplomacy summaries, and tick 
 **And Given** the story ships
 **When** focused client behavior tests plus the repo quality gate run
 **Then** the human live page is verified from the public browser boundary and the docs/BMAD artifacts stay aligned with the shipped route and contract.
+
+### Story 26.2: Add authenticated human order submission controls in the live web client
+
+As an authenticated human player,
+I want to queue and submit my orders from the browser live page,
+So that I can actually play an active match through the shipped web client without falling back to agent-only tooling.
+
+**Acceptance Criteria:**
+
+**Given** a joined authenticated human on the live match page and the server already supports the authenticated command envelope
+**When** the player drafts movement, recruitment, upgrade, or transfer orders and submits them
+**Then** the client posts the existing `/api/v1/matches/{id}/commands` route using the current live tick and the shipped order payload shape without inventing a new backend route.
+
+**And Given** the command request fails because auth is missing, the player is not joined, the tick is stale, or validation/domain rules reject the order
+**When** the client handles the failure
+**Then** it surfaces the structured error clearly, keeps the player's draft intact for correction, and does not pretend the live state already changed.
+
+**And Given** the command request succeeds
+**When** the server accepts the order envelope
+**Then** the client shows a deterministic accepted-for-tick confirmation from the public response while still relying on the websocket for authoritative state updates.
+
+**And Given** the story ships
+**When** focused client behavior tests plus the repo quality gate run
+**Then** the order controls are verified from the browser boundary and the docs/BMAD artifacts stay aligned with the shipped command route and payload contract.
