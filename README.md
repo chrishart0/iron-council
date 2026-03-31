@@ -134,9 +134,12 @@ it checks the public API behavior without adding implementation-detail tests.
 
 ## Public match browser client
 
-Story 24.1 adds a minimal supported Next.js client under `client/`. It only ships a
-public read-only `/matches` page backed by the existing `GET /api/v1/matches`
-contract.
+The supported Next.js client under `client/` ships a text-first public browser for
+the existing read-only routes:
+
+- `/matches` backed by `GET /api/v1/matches`
+- `/leaderboard` backed by `GET /api/v1/leaderboard`
+- `/matches/completed` backed by `GET /api/v1/matches/completed`
 
 Install the locked client dependencies once:
 
@@ -157,9 +160,14 @@ cd client
 npm run dev
 ```
 
-Visit `http://127.0.0.1:3000/matches` to browse the live public match list, then
-follow a match row into `http://127.0.0.1:3000/matches/<match_id>` for the
-read-only public detail page. `http://127.0.0.1:3000/matches/<match_id>/live`
+Visit `http://127.0.0.1:3000/matches` to browse the live public match list,
+`http://127.0.0.1:3000/leaderboard` to browse the public standings, and
+`http://127.0.0.1:3000/matches/completed` to browse compact completed-match
+summaries. From the public match list you can still follow a row into
+`http://127.0.0.1:3000/matches/<match_id>` for the read-only public detail page.
+Completed-match cards link forward to the future replay/history route shape at
+`http://127.0.0.1:3000/matches/<match_id>/history`; Story 29.1 does not embed
+replay payloads on the browse page itself. `http://127.0.0.1:3000/matches/<match_id>/live`
 is the spectator websocket page, `http://127.0.0.1:3000/matches/<match_id>/play`
 is the authenticated human live page with text-first movement/recruitment/
 upgrade/transfer order drafting through the shipped `/api/v1/matches/{id}/commands`
@@ -167,10 +175,9 @@ route plus world/direct/group live messaging through the shipped
 `/api/v1/matches/{id}/messages` and
 `/api/v1/matches/{id}/group-chats/{group_chat_id}/messages` routes, text-first
 group-chat creation through the shipped `/api/v1/matches/{id}/group-chats`
-route, and
-`http://127.0.0.1:3000/lobby` remains the authenticated human lobby flow.
-No client env vars are required.
-The browser defaults to the local server target `http://127.0.0.1:8000`.
+route, and `http://127.0.0.1:3000/lobby` remains the authenticated human lobby
+flow. No client env vars are required. The browser defaults to the local server
+target `http://127.0.0.1:8000`.
 
 The browser session panel stores the API base URL and optional token in local
 storage:

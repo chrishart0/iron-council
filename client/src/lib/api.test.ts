@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildPlayerMatchWebSocketUrl,
   buildSpectatorMatchWebSocketUrl,
+  CompletedMatchesError,
   CommandSubmissionError,
   createMatchLobby,
   DiplomacySubmissionError,
+  fetchCompletedMatches,
+  fetchPublicLeaderboard,
   fetchPublicMatchDetail,
   fetchPublicMatches,
   GroupChatCreateError,
@@ -15,6 +18,7 @@ import {
   parsePlayerMatchEnvelope,
   parseWebSocketApiErrorEnvelope,
   parseSpectatorMatchEnvelope,
+  PublicLeaderboardError,
   PublicMatchDetailError,
   PublicMatchesError,
   submitAllianceAction,
@@ -235,6 +239,180 @@ describe("fetchPublicMatchDetail", () => {
       fetchPublicMatchDetail("broken", fetchImpl as unknown as typeof fetch)
     ).rejects.toEqual(
       new PublicMatchDetailError("Unable to load this public match right now.", "unavailable")
+    );
+  });
+});
+
+describe("fetchPublicLeaderboard", () => {
+  it("returns the public leaderboard payload from the shipped leaderboard endpoint", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        leaderboard: [
+          {
+            rank: 1,
+            display_name: "Arthur",
+            competitor_kind: "human",
+            elo: 1210,
+            provisional: true,
+            matches_played: 1,
+            wins: 1,
+            losses: 0,
+            draws: 0
+          }
+        ]
+      })
+    });
+
+    await expect(fetchPublicLeaderboard(fetchImpl as unknown as typeof fetch)).resolves.toEqual({
+      leaderboard: [
+        {
+          rank: 1,
+          display_name: "Arthur",
+          competitor_kind: "human",
+          elo: 1210,
+          provisional: true,
+          matches_played: 1,
+          wins: 1,
+          losses: 0,
+          draws: 0
+        }
+      ]
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("http://127.0.0.1:8000/api/v1/leaderboard", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json"
+      }
+    });
+  });
+
+  it("prefers an explicit browser session API base URL when provided", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ leaderboard: [] })
+    });
+
+    await fetchPublicLeaderboard(fetchImpl as unknown as typeof fetch, {
+      apiBaseUrl: "https://session.example/"
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("https://session.example/api/v1/leaderboard", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json"
+      }
+    });
+  });
+
+  it("raises a deterministic error when the server returns a non-success status", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ detail: "internal details that should not leak" })
+    });
+
+    await expect(fetchPublicLeaderboard(fetchImpl as unknown as typeof fetch)).rejects.toEqual(
+      new PublicLeaderboardError("Unable to load the public leaderboard right now.")
+    );
+  });
+
+  it("raises a deterministic error when the payload shape is invalid", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        leaderboard: [{ rank: 1, display_name: "Arthur" }]
+      })
+    });
+
+    await expect(fetchPublicLeaderboard(fetchImpl as unknown as typeof fetch)).rejects.toEqual(
+      new PublicLeaderboardError("Unable to load the public leaderboard right now.")
+    );
+  });
+});
+
+describe("fetchCompletedMatches", () => {
+  it("returns the compact completed-match browse payload from the shipped endpoint", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        matches: [
+          {
+            match_id: "match-complete",
+            map: "britain",
+            final_tick: 155,
+            tick_interval_seconds: 30,
+            player_count: 3,
+            completed_at: "2026-03-29T08:30:00Z",
+            winning_alliance_name: "Iron Crown",
+            winning_player_display_names: ["Arthur", "Morgana"]
+          }
+        ]
+      })
+    });
+
+    await expect(fetchCompletedMatches(fetchImpl as unknown as typeof fetch)).resolves.toEqual({
+      matches: [
+        {
+          match_id: "match-complete",
+          map: "britain",
+          final_tick: 155,
+          tick_interval_seconds: 30,
+          player_count: 3,
+          completed_at: "2026-03-29T08:30:00Z",
+          winning_alliance_name: "Iron Crown",
+          winning_player_display_names: ["Arthur", "Morgana"]
+        }
+      ]
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("http://127.0.0.1:8000/api/v1/matches/completed", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json"
+      }
+    });
+  });
+
+  it("prefers an explicit browser session API base URL when provided", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ matches: [] })
+    });
+
+    await fetchCompletedMatches(fetchImpl as unknown as typeof fetch, {
+      apiBaseUrl: "https://session.example/"
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("https://session.example/api/v1/matches/completed", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json"
+      }
+    });
+  });
+
+  it("raises a deterministic error when the server returns a non-success status", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ detail: "internal details that should not leak" })
+    });
+
+    await expect(fetchCompletedMatches(fetchImpl as unknown as typeof fetch)).rejects.toEqual(
+      new CompletedMatchesError("Unable to load completed matches right now.")
+    );
+  });
+
+  it("raises a deterministic error when the payload shape is invalid", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        matches: [{ match_id: "broken" }]
+      })
+    });
+
+    await expect(fetchCompletedMatches(fetchImpl as unknown as typeof fetch)).rejects.toEqual(
+      new CompletedMatchesError("Unable to load completed matches right now.")
     );
   });
 });

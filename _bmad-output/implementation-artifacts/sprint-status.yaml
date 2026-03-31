@@ -1,9 +1,9 @@
-generated: 2026-03-31 12:10 UTC
+generated: 2026-03-31 13:15 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: null
+next_story: 29-2-add-public-completed-match-history-and-replay-inspection-pages-in-the-web-client
 
 development_status:
   epic-1: done
@@ -133,4 +133,8 @@ development_status:
 
   epic-28: done
   28-1-add-authenticated-human-live-group-chat-creation-controls-in-the-web-client: done
+
+  epic-29: in-progress
+  29-1-add-public-leaderboard-and-completed-match-browse-pages-in-the-web-client: done
+  29-2-add-public-completed-match-history-and-replay-inspection-pages-in-the-web-client: drafted
 

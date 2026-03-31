@@ -17,6 +17,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="nav-links" aria-label="Primary">
           <Link href="/">Home</Link>
           <Link href="/matches">Public matches</Link>
+          <Link href="/leaderboard">Leaderboard</Link>
+          <Link href="/matches/completed">Completed matches</Link>
           <Link href="/lobby">Human lobby (auth required)</Link>
         </nav>
         <dl className="session-summary">

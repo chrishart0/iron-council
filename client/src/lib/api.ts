@@ -6,6 +6,8 @@ import type {
   ApiErrorEnvelope,
   BuildingQueueItem,
   CityUpgradeState,
+  CompletedMatchSummary,
+  CompletedMatchSummaryListResponse,
   DirectMessageRecord,
   GroupChatRecord,
   GroupChatCreateAcceptanceResponse,
@@ -27,6 +29,7 @@ import type {
   OrderAcceptanceResponse,
   PlayerMatchEnvelope,
   PlayerMatchState,
+  PublicLeaderboardResponse,
   PublicMatchDetailResponse,
   PublicMatchRosterRow,
   ResourceState,
@@ -42,12 +45,15 @@ import type {
   TreatyActionRequest,
   TreatyRecord,
   VictoryState,
-  WorldMessageRecord
+  WorldMessageRecord,
+  LeaderboardEntry
 } from "./types";
 import { DEFAULT_API_BASE_URL, normalizeApiBaseUrl } from "./session-storage";
 
 const PUBLIC_MATCHES_ERROR_MESSAGE = "Unable to load public matches right now.";
 const PUBLIC_MATCH_DETAIL_ERROR_MESSAGE = "Unable to load this public match right now.";
+const PUBLIC_LEADERBOARD_ERROR_MESSAGE = "Unable to load the public leaderboard right now.";
+const COMPLETED_MATCHES_ERROR_MESSAGE = "Unable to load completed matches right now.";
 const PUBLIC_MATCH_DETAIL_NOT_FOUND_MESSAGE =
   "This match is unavailable. It may not exist or may already be completed.";
 const PLAYER_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse player live match update.";
@@ -77,6 +83,20 @@ export class PublicMatchDetailError extends Error {
   ) {
     super(message);
     this.name = "PublicMatchDetailError";
+  }
+}
+
+export class PublicLeaderboardError extends Error {
+  constructor(message = PUBLIC_LEADERBOARD_ERROR_MESSAGE) {
+    super(message);
+    this.name = "PublicLeaderboardError";
+  }
+}
+
+export class CompletedMatchesError extends Error {
+  constructor(message = COMPLETED_MATCHES_ERROR_MESSAGE) {
+    super(message);
+    this.name = "CompletedMatchesError";
   }
 }
 
@@ -188,6 +208,57 @@ export async function fetchPublicMatchDetail(
 
   if (!isPublicMatchDetailResponse(payload)) {
     throw new PublicMatchDetailError(PUBLIC_MATCH_DETAIL_ERROR_MESSAGE, "unavailable");
+  }
+
+  return payload;
+}
+
+export async function fetchPublicLeaderboard(
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<PublicLeaderboardResponse> {
+  const response = await fetchImpl(`${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/leaderboard`, {
+    cache: "no-store",
+    headers: {
+      accept: "application/json"
+    }
+  });
+
+  if (!response.ok) {
+    throw new PublicLeaderboardError();
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!isPublicLeaderboardResponse(payload)) {
+    throw new PublicLeaderboardError();
+  }
+
+  return payload;
+}
+
+export async function fetchCompletedMatches(
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<CompletedMatchSummaryListResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/completed`,
+    {
+      cache: "no-store",
+      headers: {
+        accept: "application/json"
+      }
+    }
+  );
+
+  if (!response.ok) {
+    throw new CompletedMatchesError();
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!isCompletedMatchSummaryListResponse(payload)) {
+    throw new CompletedMatchesError();
   }
 
   return payload;
@@ -760,6 +831,24 @@ function isMatchListResponse(payload: unknown): payload is MatchListResponse {
   return payload.matches.every(isMatchSummary);
 }
 
+function isPublicLeaderboardResponse(payload: unknown): payload is PublicLeaderboardResponse {
+  if (!isRecord(payload) || !Array.isArray(payload.leaderboard)) {
+    return false;
+  }
+
+  return payload.leaderboard.every(isLeaderboardEntry);
+}
+
+function isCompletedMatchSummaryListResponse(
+  payload: unknown
+): payload is CompletedMatchSummaryListResponse {
+  if (!isRecord(payload) || !Array.isArray(payload.matches)) {
+    return false;
+  }
+
+  return payload.matches.every(isCompletedMatchSummary);
+}
+
 function isMatchSummary(payload: unknown): payload is MatchSummary {
   if (!isRecord(payload)) {
     return false;
@@ -774,6 +863,42 @@ function isMatchSummary(payload: unknown): payload is MatchSummary {
     typeof payload.current_player_count === "number" &&
     typeof payload.max_player_count === "number" &&
     typeof payload.open_slot_count === "number"
+  );
+}
+
+function isLeaderboardEntry(payload: unknown): payload is LeaderboardEntry {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  return (
+    typeof payload.rank === "number" &&
+    typeof payload.display_name === "string" &&
+    (payload.competitor_kind === "human" || payload.competitor_kind === "agent") &&
+    typeof payload.elo === "number" &&
+    typeof payload.provisional === "boolean" &&
+    typeof payload.matches_played === "number" &&
+    typeof payload.wins === "number" &&
+    typeof payload.losses === "number" &&
+    typeof payload.draws === "number"
+  );
+}
+
+function isCompletedMatchSummary(payload: unknown): payload is CompletedMatchSummary {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  return (
+    typeof payload.match_id === "string" &&
+    typeof payload.map === "string" &&
+    typeof payload.final_tick === "number" &&
+    typeof payload.tick_interval_seconds === "number" &&
+    typeof payload.player_count === "number" &&
+    typeof payload.completed_at === "string" &&
+    (typeof payload.winning_alliance_name === "string" || payload.winning_alliance_name === null) &&
+    Array.isArray(payload.winning_player_display_names) &&
+    payload.winning_player_display_names.every((entry) => typeof entry === "string")
   );
 }
 

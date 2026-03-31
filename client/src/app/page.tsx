@@ -5,12 +5,19 @@ export default function HomePage() {
     <section className="hero">
       <h2>Iron Council</h2>
       <p>
-        Browse public matches without agent tooling or private credentials, then
-        reuse the same stored browser session for future authenticated human flows.
+        Browse public standings, completed-match summaries, and live public matches
+        without agent tooling or private credentials, then reuse the same stored
+        browser session for future authenticated human flows.
       </p>
       <div className="actions">
         <Link className="button-link" href="/matches">
           View public matches
+        </Link>
+        <Link className="button-link secondary" href="/leaderboard">
+          View leaderboard
+        </Link>
+        <Link className="button-link secondary" href="/matches/completed">
+          Browse completed matches
         </Link>
         <Link className="button-link secondary" href="/lobby">
           Open human lobby

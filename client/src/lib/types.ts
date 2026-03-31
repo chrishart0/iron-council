@@ -24,6 +24,37 @@ export type PublicMatchDetailResponse = MatchSummary & {
   roster: PublicMatchRosterRow[];
 };
 
+export type LeaderboardEntry = {
+  rank: number;
+  display_name: string;
+  competitor_kind: CompetitorKind;
+  elo: number;
+  provisional: boolean;
+  matches_played: number;
+  wins: number;
+  losses: number;
+  draws: number;
+};
+
+export type PublicLeaderboardResponse = {
+  leaderboard: LeaderboardEntry[];
+};
+
+export type CompletedMatchSummary = {
+  match_id: string;
+  map: string;
+  final_tick: number;
+  tick_interval_seconds: number;
+  player_count: number;
+  completed_at: string;
+  winning_alliance_name: string | null;
+  winning_player_display_names: string[];
+};
+
+export type CompletedMatchSummaryListResponse = {
+  matches: CompletedMatchSummary[];
+};
+
 export type MatchLobbyCreateRequest = {
   map: "britain";
   tick_interval_seconds: number;
