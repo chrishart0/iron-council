@@ -1447,3 +1447,51 @@ So that I can review persisted tick history and inspect one authoritative replay
 **When** focused client behavior tests plus the repo quality gate run
 **Then** the replay/history inspector is verified from the public browser/API boundary and the docs/BMAD artifacts stay aligned with the shipped route contracts.
 
+## Epic 30: Spectator Situation Awareness and Live Context
+
+Turn the existing public live spectator page into a more legible watch surface so observers can understand what is happening politically, not just that ticks are arriving. Reuse the shipped public match-detail read and spectator websocket contracts, keep the UI read-only and text-first, and prefer small deterministic readability wins over flashy presentation.
+
+### Story 30.1: Add a spectator situation room to the live web client
+
+As a spectator,
+I want the live match page to show readable chat, treaty, and alliance context,
+So that I can understand the political state of a live match without decoding raw player IDs or switching tools.
+
+**Acceptance Criteria:**
+
+**Given** the public live spectator page already fetches `/api/v1/matches/{id}` before opening the websocket
+**When** the page renders roster metadata
+**Then** the public match-detail contract includes stable public `player_id` values alongside `display_name` and `competitor_kind` so the client can map live-event actor IDs to readable labels without inventing a second lookup API.
+
+**And Given** the spectator websocket delivers world messages, treaties, and alliances
+**When** the live page renders a tick update
+**Then** it shows text-first read-only panels for recent world chat, treaty status, and alliance membership using roster display names where possible and deterministic raw-ID fallback otherwise.
+
+**And Given** those public panels have no data or the page is disconnected
+**When** the user views the spectator page
+**Then** the UI shows explicit empty/not-live states rather than stale or fabricated diplomacy/chat context.
+
+**And Given** the story ships
+**When** focused server/client checks plus the repo quality gate run
+**Then** the enriched spectator live surface is verified from the public API/browser boundary and the docs/BMAD artifacts stay aligned with the shipped contracts.
+
+### Story 30.2: Add territory pressure and victory context to the spectator live page
+
+As a spectator,
+I want a compact territory and victory summary on the live page,
+So that I can see who is leading and why the current political situation matters.
+
+**Acceptance Criteria:**
+
+**Given** the spectator websocket already carries city ownership and victory metadata
+**When** the live page renders an update
+**Then** it shows a compact city-control summary by visible player/alliance plus the current victory threshold/countdown state without inventing a separate aggregation API.
+
+**And Given** the victory race is inactive or ownership is sparse
+**When** the spectator page renders
+**Then** the UI shows deterministic explanatory empty states instead of misleading pseudo-rankings.
+
+**And Given** the story ships
+**When** focused client behavior tests plus the repo quality gate run
+**Then** the spectator pressure board is verified from the shipped websocket/browser boundary and the docs/BMAD artifacts stay aligned.
+
