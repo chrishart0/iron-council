@@ -1,6 +1,6 @@
 # Story 29.2: Add public completed-match history and replay inspection pages in the web client
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -21,10 +21,10 @@ So that I can review persisted tick history and inspect one authoritative replay
 
 ## Tasks / Subtasks
 
-- [ ] Add typed public client request/response helpers for match history and single-tick replay reads. (AC: 1, 2)
-- [ ] Add a read-only completed-match replay page with tick picker, snapshot metadata, and stable back-navigation. (AC: 1, 2)
-- [ ] Add behavior-first tests covering successful history/replay reads plus not-found/unavailable states. (AC: 2)
-- [ ] Re-run focused client checks and the repo quality gate, then close docs/BMAD artifacts. (AC: 3)
+- [x] Add typed public client request/response helpers for match history and single-tick replay reads. (AC: 1, 2)
+- [x] Add a read-only completed-match replay page with tick picker, snapshot metadata, and stable back-navigation. (AC: 1, 2)
+- [x] Add behavior-first tests covering successful history/replay reads plus not-found/unavailable states. (AC: 2)
+- [x] Re-run focused client checks and the repo quality gate, then close docs/BMAD artifacts. (AC: 3)
 
 ## Dev Notes
 
@@ -45,5 +45,41 @@ So that I can review persisted tick history and inspect one authoritative replay
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
+
+## Dev Agent Record
+
+### Agent Model Used
+
+- GPT-5 Codex
+
+### Debug Log References
+
+- `cd client && npm test -- --run src/lib/api.test.ts`
+- `cd client && npm test -- --run src/components/public/match-history-page.test.tsx src/app/matches/[matchId]/history/page.test.tsx`
+- `cd client && npm test -- --run src/lib/api.test.ts src/components/public/match-history-page.test.tsx src/app/matches/[matchId]/history/page.test.tsx src/components/public/completed-matches-page.test.tsx`
+- `cd client && npm run build`
+- `make quality`
+
+### Completion Notes List
+
+- Added narrow public client types plus read-only fetch helpers for `GET /api/v1/matches/{id}/history` and `GET /api/v1/matches/{id}/history/{tick}` with deterministic malformed/not-found/unavailable error handling.
+- Replaced the placeholder `/matches/<match_id>/history` route with a real text-first replay inspector that waits for session hydration, renders persisted match metadata, links deterministic tick selections, and shows one authoritative stored snapshot/orders/events payload at a time.
+- Added browser-boundary tests proving the page uses only the shipped public history routes, preserves stable navigation, and degrades cleanly for missing matches, missing ticks, and unavailable DB-backed history responses.
+- Updated the README route docs and sprint tracking so the shipped public replay/history contract matches the actual browser surface.
+- Simplification pass: kept the inspector boring and read-only—no websocket replay, no client-side playback engine, and no extra abstraction layer beyond narrow helpers plus one page component.
+
+### File List
+
+- `README.md`
+- `_bmad-output/implementation-artifacts/29-2-add-public-completed-match-history-and-replay-inspection-pages-in-the-web-client.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `client/src/app/matches/[matchId]/history/page.tsx`
+- `client/src/app/matches/[matchId]/history/page.test.tsx`
+- `client/src/components/public/match-history-page.tsx`
+- `client/src/components/public/match-history-page.test.tsx`
+- `client/src/lib/api.ts`
+- `client/src/lib/api.test.ts`
+- `client/src/lib/types.ts`
+- `docs/plans/2026-03-31-story-29-2-public-replay-history-pages.md`

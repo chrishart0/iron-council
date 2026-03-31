@@ -1,37 +1,35 @@
-import Link from "next/link";
+import { MatchHistoryPage } from "../../../../components/public/match-history-page";
 
 type MatchHistoryPageProps = {
   params: Promise<{
     matchId: string;
   }>;
+  searchParams: Promise<{
+    tick?: string;
+  }>;
 };
 
-export default async function MatchHistoryPage({ params }: MatchHistoryPageProps) {
+export default async function MatchHistoryRoutePage({
+  params,
+  searchParams
+}: MatchHistoryPageProps) {
   const { matchId } = await params;
+  const resolvedSearchParams = await searchParams;
+  const selectedTick = parseSelectedTick(resolvedSearchParams.tick);
 
-  return (
-    <>
-      <section className="hero">
-        <h2>Match History</h2>
-        <p>Read-only landing surface for the persisted history route.</p>
-        <div className="actions">
-          <Link className="button-link secondary" href="/matches/completed">
-            Back to completed matches
-          </Link>
-          <Link className="button-link secondary" href="/leaderboard">
-            View leaderboard
-          </Link>
-          <Link className="button-link secondary" href="/">
-            Back to home
-          </Link>
-        </div>
-      </section>
+  return <MatchHistoryPage matchId={matchId} selectedTick={selectedTick} />;
+}
 
-      <section className="panel panel-section">
-        <h3>Match id</h3>
-        <p>{matchId}</p>
-        <p>Persisted replay inspection and tick-by-tick browsing ship in the next public replay story.</p>
-      </section>
-    </>
-  );
+function parseSelectedTick(value: string | undefined): number | null {
+  if (value === undefined) {
+    return null;
+  }
+
+  const tick = Number(value);
+
+  if (!Number.isInteger(tick) || tick < 0) {
+    return null;
+  }
+
+  return tick;
 }

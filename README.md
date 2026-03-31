@@ -165,13 +165,15 @@ Visit `http://127.0.0.1:3000/matches` to browse the live public match list,
 `http://127.0.0.1:3000/matches/completed` to browse compact completed-match
 summaries. From the public match list you can still follow a row into
 `http://127.0.0.1:3000/matches/<match_id>` for the read-only public detail page.
-Completed-match cards link forward to the future replay/history route shape at
-`http://127.0.0.1:3000/matches/<match_id>/history`; Story 29.1 does not embed
-replay payloads on the browse page itself. `http://127.0.0.1:3000/matches/<match_id>/live`
-is the spectator websocket page, `http://127.0.0.1:3000/matches/<match_id>/play`
-is the authenticated human live page with text-first movement/recruitment/
-upgrade/transfer order drafting through the shipped `/api/v1/matches/{id}/commands`
-route plus world/direct/group live messaging through the shipped
+Completed-match cards now link to the shipped replay/history inspector at
+`http://127.0.0.1:3000/matches/<match_id>/history`, which reads only the public
+`GET /api/v1/matches/{id}/history` and `GET /api/v1/matches/{id}/history/{tick}`
+routes and renders one persisted snapshot/orders/events payload at a time.
+`http://127.0.0.1:3000/matches/<match_id>/live` is the spectator websocket page,
+`http://127.0.0.1:3000/matches/<match_id>/play` is the authenticated human live
+page with text-first movement/recruitment/upgrade/transfer order drafting
+through the shipped `/api/v1/matches/{id}/commands` route plus
+world/direct/group live messaging through the shipped
 `/api/v1/matches/{id}/messages` and
 `/api/v1/matches/{id}/group-chats/{group_chat_id}/messages` routes, text-first
 group-chat creation through the shipped `/api/v1/matches/{id}/group-chats`

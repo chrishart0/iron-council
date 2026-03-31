@@ -1,32 +1,54 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import MatchHistoryPage from "./page";
 
+const { mockMatchHistoryPage } = vi.hoisted(() => ({
+  mockMatchHistoryPage: vi.fn(
+    ({ matchId, selectedTick }: { matchId: string; selectedTick: number | null }) => (
+      <div>{`${matchId}:${selectedTick === null ? "null" : selectedTick}`}</div>
+    )
+  )
+}));
+
+vi.mock("../../../../components/public/match-history-page", () => ({
+  MatchHistoryPage: mockMatchHistoryPage
+}));
+
 describe("MatchHistoryPage", () => {
-  it("renders a lightweight history landing surface for the completed-match route", async () => {
+  it("passes the route match id and parsed tick query to the client history page", async () => {
     render(
       await MatchHistoryPage({
         params: Promise.resolve({
           matchId: "match-complete"
+        }),
+        searchParams: Promise.resolve({
+          tick: "155"
         })
       })
     );
 
-    expect(screen.getByRole("heading", { name: "Match History" })).toBeVisible();
-    expect(screen.getByText("match-complete")).toBeVisible();
-    expect(
-      screen.getByText(
-        "Persisted replay inspection and tick-by-tick browsing ship in the next public replay story."
-      )
-    ).toBeVisible();
-    expect(screen.getByRole("link", { name: "Back to completed matches" })).toHaveAttribute(
-      "href",
-      "/matches/completed"
+    expect(screen.getByText("match-complete:155")).toBeVisible();
+    expect(mockMatchHistoryPage).toHaveBeenCalledWith(
+      {
+        matchId: "match-complete",
+        selectedTick: 155
+      },
+      undefined
     );
-    expect(screen.getByRole("link", { name: "View leaderboard" })).toHaveAttribute(
-      "href",
-      "/leaderboard"
+  });
+
+  it("falls back to the latest persisted tick when the query parameter is missing or invalid", async () => {
+    render(
+      await MatchHistoryPage({
+        params: Promise.resolve({
+          matchId: "match-complete"
+        }),
+        searchParams: Promise.resolve({
+          tick: "not-a-number"
+        })
+      })
     );
-    expect(screen.getByRole("link", { name: "Back to home" })).toHaveAttribute("href", "/");
+
+    expect(screen.getByText("match-complete:null")).toBeVisible();
   });
 });

@@ -20,18 +20,23 @@ import type {
   MatchOrdersCommandRequest,
   MatchJoinRequest,
   MatchJoinResponse,
+  MatchHistoryEntry,
   MatchListResponse,
   MatchLobbyCreateRequest,
   MatchLobbyCreateResponse,
   MatchLobbyStartResponse,
   MatchSummary,
+  MatchReplayTickResponse,
   MessageAcceptanceResponse,
   OrderAcceptanceResponse,
   PlayerMatchEnvelope,
   PlayerMatchState,
+  PublicMatchHistoryResponse,
   PublicLeaderboardResponse,
   PublicMatchDetailResponse,
   PublicMatchRosterRow,
+  ReplayFieldRecord,
+  ReplayFieldValue,
   ResourceState,
   UnknownField,
   VisibleArmyState,
@@ -56,6 +61,12 @@ const PUBLIC_LEADERBOARD_ERROR_MESSAGE = "Unable to load the public leaderboard 
 const COMPLETED_MATCHES_ERROR_MESSAGE = "Unable to load completed matches right now.";
 const PUBLIC_MATCH_DETAIL_NOT_FOUND_MESSAGE =
   "This match is unavailable. It may not exist or may already be completed.";
+const PUBLIC_MATCH_HISTORY_ERROR_MESSAGE = "Unable to load match history right now.";
+const PUBLIC_MATCH_HISTORY_NOT_FOUND_MESSAGE =
+  "This completed match history is unavailable. It may not exist.";
+const MATCH_REPLAY_TICK_ERROR_MESSAGE = "Unable to load this replay tick right now.";
+const MATCH_REPLAY_TICK_NOT_FOUND_MESSAGE =
+  "This replay tick is unavailable for the selected match.";
 const PLAYER_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse player live match update.";
 const SPECTATOR_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse spectator live match update.";
 const MATCH_LOBBY_ERROR_MESSAGE = "Unable to complete the requested lobby action right now.";
@@ -97,6 +108,26 @@ export class CompletedMatchesError extends Error {
   constructor(message = COMPLETED_MATCHES_ERROR_MESSAGE) {
     super(message);
     this.name = "CompletedMatchesError";
+  }
+}
+
+export class PublicMatchHistoryError extends Error {
+  constructor(
+    message = PUBLIC_MATCH_HISTORY_ERROR_MESSAGE,
+    readonly kind: "not_found" | "unavailable" = "unavailable"
+  ) {
+    super(message);
+    this.name = "PublicMatchHistoryError";
+  }
+}
+
+export class MatchReplayTickError extends Error {
+  constructor(
+    message = MATCH_REPLAY_TICK_ERROR_MESSAGE,
+    readonly kind: "match_not_found" | "tick_not_found" | "unavailable" = "unavailable"
+  ) {
+    super(message);
+    this.name = "MatchReplayTickError";
   }
 }
 
@@ -259,6 +290,79 @@ export async function fetchCompletedMatches(
 
   if (!isCompletedMatchSummaryListResponse(payload)) {
     throw new CompletedMatchesError();
+  }
+
+  return payload;
+}
+
+export async function fetchPublicMatchHistory(
+  matchId: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<PublicMatchHistoryResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(matchId)}/history`,
+    {
+      cache: "no-store",
+      headers: {
+        accept: "application/json"
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+
+    if (response.status === 404 && hasApiErrorCode(payload, "match_not_found")) {
+      throw new PublicMatchHistoryError(PUBLIC_MATCH_HISTORY_NOT_FOUND_MESSAGE, "not_found");
+    }
+
+    throw new PublicMatchHistoryError(PUBLIC_MATCH_HISTORY_ERROR_MESSAGE, "unavailable");
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!isPublicMatchHistoryResponse(payload)) {
+    throw new PublicMatchHistoryError(PUBLIC_MATCH_HISTORY_ERROR_MESSAGE, "unavailable");
+  }
+
+  return payload;
+}
+
+export async function fetchMatchReplayTick(
+  matchId: string,
+  tick: number,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<MatchReplayTickResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(matchId)}/history/${tick}`,
+    {
+      cache: "no-store",
+      headers: {
+        accept: "application/json"
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+
+    if (response.status === 404 && hasApiErrorCode(payload, "tick_not_found")) {
+      throw new MatchReplayTickError(MATCH_REPLAY_TICK_NOT_FOUND_MESSAGE, "tick_not_found");
+    }
+
+    if (response.status === 404 && hasApiErrorCode(payload, "match_not_found")) {
+      throw new MatchReplayTickError(PUBLIC_MATCH_HISTORY_NOT_FOUND_MESSAGE, "match_not_found");
+    }
+
+    throw new MatchReplayTickError(MATCH_REPLAY_TICK_ERROR_MESSAGE, "unavailable");
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!isMatchReplayTickResponse(payload)) {
+    throw new MatchReplayTickError(MATCH_REPLAY_TICK_ERROR_MESSAGE, "unavailable");
   }
 
   return payload;
@@ -849,6 +953,34 @@ function isCompletedMatchSummaryListResponse(
   return payload.matches.every(isCompletedMatchSummary);
 }
 
+function isPublicMatchHistoryResponse(payload: unknown): payload is PublicMatchHistoryResponse {
+  return (
+    isRecord(payload) &&
+    typeof payload.match_id === "string" &&
+    typeof payload.status === "string" &&
+    typeof payload.current_tick === "number" &&
+    typeof payload.tick_interval_seconds === "number" &&
+    Array.isArray(payload.history) &&
+    payload.history.every(isMatchHistoryEntry)
+  );
+}
+
+function isMatchHistoryEntry(payload: unknown): payload is MatchHistoryEntry {
+  return isRecord(payload) && typeof payload.tick === "number";
+}
+
+function isMatchReplayTickResponse(payload: unknown): payload is MatchReplayTickResponse {
+  return (
+    isRecord(payload) &&
+    typeof payload.match_id === "string" &&
+    typeof payload.tick === "number" &&
+    isReplayFieldRecord(payload.state_snapshot) &&
+    isReplayFieldRecord(payload.orders) &&
+    (isReplayFieldRecord(payload.events) ||
+      (Array.isArray(payload.events) && payload.events.every(isReplayFieldRecord)))
+  );
+}
+
 function isMatchSummary(payload: unknown): payload is MatchSummary {
   if (!isRecord(payload)) {
     return false;
@@ -935,8 +1067,27 @@ function isApiNotFoundError(payload: unknown): boolean {
   return payload.error.code === "match_not_found";
 }
 
+function hasApiErrorCode(payload: unknown, code: string): boolean {
+  return isApiErrorEnvelope(payload) && payload.error.code === code;
+}
+
 function isRecord(payload: unknown): payload is Record<string, unknown> {
   return typeof payload === "object" && payload !== null;
+}
+
+function isReplayFieldRecord(payload: unknown): payload is ReplayFieldRecord {
+  return isRecord(payload) && !Array.isArray(payload) && Object.values(payload).every(isReplayFieldValue);
+}
+
+function isReplayFieldValue(payload: unknown): payload is ReplayFieldValue {
+  return (
+    payload === null ||
+    typeof payload === "string" ||
+    typeof payload === "number" ||
+    typeof payload === "boolean" ||
+    (Array.isArray(payload) && payload.every(isReplayFieldValue)) ||
+    isReplayFieldRecord(payload)
+  );
 }
 
 function isSpectatorMatchEnvelope(payload: unknown): payload is SpectatorMatchEnvelope {

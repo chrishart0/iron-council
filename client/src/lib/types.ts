@@ -55,6 +55,38 @@ export type CompletedMatchSummaryListResponse = {
   matches: CompletedMatchSummary[];
 };
 
+export type MatchHistoryEntry = {
+  tick: number;
+};
+
+export type PublicMatchHistoryResponse = {
+  match_id: string;
+  status: string;
+  current_tick: number;
+  tick_interval_seconds: number;
+  history: MatchHistoryEntry[];
+};
+
+export type ReplayFieldValue =
+  | string
+  | number
+  | boolean
+  | null
+  | ReplayFieldValue[]
+  | { [key: string]: ReplayFieldValue };
+
+export type ReplayFieldRecord = {
+  [key: string]: ReplayFieldValue;
+};
+
+export type MatchReplayTickResponse = {
+  match_id: string;
+  tick: number;
+  state_snapshot: ReplayFieldRecord;
+  orders: ReplayFieldRecord;
+  events: ReplayFieldRecord | ReplayFieldRecord[];
+};
+
 export type MatchLobbyCreateRequest = {
   map: "britain";
   tick_interval_seconds: number;
