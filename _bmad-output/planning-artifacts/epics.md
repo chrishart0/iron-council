@@ -1743,3 +1743,43 @@ As a server maintainer,
 I want treaty/alliance route handlers and shared authenticated-match helper logic split into focused modules,
 So that diplomacy and route-level validation can change without one 600-line file remaining the only place that knows the authenticated match write surface.
 
+## Epic 36: DB Registry Surface Decomposition
+
+Reduce concentration in `server/db/registry.py` by extracting cohesive DB-backed write workflows and keeping the remaining facade focused on stable compatibility exports. Treat this as a refactor epic only: preserve the shipped route/service contracts, mixed-auth behavior, transaction semantics, reload durability, and public-read visibility while preferring plain functions and small explicit modules over new framework layers.
+
+### Story 36.1: Extract DB-backed lobby lifecycle and tick persistence out of `server/db/registry.py`
+
+As a server maintainer,
+I want DB-backed create/join/start lobby workflows and tick persistence separated into focused modules,
+So that lobby write behavior can evolve without one large registry facade owning hydration, identity, public-read, and write logic together.
+
+**Acceptance Criteria:**
+
+**Given** `server/db/registry.py` currently mixes lobby lifecycle writes, tick persistence, hydration helpers, identity lookups, and public-read exports
+**When** Story 36.1 ships
+**Then** `create_match_lobby`, `join_match`, `start_match_lobby`, and `persist_advanced_match_tick` live in focused module(s) while the stable import surface and caller behavior remain unchanged.
+
+**And Given** DB-backed lobby lifecycle routes already depend on exact auth precedence, creator-only ownership checks, persisted-player durability, and public browse/detail visibility after writes
+**When** the refactor ships
+**Then** those semantics, response shapes, structured error mappings, and reload behavior remain unchanged at the API and registry boundary.
+
+**And Given** persisted ticks currently update both `matches.state/current_tick` and `tick_logs`
+**When** the tick persistence logic moves
+**Then** the same atomic write behavior, payload shape, and error behavior remain intact.
+
+**And Given** the story is refactor-only
+**When** focused DB/API/e2e regressions and the repo quality gate run
+**Then** no HTTP contract, auth semantics, DB schema, websocket behavior, runtime-loop behavior, or gameplay rules change and the resulting structure is simpler than the starting point.
+
+### Story 36.2: Extract DB-backed identity and player lookup compatibility helpers out of `server/db/registry.py`
+
+As a server maintainer,
+I want DB identity/player lookup compatibility exports grouped behind a focused surface,
+So that auth/access helper evolution does not require the registry facade to own lobby writes and identity lookups together.
+
+### Story 36.3: Trim `server/db/registry.py` to a thin compatibility facade over hydration, read, identity, and write modules
+
+As a server maintainer,
+I want the DB registry module reduced to a clearly boring compatibility layer,
+So that future DB-backed features can extend focused modules without recreating a monolithic registry file.
+
