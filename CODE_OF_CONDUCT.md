@@ -17,9 +17,9 @@ This Code of Conduct applies in this repository's issues, pull requests, discuss
 
 ## Reporting
 
-If you experience or witness unacceptable behavior in this repository, report it to the maintainers through GitHub so it can be reviewed. For abuse that also violates GitHub's platform rules, use GitHub's reporting tools as well.
+If you experience or witness unacceptable behavior in this repository, use GitHub's reporting and moderation tools so it can be reviewed through the platform's available workflows. That includes reporting abusive content directly on GitHub when the behavior violates GitHub's platform rules.
 
-This repository does not currently advertise a separate private reporting channel. Share only the minimum detail needed for an initial review in public spaces, and avoid posting sensitive personal information.
+This repository does not currently advertise a separate private maintainer contact for conduct reports. Avoid posting sensitive personal information or detailed incident writeups in public issues, pull requests, or discussions. Keep public comments limited to the minimum needed to request moderation action.
 
 ## Enforcement
 

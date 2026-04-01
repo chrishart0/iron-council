@@ -43,6 +43,11 @@ GPT-5 Codex
 - `make quality` (initial run failed because `uv run mypy` could not find `mypy` in the local project environment)
 - `uv sync --extra dev --frozen`
 - `make quality`
+- `sed -n '1,220p' CONTRIBUTING.md`
+- `sed -n '1,240p' CODE_OF_CONDUCT.md`
+- `make help`
+- `git diff --stat`
+- `make quality`
 
 ### Completion Notes List
 
@@ -52,6 +57,8 @@ GPT-5 Codex
 - Added a `SECURITY.md` that routes sensitive disclosures through GitHub private vulnerability tooling when available and otherwise avoids unsafe public disclosure details.
 - Verified the repo workflow with `make help` and passed `make quality` after syncing the locked dev dependencies into `.venv`.
 - Kept the change set limited to governance/trust documentation and BMAD tracking artifacts.
+- Tightened `CONTRIBUTING.md` so `make setup` is the primary onboarding path while preserving the explicit `uv sync --extra dev --frozen` reference and the BMAD/testing expectations from the original acceptance criteria.
+- Refined `CODE_OF_CONDUCT.md` so conduct issues are routed through GitHub-native reporting and moderation paths without implying that sensitive details should be posted publicly or inventing an unsupported private contact.
 
 ### File List
 
