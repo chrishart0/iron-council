@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 35-5-extract-authenticated-treaty-and-alliance-routes-plus-shared-match-route-helpers-out-of-server-api-authenticated_match_routes-py
+next_story: null
 
 development_status:
   public-readiness-epic: done
@@ -171,8 +171,10 @@ development_status:
   34-3-split-db-backed-public-reads-and-identity-loading-helpers-out-of-server-db-registry-py: done
   34-4-split-in-memory-access-and-command-workflows-out-of-server-agent_registry-py: done
 
-  epic-35: in_progress
+  epic-35: done
   35-1-extract-authenticated-lobby-lifecycle-routes-out-of-server-api-authenticated_access_routes-py: done
   35-2-extract-authenticated-profile-state-and-briefing-reads-out-of-server-api-authenticated_access_routes-py: done
   35-3-extract-authenticated-join-and-order-submission-routes-out-of-server-api-authenticated_access_routes-py: done
   35-4-extract-authenticated-command-and-messaging-routes-out-of-server-api-authenticated_match_routes-py: done
+  35-5-extract-authenticated-treaty-and-alliance-routes-plus-shared-match-route-helpers-out-of-server-api-authenticated_match_routes-py: done
+  epic-35-retrospective: optional

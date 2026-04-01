@@ -1,6 +1,6 @@
 # Story: 35.5 Extract authenticated treaty and alliance routes plus shared match-route helpers out of `server/api/authenticated_match_routes.py`
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -39,16 +39,33 @@ So that diplomacy and route-level validation can change without one remaining co
 
 ### Debug Log
 
-- Pending implementation.
+- `uv sync --all-extras --dev`
+- `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'openapi_declares_secured_match_route_contracts or treaty_lifecycle_reads_are_deterministic_and_world_announcements_are_public or treaty_actions_reject_invalid_authenticated_requests or alliance_lifecycle_reads_are_deterministic_and_update_membership or alliance_actions_reject_invalid_authenticated_requests'`
+- `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/e2e/test_api_smoke.py -k 'briefing or treaty'`
+- `make quality`
+- Spec-compliance review: PASS
+- Code-quality/simplification review: APPROVED
 
 ### Completion Notes
 
-- Pending implementation.
+- Extracted treaty route registration into `server/api/authenticated_match_treaty_routes.py` and alliance route registration into `server/api/authenticated_match_alliance_routes.py` while preserving route paths, response models, auth dependencies, structured errors, and realtime broadcast semantics.
+- Reduced `server/api/authenticated_match_routes.py` to a thin composition surface that now wires command, messaging, treaty, and alliance routers around one local match-record/auth dependency seam.
+- Centralized the shared authenticated route response schema helper and callable aliases in `server/api/authenticated_match_route_helpers.py`, removing duplicated helper plumbing from the command and messaging route modules without adding new abstraction layers.
+- Added focused OpenAPI regression coverage proving the treaty/alliance route schemas remain exposed on the secured authenticated match surface.
+- Focused authenticated API regressions, focused real-process smoke coverage, full spec/quality review passes, and the full repo quality gate all passed.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/35-5-extract-authenticated-treaty-and-alliance-routes-plus-shared-match-route-helpers-out-of-server-api-authenticated_match_routes-py.md`
+- `server/api/authenticated_match_alliance_routes.py`
+- `server/api/authenticated_match_command_routes.py`
+- `server/api/authenticated_match_messaging_routes.py`
+- `server/api/authenticated_match_route_helpers.py`
+- `server/api/authenticated_match_routes.py`
+- `server/api/authenticated_match_treaty_routes.py`
+- `tests/api/test_agent_api.py`
 
 ### Change Log
 
 - 2026-04-01: Drafted Story 35.5 as the next Epic 35 cleanup slice after completing Story 35.4.
+- 2026-04-01: Completed the authenticated treaty/alliance route extraction, consolidated shared match-route helper plumbing, and passed focused regressions plus the full quality gate.
