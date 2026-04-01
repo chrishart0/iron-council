@@ -77,6 +77,9 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
                 status=MatchStatus(match.status),
                 tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
                 state=state,
+                map_id=str(match.config.get("map", "britain")),
+                max_player_count=int(match.config.get("max_players", len(state.players))),
+                current_player_count=len(joined_agents) + len(joined_humans),
                 joinable_player_ids=(
                     sorted(
                         player_id

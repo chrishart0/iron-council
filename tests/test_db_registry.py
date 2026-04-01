@@ -271,6 +271,46 @@ def test_create_match_lobby_reload_preserves_authenticated_creator_identity(
     )
 
 
+def test_create_match_lobby_reload_preserves_persisted_match_metadata(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-create-match-lobby-metadata.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    created = create_match_lobby(
+        database_url=database_url,
+        authenticated_agent_id="***",
+        authenticated_agent_display_name="***",
+        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        request=MatchLobbyCreateRequest(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=5,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        ),
+    )
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE matches "
+                "SET config = json_set(config, '$.map', :map_id) "
+                "WHERE id = :match_id"
+            ),
+            {"map_id": "mediterranean", "match_id": created.response.match_id},
+        )
+
+    reloaded_registry = load_match_registry_from_database(database_url)
+    reloaded_match = reloaded_registry.get_match(created.response.match_id)
+    assert reloaded_match is not None
+    assert reloaded_match.map_id == "mediterranean"
+    assert reloaded_match.max_player_count == 5
+    assert reloaded_match.current_player_count == 1
+    assert reloaded_match.joinable_player_ids == ["player-2", "player-3", "player-4", "player-5"]
+
+
 def test_create_match_lobby_reload_preserves_non_seeded_authenticated_creator_identity(
     tmp_path: Path,
 ) -> None:

@@ -594,6 +594,24 @@ def resolve_human_player_id_from_db(
     )
 
 
+ResolvedAuthenticatedDbAgent = _ResolvedAuthenticatedDbAgent
+build_human_actor_id = _build_human_actor_id
+build_joined_player_id = _build_joined_player_id
+build_match_scoped_player_id = _build_match_scoped_player_id
+build_persisted_player_mapping = _build_persisted_player_mapping
+load_agent_profiles_by_match = _load_agent_profiles_by_match
+load_authenticated_agent_keys_by_match = _load_authenticated_agent_keys_by_match
+load_joined_agents_by_match = _load_joined_agents_by_match
+load_joined_humans_by_match = _load_joined_humans_by_match
+load_match_record_from_session = _load_match_record_from_session
+load_persisted_alliances_by_match = _load_persisted_alliances_by_match
+load_public_competitor_kinds_by_match = _load_public_competitor_kinds_by_match
+resolve_authenticated_agent_from_db_key_hash = _resolve_authenticated_agent_from_db_key_hash
+resolve_human_display_name = _resolve_human_display_name
+resolve_human_elo_rating = _resolve_human_elo_rating
+resolve_loaded_agent_identity = _resolve_loaded_agent_identity
+
+
 __all__ = [
     "CreatedMatchLobby",
     "JoinedMatch",
@@ -601,25 +619,41 @@ __all__ = [
     "MatchLobbyCreationError",
     "MatchLobbyStartError",
     "PublicMatchDetailNotFoundError",
+    "ResolvedAuthenticatedDbAgent",
     "StartedMatchLobby",
     "TickHistoryNotFoundError",
     "_ResolvedAuthenticatedDbAgent",
+    "build_human_actor_id",
+    "build_joined_player_id",
+    "build_match_scoped_player_id",
+    "build_persisted_player_mapping",
     "_build_human_actor_id",
     "_build_joined_player_id",
     "_build_match_scoped_player_id",
     "_build_persisted_player_mapping",
+    "load_agent_profiles_by_match",
+    "load_authenticated_agent_keys_by_match",
+    "load_joined_agents_by_match",
+    "load_joined_humans_by_match",
+    "load_match_record_from_session",
     "_load_agent_profiles_by_match",
     "_load_authenticated_agent_keys_by_match",
     "_load_joined_agents_by_match",
     "_load_joined_humans_by_match",
     "_load_match_record_from_session",
+    "load_persisted_alliances_by_match",
+    "load_public_competitor_kinds_by_match",
     "_load_persisted_alliances_by_match",
     "_load_public_competitor_kinds_by_match",
     "_resolve_authenticated_agent_context_from_db",
+    "resolve_authenticated_agent_from_db_key_hash",
     "_resolve_authenticated_agent_from_db_key_hash",
+    "resolve_human_display_name",
+    "resolve_human_elo_rating",
     "_resolve_human_display_name",
     "_resolve_human_elo_rating",
     "_resolve_human_player_id_from_db",
+    "resolve_loaded_agent_identity",
     "_resolve_loaded_agent_identity",
     "create_match_lobby",
     "get_completed_match_summaries",
