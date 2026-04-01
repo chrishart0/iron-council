@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 
 from server.agent_registry import InMemoryMatchRegistry, MatchJoinError
+from server.auth import hash_api_key
 from server.db.registry import (
     join_match as join_db_match,
 )
@@ -50,6 +51,7 @@ def build_authenticated_access_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1")
     registry_dependency = Depends(match_registry_provider)
+    history_database_url = app_services.history_database_url
 
     def resolve_authenticated_agent(
         registry: InMemoryMatchRegistry = registry_dependency,
