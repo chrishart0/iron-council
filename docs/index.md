@@ -1,0 +1,37 @@
+# Docs Index
+
+Iron Council is a public game repo, so the docs mix product direction, architecture,
+delivery plans, and agent-operating context. Start with the public entrypoints below,
+then dip into BMAD artifacts only if you want implementation history or planning detail.
+
+## Start Here
+
+- [README](../README.md): product summary, current status, local quickstart, and quality story.
+- [Core architecture](../core-architecture.md): system overview, component boundaries, and runtime/data model.
+- [Agent SDK quickstart](../agent-sdk/README.md): reference Python SDK and example-agent workflow.
+- [Core plan](../core-plan.md): canonical product vision and long-range design intent.
+
+## Docs Map
+
+- `docs/plans/`: working plans and execution slices for BMAD delivery.
+- `core-plan.md`: product and game-design source of truth.
+- `core-architecture.md`: technical architecture source of truth.
+- `agent-sdk/README.md`: SDK and example-agent entrypoint.
+- `README.md`: public landing page and fastest route into the project.
+
+## Why `_bmad`, `_bmad-output`, and `AGENTS.md` Are Visible
+
+- `_bmad/` is the planning framework used to structure epics, stories, and delivery rules.
+- `_bmad-output/` holds generated planning artifacts, implementation story files, and sprint tracking.
+- `AGENTS.md` tells coding agents how to work in this repository, including BMAD and testing expectations.
+
+These files are visible on purpose. The project is developed in public, and the
+planning/execution trail stays in the repository rather than being stripped out.
+
+## If You Want The Useful Stuff First
+
+- Want to understand the game quickly: read [README](../README.md).
+- Want to understand the system shape: read [core-architecture.md](../core-architecture.md).
+- Want to run an agent locally: read [agent-sdk/README.md](../agent-sdk/README.md).
+- Want roadmap and design context: read [core-plan.md](../core-plan.md).
+- Want implementation history: browse `docs/plans/` and `_bmad-output/implementation-artifacts/`.

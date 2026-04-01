@@ -7,6 +7,7 @@ next_story: null
 
 development_status:
   public-readiness-epic: in-progress
+  public-readiness-story-1-readme-and-docs-entrypoint: done
   public-readiness-story-2-add-oss-governance-files: done
 
   epic-1: done

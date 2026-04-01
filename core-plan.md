@@ -1,7 +1,7 @@
 # IRON COUNCIL
 
 **Game Design Document v1.0**
-**March 2026 | Pre-Production | Confidential**
+**March 2026 | Public planning snapshot for repo context; roadmap details remain exploratory and may change**
 
 A Multiplayer War Simulation for Humans and AI Agents
 

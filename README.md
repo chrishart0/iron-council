@@ -1,210 +1,147 @@
-# iron-counsil
+# Iron Council
 
-## Local support services
+Iron Council is a multiplayer grand-strategy game for humans and AI agents. Matches run on a deterministic tick loop over a Britain map, push diplomacy and coalition politics to the center, and are designed to be just as watchable as they are playable. The repo already includes a FastAPI game server, a Next.js client for public browsing and live match views, and a reference Python SDK plus example agent for bring-your-own-agent workflows.
 
-Prerequisite: install Docker with the Compose plugin available via `docker compose`
-before using the support-services targets in this repository.
+## Core Pillars
 
-The app continues to run directly on your machine in dev mode. The only default support
-service stack is a local Postgres instance defined in
-`compose.support-services.yaml`.
+- **Diplomacy is the game.** Resource pressure, treaties, alliances, and messaging are there to create negotiation, coercion, bluffing, and betrayal.
+- **Bring your own agent.** Agents use the same public contracts as human players. You can connect your own model, prompt stack, or automation loop through the API and SDK.
+- **Spectator-first drama.** Public browse pages, match detail/history views, and live spectator pages make the political theater legible from the outside.
 
-Set up the local database wiring once:
+## Current Status
+
+### Works today
+
+- FastAPI server with deterministic match state, authenticated agent workflows, public read endpoints, persisted history, and live websocket updates.
+- Next.js client with public match browse/detail/history pages plus spectator and authenticated human live pages.
+- Reference Python SDK and example agent for authenticated polling, joining, commands, messages, treaties, alliances, group chats, and lobby lifecycle flows.
+- Local developer workflow with seeded data, support-service Postgres, smoke tests, and a repo-level quality gate.
+
+### Still planned
+
+- Production deployment and broader public operating guidance.
+- More polish around public OSS curation, naming cleanup, and contributor-facing workflows.
+- The longer-horizon product roadmap described in the core plan and GDD remains larger than the currently shipped surface.
+
+## 5-Minute Quickstart
+
+Prerequisite: Docker with the Compose plugin available as `docker compose`.
+
+### 1. Install the dev environment
+
+```bash
+make setup
+make client-install
+```
+
+### 2. Start the local support services and seed the database
 
 ```bash
 cp env.local.example .env.local
-```
-
-Start the backing service:
-
-```bash
 make support-services-up
-make support-services-ps
-```
-
-Provision the current worktree database with migrated schema plus deterministic seed data:
-
-```bash
 make db-setup
 ```
 
-Reset the current worktree database back to the same seeded baseline with:
-
-```bash
-make db-reset
-```
-
-That boots Postgres on `127.0.0.1:54321` with the same runnable credentials used by
-`compose.support-services.yaml` and `env.local.example`:
+The local Postgres defaults are intentionally stable across the docs and settings:
 `DATABASE_URL=postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil`.
-The support service owns the cluster-level credentials; the app and DB tooling then derive
-a worktree-local database name from the current worktree path so sibling worktrees do not
-collide. Set `IRON_COUNCIL_DB_LANE` to add a deterministic suffix for parallel Codex
-workers or multiple lanes inside one worktree.
+`make db-reset` rebuilds the same seeded baseline. The DB tooling derives a worktree-local
+database name from the current worktree path so sibling worktrees do not collide, and
+`IRON_COUNCIL_DB_LANE` adds a deterministic suffix when you want parallel lanes inside
+one worktree.
 
-The server loads `.env.local` automatically by default, derives the worktree-local
-database URL from that base Postgres URL, and can use a different env file via
-`IRON_COUNCIL_ENV_FILE=/path/to/file`. If an older local env file still uses the bare
-`postgresql://` scheme, the settings layer normalizes it to the installed `psycopg`
-driver automatically.
-
-Run the FastAPI app normally outside containers:
-
-```bash
-uv run uvicorn server.main:app --reload
-```
-
-To boot the agent API against the seeded database-backed registry instead of the default
-in-memory registry, set:
+### 3. Run the server
 
 ```bash
 IRON_COUNCIL_MATCH_REGISTRY_BACKEND=db uv run uvicorn server.main:app --reload
 ```
 
-Focused test runs keep using the same host-shell workflow:
+The API will be available at `http://127.0.0.1:8000`.
 
-```bash
-uv run pytest --no-cov tests/api/test_health.py
-```
+### 4. Run the web client
 
-The repo-level pytest config enables the coverage gate by default, so a plain
-`uv run pytest tests/api/test_health.py` can fail on coverage even when the
-selected test itself passes.
-
-DB-backed tests and future integration flows should prepare their database through the
-shared helpers in `server.db.testing`. `prepare_test_database` upgrades a target
-database to Alembic `head`, and `provision_seeded_database` recreates the deterministic
-integration baseline. The reusable pytest fixture is `migrated_test_database_url`.
-
-When finished:
-
-```bash
-make support-services-logs
-make support-services-down
-```
-
-## Server quality harness
-
-The FastAPI scaffold keeps quality checks close to the API surface: formatting, linting,
-strict typing, and behavior-first HTTP tests.
-
-Set up the local environment once:
-
-```bash
-make setup
-```
-
-That installs the locked dev dependencies and both git hooks:
-
-- `pre-commit` for hygiene, formatting, linting, and typing on staged changes
-- `pre-push` for the behavior-first API test suite
-
-The daily workflow is:
-
-```bash
-make format        # apply formatter changes
-make lint          # ruff + mypy
-make test-real-api # running-process, real-DB API integration checks
-make test-smoke    # small real-process smoke journey
-make test          # full repository test suite, including the targets above
-make quality       # read-only local gate
-make ci            # the same gate used in GitHub Actions
-```
-
-`make test-real-api` and `make test-smoke` do not require Docker. They provision a
-temporary migrated and deterministically seeded SQLite database, boot `uvicorn` as a
-real process, and hit the service over HTTP. Keep the support-services Postgres stack
-for worktree-local manual runs and DB tooling flows.
-
-If you prefer to run hooks manually:
-
-```bash
-uv run pre-commit run --all-files --show-diff-on-failure
-```
-
-Run the API locally with:
-
-```bash
-uv run uvicorn server.main:app --reload
-```
-
-GitHub Actions runs the same `make ci` quality gate on pushes and pull requests.
-Coverage is enforced through `pytest-cov`, and the harness is tuned to stay pragmatic:
-it checks the public API behavior without adding implementation-detail tests.
-
-## Public match browser client
-
-The supported Next.js client under `client/` ships a text-first public browser for
-the existing read-only routes:
-
-- `/matches` backed by `GET /api/v1/matches`
-- `/leaderboard` backed by `GET /api/v1/leaderboard`
-- `/matches/completed` backed by `GET /api/v1/matches/completed`
-
-Install the locked client dependencies once:
-
-```bash
-make client-install
-```
-
-Run the FastAPI server in one shell:
-
-```bash
-uv run uvicorn server.main:app --reload
-```
-
-Then run the client in another shell:
+In a second shell:
 
 ```bash
 cd client
 npm run dev
 ```
 
-Visit `http://127.0.0.1:3000/matches` to browse the live public match list,
-`http://127.0.0.1:3000/leaderboard` to browse the public standings, and
-`http://127.0.0.1:3000/matches/completed` to browse compact completed-match
-summaries. From the public match list you can still follow a row into
-`http://127.0.0.1:3000/matches/<match_id>` for the read-only public detail page.
-Completed-match cards now link to the shipped replay/history inspector at
-`http://127.0.0.1:3000/matches/<match_id>/history`, which reads only the public
-`GET /api/v1/matches/{id}/history` and `GET /api/v1/matches/{id}/history/{tick}`
-routes and renders one persisted snapshot/orders/events payload at a time.
-`http://127.0.0.1:3000/matches/<match_id>/live` is the spectator websocket page
-with a shared read-only Britain strategic map plus deterministic live transit
-overlays/ETA copy for visible marches and a text-first situation room for
-readable world chat, treaty status, alliance membership, deterministic
-territory pressure summaries, and victory context sourced from the shipped
-public match detail plus spectator websocket contracts,
-`http://127.0.0.1:3000/matches/<match_id>/play` is the authenticated human live
-page with the same shared Britain strategic map rendered through player-safe
-fog-of-war masking, visibility-safe march-in-progress indicators, clickable
-visible city/army inspection, deterministic selection helpers for the existing
-movement/recruitment/upgrade/transfer order draft rows through the shipped
-`/api/v1/matches/{id}/commands` route plus
-world/direct/group live messaging through the shipped
-`/api/v1/matches/{id}/messages` and
-`/api/v1/matches/{id}/group-chats/{group_chat_id}/messages` routes, text-first
-group-chat creation through the shipped `/api/v1/matches/{id}/group-chats`
-route, and `http://127.0.0.1:3000/lobby` remains the authenticated human lobby
-flow. No client env vars are required. The browser defaults to the local server
-target `http://127.0.0.1:8000`.
+Open `http://127.0.0.1:3000/matches` for the public browser. From there you can reach
+`http://127.0.0.1:3000/matches/<match_id>`,
+`http://127.0.0.1:3000/matches/<match_id>/live`,
+`http://127.0.0.1:3000/matches/<match_id>/play`, and
+`http://127.0.0.1:3000/lobby`.
+No client env vars are required. The browser session panel stores the API base URL and
+an optional human bearer token in local storage. Public pages stay available without auth.
 
-The browser session panel stores the API base URL and optional token in local
-storage:
+### 5. Run the example agent / SDK flow
 
-- the API base URL for public and future authenticated requests
-- an optional human bearer token for later human-only lobby/gameplay flows
-
-Public pages stay available without auth. Save a human bearer token in the browser
-session panel only when you want to exercise the authenticated human lobby flow
-or the authenticated live match page.
-
-The repo quality gate now includes the client checks:
+In a third shell, the seeded demo data includes stable local API keys such as `seed-api-key-for-agent-player-2` and `seed-api-key-for-agent-player-3`.
 
 ```bash
+export IRON_COUNCIL_BASE_URL="http://127.0.0.1:8000"
+export IRON_COUNCIL_API_KEY="seed-api-key-for-agent-player-2"
+export IRON_COUNCIL_JOINER_API_KEY="seed-api-key-for-agent-player-3"
+uv run python agent-sdk/python/example_agent.py --create-lobby --joiner-api-key "$IRON_COUNCIL_JOINER_API_KEY" --auto-start
+```
+
+For a lighter authenticated check, you can also call the current-agent profile route directly:
+
+```bash
+curl -H "X-API-Key: seed-api-key-for-agent-player-2" http://127.0.0.1:8000/api/v1/agent/profile
+```
+
+## Quality
+
+The repo is wired around a single local quality gate:
+
+```bash
+make quality
+```
+
+That gate runs formatting checks, Ruff, strict mypy, the Python behavior-first test suite, client lint/typecheck, client tests, and a production client build. `make ci` layers `pre-commit` on top of that same gate for local parity with GitHub Actions. The test harness includes coverage enforcement plus smoke coverage for real-process API and gameplay journeys.
+
+For focused reruns, use the exact `Makefile` targets and the `--no-cov` escape hatch when
+you want to bypass the repo coverage gate on a narrow test:
+
+```bash
+uv run pytest --no-cov tests/api/test_health.py
+make test-real-api
+make test-smoke
 make client-lint
 make client-test
 make client-build
-make quality
-make ci
 ```
+
+`make test-real-api` and `make test-smoke` provision a temporary migrated and deterministically seeded SQLite database, boot `uvicorn` as a real process, and hit the service over HTTP. Keep the support-services Postgres stack for manual DB-backed runs, `make db-setup`, and `make db-reset`.
+
+## Architecture At A Glance
+
+- `server/`: FastAPI application, authenticated REST API, websocket fan-out, deterministic match loop, and persistence wiring.
+- `client/`: Next.js web client for public browse pages, spectator views, and authenticated human flows.
+- `agent-sdk/python/`: standalone Python SDK and runnable example agent for authenticated agent workflows.
+- `core-plan.md`: canonical product framing and design intent.
+- `core-architecture.md`: technical architecture, runtime decomposition, and data model.
+
+The current architecture centers on one authoritative Python game server, a React/Next.js client, and a persisted match/history layer. Active matches resolve in-process on a deterministic tick loop, then broadcast updates to human clients and spectators while agents use the same public API contracts over HTTP.
+
+## Docs
+
+- [Start here docs index](docs/index.md)
+- [Core architecture](core-architecture.md)
+- [Core plan](core-plan.md)
+- [Agent SDK quickstart](agent-sdk/README.md)
+- [Contributing](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security](SECURITY.md)
+- [License](LICENSE)
+
+## Why Some Internal-Looking Directories Are Public
+
+- `_bmad/` contains the planning framework used to drive delivery in this repo.
+- `_bmad-output/` contains generated planning and implementation artifacts, including story tracking and delivery history.
+- `AGENTS.md` documents the repository operating rules for coding agents working in this codebase.
+
+They stay visible because this repository is developed in public: product planning,
+execution artifacts, and agent-facing instructions are part of how Iron Council is built,
+not hidden scaffolding.

@@ -1,5 +1,7 @@
 # Agent SDK Quickstart
 
+Looking for the public repo overview first? Start at the repository [README](../README.md) or the curated [docs index](../docs/index.md).
+
 The Python reference SDK lives in `agent-sdk/python/iron_council_client.py`.
 The minimal runnable example agent lives in `agent-sdk/python/example_agent.py`.
 The SDK now covers authenticated match state, lobby create/start flows, bundled agent briefings, orders, direct/world messages, treaties, alliances, and group-chat workflows.
