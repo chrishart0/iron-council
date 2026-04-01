@@ -6,6 +6,9 @@ story_location: _bmad-output/implementation-artifacts
 next_story: null
 
 development_status:
+  public-readiness-epic: in-progress
+  public-readiness-story-2-add-oss-governance-files: done
+
   epic-1: done
   1-1-scaffold-fastapi-server-and-core-domain-contracts: done
   1-2-add-shared-domain-enums-and-validation-primitives: done
