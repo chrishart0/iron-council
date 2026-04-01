@@ -4439,6 +4439,55 @@ def test_match_websocket_resolves_player_from_canonical_token_without_player_id(
     assert payload["data"]["player_id"] == "player-2"
 
 
+def test_db_backed_human_state_and_websocket_resolution_share_player_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'human-state-websocket-resolution.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+    with TestClient(app, base_url="http://testserver") as client:
+        create_response = client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000304"),
+        )
+        assert create_response.status_code == HTTPStatus.CREATED
+        created_payload = create_response.json()
+
+        state_response = client.get(
+            f"/api/v1/matches/{created_payload['match_id']}/state",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000304"),
+        )
+        assert state_response.status_code == HTTPStatus.OK
+
+        with client.websocket_connect(
+            "/ws/match/"
+            f"{created_payload['match_id']}?viewer=player"
+            f"&token={_human_jwt_token(user_id='00000000-0000-0000-0000-000000000304')}"
+        ) as websocket:
+            payload = websocket.receive_json()
+
+    assert state_response.json()["player_id"] == "player-1"
+    assert payload["type"] == "tick_update"
+    assert payload["data"]["viewer_role"] == "player"
+    assert payload["data"]["player_id"] == state_response.json()["player_id"]
+    assert payload["data"]["state"]["player_id"] == state_response.json()["player_id"]
+
+
 def test_match_websocket_rejects_invalid_and_wrong_role_human_tokens(
     websocket_client: TestClient,
 ) -> None:

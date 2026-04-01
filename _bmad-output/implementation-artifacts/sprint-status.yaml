@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 32-3-extract-authenticated-lobby-and-player-access-helpers-behind-stable-app-services
+next_story: null
 
 development_status:
   public-readiness-epic: done
@@ -156,7 +156,7 @@ development_status:
   31-3-add-visibility-safe-live-map-transit-overlays: done
   epic-31-retrospective: optional
 
-  epic-32: in_progress
+  epic-32: done
   32-1-extract-public-and-realtime-route-registration-from-server-main: done
   32-2-extract-authenticated-match-command-messaging-and-diplomacy-routes-from-server-main: done
-  32-3-extract-authenticated-lobby-and-player-access-helpers-behind-stable-app-services: backlog
+  32-3-extract-authenticated-lobby-and-player-access-helpers-behind-stable-app-services: done

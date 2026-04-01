@@ -8,12 +8,11 @@ from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 
 from server.agent_registry import InMemoryMatchRegistry
 from server.models.realtime import RealtimeViewerRole
-from server.settings import Settings
 from server.websocket import MatchWebSocketManager, build_match_realtime_envelope
 
+from .app_services import AppServices
 from .errors import ApiError
 
-ResolveWebsocketPlayerViewer = Callable[..., str]
 WebsocketErrorHandler = Callable[[WebSocket, ApiError], Awaitable[None]]
 
 
@@ -22,9 +21,7 @@ def register_realtime_routes(
     *,
     registry: InMemoryMatchRegistry,
     websocket_manager: MatchWebSocketManager,
-    settings: Settings,
-    history_database_url: str | None,
-    resolve_websocket_player_viewer: ResolveWebsocketPlayerViewer,
+    app_services: AppServices,
     send_websocket_auth_error: WebsocketErrorHandler,
     close_websocket_for_api_error: WebsocketErrorHandler,
 ) -> None:
@@ -49,10 +46,8 @@ def register_realtime_routes(
                 )
             viewer_role = cast(RealtimeViewerRole, viewer)
             resolved_player_id = (
-                resolve_websocket_player_viewer(
+                app_services.resolve_websocket_player_viewer(
                     registry=registry,
-                    settings=settings,
-                    history_database_url=history_database_url,
                     match_id=match_id,
                     player_id=player_id,
                     token=token,

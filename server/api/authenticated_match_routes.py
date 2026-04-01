@@ -33,11 +33,10 @@ from server.models.api import (
     TreatyListResponse,
 )
 
+from .app_services import ApiKeyHeader, AppServices
 from .errors import API_ERROR_RESPONSE_SCHEMA, ApiError
 
 RegistryProvider = Callable[..., InMemoryMatchRegistry]
-AuthenticatedAgentDependency = Callable[..., AuthenticatedAgentContext]
-RequireJoinedPlayerId = Callable[..., str]
 BroadcastCurrentMatch = Callable[[str], Awaitable[None]]
 
 
@@ -53,19 +52,11 @@ def _authenticated_route_responses(
 def build_authenticated_match_router(
     *,
     match_registry_provider: RegistryProvider,
-    authenticated_agent_dependency: AuthenticatedAgentDependency,
-    require_joined_player_id: RequireJoinedPlayerId,
+    app_services: AppServices,
     broadcast_current_match: BroadcastCurrentMatch,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1")
-    registry_dependency = Annotated[
-        InMemoryMatchRegistry,
-        Depends(match_registry_provider),
-    ]
-    authenticated_agent_context_dependency = Annotated[
-        AuthenticatedAgentContext,
-        Depends(authenticated_agent_dependency),
-    ]
+    registry_dependency = Depends(match_registry_provider)
     command_request_body = Annotated[AgentCommandEnvelopeRequest, Body()]
     group_chat_create_body = Annotated[GroupChatCreateRequest, Body()]
     group_chat_message_body = Annotated[GroupChatMessageCreateRequest, Body()]
@@ -82,6 +73,17 @@ def build_authenticated_match_router(
                 message=f"Match '{match_id}' was not found.",
             )
         return record
+
+    def resolve_authenticated_agent(
+        registry: InMemoryMatchRegistry = registry_dependency,
+        api_key: ApiKeyHeader = None,
+    ) -> AuthenticatedAgentContext:
+        return app_services.get_authenticated_agent(
+            registry=registry,
+            api_key=api_key,
+        )
+
+    authenticated_agent_dependency = Depends(resolve_authenticated_agent)
 
     @router.post(
         "/matches/{match_id}/command",
@@ -106,9 +108,9 @@ def build_authenticated_match_router(
     )
     async def post_match_command(
         match_id: str,
-        registry: registry_dependency,
-        authenticated_agent_context: authenticated_agent_context_dependency,
         command: command_request_body,
+        authenticated_agent_context: AuthenticatedAgentContext = authenticated_agent_dependency,
+        registry: InMemoryMatchRegistry = registry_dependency,
     ) -> AgentCommandEnvelopeResponse:
         record = require_match_record(registry=registry, match_id=match_id)
         if command.match_id != match_id:
@@ -120,7 +122,7 @@ def build_authenticated_match_router(
                     f"'{match_id}'."
                 ),
             )
-        resolved_player_id = require_joined_player_id(
+        resolved_player_id = app_services.require_joined_player_id(
             registry=registry,
             match_id=match_id,
             authenticated_agent=authenticated_agent_context,
@@ -167,11 +169,11 @@ def build_authenticated_match_router(
     )
     async def get_match_messages(
         match_id: str,
-        registry: registry_dependency,
-        authenticated_agent_context: authenticated_agent_context_dependency,
+        authenticated_agent_context: AuthenticatedAgentContext = authenticated_agent_dependency,
+        registry: InMemoryMatchRegistry = registry_dependency,
     ) -> MatchMessageInboxResponse:
         require_match_record(registry=registry, match_id=match_id)
-        resolved_player_id = require_joined_player_id(
+        resolved_player_id = app_services.require_joined_player_id(
             registry=registry,
             match_id=match_id,
             authenticated_agent=authenticated_agent_context,
@@ -192,11 +194,11 @@ def build_authenticated_match_router(
     )
     async def get_match_group_chats(
         match_id: str,
-        registry: registry_dependency,
-        authenticated_agent_context: authenticated_agent_context_dependency,
+        authenticated_agent_context: AuthenticatedAgentContext = authenticated_agent_dependency,
+        registry: InMemoryMatchRegistry = registry_dependency,
     ) -> GroupChatListResponse:
         require_match_record(registry=registry, match_id=match_id)
-        resolved_player_id = require_joined_player_id(
+        resolved_player_id = app_services.require_joined_player_id(
             registry=registry,
             match_id=match_id,
             authenticated_agent=authenticated_agent_context,
@@ -222,9 +224,9 @@ def build_authenticated_match_router(
     )
     async def post_match_group_chat(
         match_id: str,
-        registry: registry_dependency,
-        authenticated_agent_context: authenticated_agent_context_dependency,
         group_chat: group_chat_create_body,
+        authenticated_agent_context: AuthenticatedAgentContext = authenticated_agent_dependency,
+        registry: InMemoryMatchRegistry = registry_dependency,
     ) -> GroupChatCreateAcceptanceResponse:
         record = require_match_record(registry=registry, match_id=match_id)
         if group_chat.match_id != match_id:
@@ -236,7 +238,7 @@ def build_authenticated_match_router(
                     f"match '{match_id}'."
                 ),
             )
-        resolved_player_id = require_joined_player_id(
+        resolved_player_id = app_services.require_joined_player_id(
             registry=registry,
             match_id=match_id,
             authenticated_agent=authenticated_agent_context,
@@ -281,11 +283,11 @@ def build_authenticated_match_router(
     async def get_match_group_chat_messages(
         match_id: str,
         group_chat_id: str,
-        registry: registry_dependency,
-        authenticated_agent_context: authenticated_agent_context_dependency,
+        authenticated_agent_context: AuthenticatedAgentContext = authenticated_agent_dependency,
+        registry: InMemoryMatchRegistry = registry_dependency,
     ) -> GroupChatMessageListResponse:
         require_match_record(registry=registry, match_id=match_id)
-        resolved_player_id = require_joined_player_id(
+        resolved_player_id = app_services.require_joined_player_id(
             registry=registry,
             match_id=match_id,
             authenticated_agent=authenticated_agent_context,
@@ -325,9 +327,9 @@ def build_authenticated_match_router(
     async def post_match_group_chat_message(
         match_id: str,
         group_chat_id: str,
-        registry: registry_dependency,
-        authenticated_agent_context: authenticated_agent_context_dependency,
         message: group_chat_message_body,
+        authenticated_agent_context: AuthenticatedAgentContext = authenticated_agent_dependency,
+        registry: InMemoryMatchRegistry = registry_dependency,
     ) -> GroupChatMessageAcceptanceResponse:
         record = require_match_record(registry=registry, match_id=match_id)
         if message.match_id != match_id:
@@ -339,7 +341,7 @@ def build_authenticated_match_router(
                     f"route match '{match_id}'."
                 ),
             )
-        resolved_player_id = require_joined_player_id(
+        resolved_player_id = app_services.require_joined_player_id(
             registry=registry,
             match_id=match_id,
             authenticated_agent=authenticated_agent_context,
@@ -388,9 +390,9 @@ def build_authenticated_match_router(
     )
     async def post_match_message(
         match_id: str,
-        registry: registry_dependency,
-        authenticated_agent_context: authenticated_agent_context_dependency,
         message: match_message_body,
+        authenticated_agent_context: AuthenticatedAgentContext = authenticated_agent_dependency,
+        registry: InMemoryMatchRegistry = registry_dependency,
     ) -> MessageAcceptanceResponse:
         record = require_match_record(registry=registry, match_id=match_id)
         if message.match_id != match_id:
@@ -402,7 +404,7 @@ def build_authenticated_match_router(
                     f"'{match_id}'."
                 ),
             )
-        resolved_player_id = require_joined_player_id(
+        resolved_player_id = app_services.require_joined_player_id(
             registry=registry,
             match_id=match_id,
             authenticated_agent=authenticated_agent_context,
@@ -456,11 +458,11 @@ def build_authenticated_match_router(
     )
     async def get_match_treaties(
         match_id: str,
-        registry: registry_dependency,
-        authenticated_agent_context: authenticated_agent_context_dependency,
+        authenticated_agent_context: AuthenticatedAgentContext = authenticated_agent_dependency,
+        registry: InMemoryMatchRegistry = registry_dependency,
     ) -> TreatyListResponse:
         require_match_record(registry=registry, match_id=match_id)
-        require_joined_player_id(
+        app_services.require_joined_player_id(
             registry=registry,
             match_id=match_id,
             authenticated_agent=authenticated_agent_context,
@@ -482,9 +484,9 @@ def build_authenticated_match_router(
     )
     async def post_match_treaty(
         match_id: str,
-        registry: registry_dependency,
-        authenticated_agent_context: authenticated_agent_context_dependency,
         treaty_action: treaty_action_body,
+        authenticated_agent_context: AuthenticatedAgentContext = authenticated_agent_dependency,
+        registry: InMemoryMatchRegistry = registry_dependency,
     ) -> TreatyActionAcceptanceResponse:
         record = require_match_record(registry=registry, match_id=match_id)
         if treaty_action.match_id != match_id:
@@ -496,7 +498,7 @@ def build_authenticated_match_router(
                     f"match '{match_id}'."
                 ),
             )
-        resolved_player_id = require_joined_player_id(
+        resolved_player_id = app_services.require_joined_player_id(
             registry=registry,
             match_id=match_id,
             authenticated_agent=authenticated_agent_context,
@@ -544,11 +546,11 @@ def build_authenticated_match_router(
     )
     async def get_match_alliances(
         match_id: str,
-        registry: registry_dependency,
-        authenticated_agent_context: authenticated_agent_context_dependency,
+        authenticated_agent_context: AuthenticatedAgentContext = authenticated_agent_dependency,
+        registry: InMemoryMatchRegistry = registry_dependency,
     ) -> AllianceListResponse:
         require_match_record(registry=registry, match_id=match_id)
-        require_joined_player_id(
+        app_services.require_joined_player_id(
             registry=registry,
             match_id=match_id,
             authenticated_agent=authenticated_agent_context,
@@ -570,9 +572,9 @@ def build_authenticated_match_router(
     )
     async def post_match_alliance(
         match_id: str,
-        registry: registry_dependency,
-        authenticated_agent_context: authenticated_agent_context_dependency,
         alliance_action: alliance_action_body,
+        authenticated_agent_context: AuthenticatedAgentContext = authenticated_agent_dependency,
+        registry: InMemoryMatchRegistry = registry_dependency,
     ) -> AllianceActionAcceptanceResponse:
         require_match_record(registry=registry, match_id=match_id)
         if alliance_action.match_id != match_id:
@@ -584,7 +586,7 @@ def build_authenticated_match_router(
                     f"match '{match_id}'."
                 ),
             )
-        resolved_player_id = require_joined_player_id(
+        resolved_player_id = app_services.require_joined_player_id(
             registry=registry,
             match_id=match_id,
             authenticated_agent=authenticated_agent_context,
