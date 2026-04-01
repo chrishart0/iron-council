@@ -235,10 +235,10 @@ describe("MatchLiveMap", () => {
 
     const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
     expect(
-      within(mapRegion).getByLabelText("Transit overlay Arthur Manchester to Leeds")
+      within(mapRegion).getByLabelText("Transit indicator Arthur Leeds ETA 3 ticks")
     ).toBeVisible();
     expect(
-      within(mapRegion).getByText("Arthur marching Manchester to Leeds via Manchester to Leeds • ETA 3 ticks")
+      within(mapRegion).getByText("Arthur marching on Leeds • ETA 3 ticks")
     ).toBeVisible();
   });
 
@@ -332,8 +332,8 @@ describe("MatchLiveMap", () => {
     );
 
     const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
-    expect(within(mapRegion).queryByLabelText("Transit overlay Arthur Manchester to Leeds")).not.toBeInTheDocument();
-    expect(within(mapRegion).queryByText("Arthur marching Manchester to Leeds via Manchester to Leeds • ETA 3 ticks")).not.toBeInTheDocument();
+    expect(within(mapRegion).queryByLabelText("Transit indicator Arthur Leeds ETA 3 ticks")).not.toBeInTheDocument();
+    expect(within(mapRegion).queryByText("Arthur marching on Leeds • ETA 3 ticks")).not.toBeInTheDocument();
     expect(within(mapRegion).getByText("No visible transit overlays in the last confirmed update.")).toBeVisible();
   });
 

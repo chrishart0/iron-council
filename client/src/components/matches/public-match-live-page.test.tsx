@@ -559,9 +559,9 @@ describe("PublicMatchLivePage", () => {
     socket?.emitMessage(makeTransitEnvelope());
 
     expect(
-      await screen.findByText("Arthur marching Manchester to Leeds via Manchester to Leeds • ETA 3 ticks")
+      await screen.findByText("Arthur marching on Leeds • ETA 3 ticks")
     ).toBeVisible();
-    expect(screen.getByText("Arthur march Manchester to Leeds • ETA 3 ticks")).toBeVisible();
+    expect(screen.getByText("Arthur march toward Leeds • ETA 3 ticks")).toBeVisible();
   });
 
   it("keeps same-label players separate in the territory pressure section", async () => {

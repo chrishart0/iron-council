@@ -208,9 +208,9 @@ describe("MatchLiveView", () => {
     );
 
     expect(
-      screen.getByText("Arthur marching Manchester to Leeds via Manchester to Leeds • ETA 3 ticks")
+      screen.getByText("Arthur marching on Leeds • ETA 3 ticks")
     ).toBeVisible();
-    expect(screen.getByText("Arthur march Manchester to Leeds • ETA 3 ticks")).toBeVisible();
+    expect(screen.getByText("Arthur march toward Leeds • ETA 3 ticks")).toBeVisible();
   });
 
   it("renders explicit empty states for text-first situation-room panels", () => {

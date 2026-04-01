@@ -98,19 +98,11 @@ function formatTicksRemaining(ticksRemaining: number) {
   return `ETA ${ticksRemaining} ${ticksRemaining === 1 ? "tick" : "ticks"}`;
 }
 
-function formatTransitPath(pathCityIds: string[], cityNamesById: Map<string, string>) {
-  return pathCityIds
-    .map((cityId) => cityNamesById.get(cityId) ?? cityId)
-    .join(" to ");
-}
-
-function canRenderTransitGeometry(army: MatchLiveMapArmyDatum) {
+function canRenderTransitIndicator(army: MatchLiveMapArmyDatum) {
   return (
     army.visibility === "full" &&
     army.transit.status === "in_transit" &&
-    army.transit.destinationCityId !== null &&
-    army.transit.pathCityIds !== null &&
-    army.transit.pathCityIds.length >= 2
+    army.transit.destinationCityId !== null
   );
 }
 
@@ -122,12 +114,10 @@ export function describeTransitMapText(
     return null;
   }
 
-  if (canRenderTransitGeometry(army)) {
+  if (army.visibility === "full" && army.transit.destinationCityId !== null) {
     const destinationCityName =
-      cityNamesById.get(army.transit.destinationCityId ?? "") ?? army.transit.destinationCityId;
-    const pathLabel = formatTransitPath(army.transit.pathCityIds ?? [], cityNamesById);
-
-    return `${army.ownerLabel} marching ${army.cityName} to ${destinationCityName} via ${pathLabel} • ${formatTicksRemaining(army.transit.ticksRemaining)}`;
+      cityNamesById.get(army.transit.destinationCityId) ?? army.transit.destinationCityId;
+    return `${army.ownerLabel} marching on ${destinationCityName} • ${formatTicksRemaining(army.transit.ticksRemaining)}`;
   }
 
   return `${army.ownerLabel} march in progress • ${formatTicksRemaining(army.transit.ticksRemaining)}`;
@@ -144,7 +134,7 @@ export function describeTransitListText(
   if (army.visibility === "full" && army.transit.destinationCityId !== null) {
     const destinationCityName =
       cityNamesById.get(army.transit.destinationCityId) ?? army.transit.destinationCityId;
-    return `${army.ownerLabel} march ${army.cityName} to ${destinationCityName} • ${formatTicksRemaining(army.transit.ticksRemaining)}`;
+    return `${army.ownerLabel} march toward ${destinationCityName} • ${formatTicksRemaining(army.transit.ticksRemaining)}`;
   }
 
   return `${army.ownerLabel} march in progress • ${formatTicksRemaining(army.transit.ticksRemaining)}`;
@@ -251,32 +241,29 @@ export function MatchLiveMap({
         })}
 
         {visibleTransitArmies.map((army) => {
-          if (!canRenderTransitGeometry(army)) {
+          if (!canRenderTransitIndicator(army)) {
             return null;
           }
 
-          const pathCities = (army.transit.pathCityIds ?? [])
-            .map((cityId) => citiesById.get(cityId) ?? null)
-            .filter((city): city is NonNullable<typeof city> => city !== null);
-
-          if (pathCities.length < 2) {
-            return null;
-          }
-
+          const anchorCity = citiesById.get(army.cityId) ?? null;
           const destinationCityName =
             cityNamesById.get(army.transit.destinationCityId ?? "") ?? army.transit.destinationCityId;
 
+          if (anchorCity === null) {
+            return null;
+          }
+
           return (
-            <polyline
+            <circle
               key={`transit-${army.armyId}`}
-              aria-label={`Transit overlay ${army.ownerLabel} ${army.cityName} to ${destinationCityName}`}
-              points={pathCities.map((city) => `${city.x + 48},${city.y + 48}`).join(" ")}
+              aria-label={`Transit indicator ${army.ownerLabel} ${destinationCityName} ${formatTicksRemaining(army.transit.ticksRemaining)}`}
+              cx={anchorCity.x + 48}
+              cy={anchorCity.y + 48}
+              r={cityRadius + 8}
               fill="none"
               stroke={perspective === "spectator" ? "#0f766e" : "#2563eb"}
-              strokeDasharray="10 6"
-              strokeWidth={5}
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              strokeDasharray="6 5"
+              strokeWidth={4}
             />
           );
         })}
