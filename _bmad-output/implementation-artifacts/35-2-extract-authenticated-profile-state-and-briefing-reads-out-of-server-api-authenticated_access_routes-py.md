@@ -1,6 +1,6 @@
 # Story: 35.2 Extract authenticated profile, state, and briefing reads out of `server/api/authenticated_access_routes.py`
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -18,11 +18,11 @@ So that read-model and auth/access changes do not stay coupled to join and order
 
 ## Tasks / Subtasks
 
-- [ ] Pin current authenticated profile/state/briefing behavior with focused regressions. (AC: 2, 4)
-- [ ] Extract profile/state/briefing read route handlers into a focused module. (AC: 1, 5)
-- [ ] Rewire `server/api/authenticated_access_routes.py` to compose the extracted read router without contract drift. (AC: 1, 5)
-- [ ] Run focused verification, simplification review, and the repo quality gate. (AC: 4, 5)
-- [ ] Update sprint tracking and completion notes after merge. (AC: 4)
+- [x] Pin current authenticated profile/state/briefing behavior with focused regressions. (AC: 2, 4)
+- [x] Extract profile/state/briefing read route handlers into a focused module. (AC: 1, 5)
+- [x] Rewire `server/api/authenticated_access_routes.py` to compose the extracted read router without contract drift. (AC: 1, 5)
+- [x] Run focused verification, simplification review, and the repo quality gate. (AC: 4, 5)
+- [x] Update sprint tracking and completion notes after merge. (AC: 4)
 
 ## Dev Notes
 
@@ -35,16 +35,31 @@ So that read-model and auth/access changes do not stay coupled to join and order
 
 ### Debug Log
 
-- Pending.
+- 2026-04-01: Confirmed baseline authenticated read-route behavior with `uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'profile or state or briefing'` before extraction.
+- 2026-04-01: Extracted authenticated profile/state/briefing GET handlers into `server/api/authenticated_read_routes.py` and rewired `server/api/authenticated_access_routes.py` to compose lobby and read subrouters while retaining join/order POST handlers.
+- 2026-04-01: Verified focused authenticated regressions with:
+  - `uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'profile or state or briefing'`
+  - `uv run pytest -o addopts='' tests/e2e/test_api_smoke.py -k 'profile or state or briefing'`
+  - `uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'profile or state or briefing or join or orders'`
+- 2026-04-01: Ran `make format`.
+- 2026-04-01: Initial `source .venv/bin/activate && make quality` failed because the worktree `.venv` was missing declared dev tools and `uv run mypy` could not spawn `mypy`.
+- 2026-04-01: Synced the declared development environment with `uv sync --all-extras --dev` and reran `source .venv/bin/activate && make quality` successfully.
 
 ### Completion Notes
 
-- Pending.
+- Extracted authenticated profile, public profile, match state, and agent briefing GET route registration into `server/api/authenticated_read_routes.py` using the same focused router-composition style as the lobby extraction.
+- Preserved the shipped HTTP contract for all extracted routes: paths, response models, query parameter validation, auth dependencies, error mapping, and fog-filtered state projection behavior remained unchanged.
+- Kept `server/api/authenticated_access_routes.py` focused on composition plus join/order submission handling, making the file materially smaller without introducing new abstractions.
+- Verified the refactor with focused API/e2e authenticated read regressions, join/order overlap coverage, and a passing full `make quality` gate after syncing the missing dev dependencies into `.venv`.
 
 ### File List
 
-- Pending.
+- `server/api/authenticated_access_routes.py`
+- `server/api/authenticated_read_routes.py`
+- `_bmad-output/implementation-artifacts/35-2-extract-authenticated-profile-state-and-briefing-reads-out-of-server-api-authenticated_access_routes-py.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ### Change Log
 
 - 2026-04-01: Drafted Story 35.2 as the next Epic 35 cleanup slice after completing Story 35.1 lobby lifecycle route extraction.
+- 2026-04-01: Completed Story 35.2 by extracting authenticated read routes into `server/api/authenticated_read_routes.py`, validating focused API/e2e regressions, and passing `make quality`.
