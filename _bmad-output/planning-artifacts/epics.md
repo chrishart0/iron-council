@@ -1543,3 +1543,27 @@ So that the existing order controls become faster and more legible without inven
 **When** focused client behavior tests plus the repo quality gate run
 **Then** the human live map interactions are verified from the browser boundary and remain aligned with the shipped HTTP/websocket order contract.
 
+### Story 31.3: Add visibility-safe live map transit overlays
+
+As a spectator or authenticated human player,
+I want the live strategic map to show when visible armies are marching and how long they have left,
+So that I can understand frontline motion without decoding raw army lists or leaking hidden route details.
+
+**Acceptance Criteria:**
+
+**Given** the existing spectator and player websocket payloads already expose in-transit army fields such as `location`, `destination`, `path`, and `ticks_remaining`
+**When** the shared live map renders a visible marching army
+**Then** it shows deterministic transit overlays and readable ETA copy derived only from those shipped fields rather than a new API or client-side routefinding.
+
+**And Given** an authenticated human player sees a partially visible army or a payload that omits route detail
+**When** the map renders that army
+**Then** the UI preserves fog-of-war boundaries by masking exact route/destination geometry while still showing a deterministic marching/ETA indicator when safe.
+
+**And Given** no visible transit overlays exist or the live feed is offline
+**When** the map panel renders
+**Then** it shows deterministic empty/not-live explanatory states instead of stale or fabricated marching paths.
+
+**And Given** the story ships
+**When** focused browser-boundary client checks plus the repo quality gate run
+**Then** the marching overlays are verified from the shipped websocket/browser boundary and the docs/BMAD artifacts stay aligned.
+
