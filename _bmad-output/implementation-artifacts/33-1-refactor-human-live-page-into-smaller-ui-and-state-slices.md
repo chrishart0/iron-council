@@ -1,6 +1,6 @@
 # Story: 33.1 Refactor human live page into smaller UI and state slices
 
-Status: in_progress
+Status: done
 
 ## Story
 
@@ -39,12 +39,27 @@ GPT-5 Codex
 
 ### Debug Log References
 
-- Pending
+- `cd client && npm test -- human-match-live-page.test.tsx`
+- `cd client && npm test -- public-match-live-page.test.tsx match-live-map.test.tsx`
+- `cd client && npm run lint`
+- `make client-test client-build`
+- `uv sync --extra dev --frozen`
+- `make quality`
 
 ### Completion Notes List
 
-- Pending
+- Split the human live snapshot surface into explicit summary, selection, messaging, diplomacy, and order panel modules under `client/src/components/matches/human-live/`.
+- Kept `HumanMatchLivePage` as the route-facing entrypoint with unchanged browser-visible headings and existing API/WebSocket helper contracts.
+- Preserved behavior-boundary regression coverage while simplifying the main live snapshot composition and passing the full repo quality gate.
 
 ### File List
 
-- Pending
+- `_bmad-output/implementation-artifacts/33-1-refactor-human-live-page-into-smaller-ui-and-state-slices.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `client/src/components/matches/human-live/human-live-diplomacy-panel.tsx`
+- `client/src/components/matches/human-live/human-live-messaging-panel.tsx`
+- `client/src/components/matches/human-live/human-live-orders-panel.tsx`
+- `client/src/components/matches/human-live/human-match-live-selection-panel.tsx`
+- `client/src/components/matches/human-live/human-match-live-snapshot.tsx`
+- `client/src/components/matches/human-live/human-match-live-summary-panels.tsx`
+- `client/src/components/matches/human-live/human-match-live-types.ts`

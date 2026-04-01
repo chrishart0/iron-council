@@ -14,137 +14,45 @@ import {
   submitTreatyAction
 } from "../../../lib/api";
 import type {
-  AllianceRecord,
   AllianceAction,
+  AllianceRecord,
   AllianceActionAcceptanceResponse,
   AllianceActionRequest,
-  GroupChatRecord,
   GroupChatCreateAcceptanceResponse,
   GroupChatMessageAcceptanceResponse,
-  GroupMessageRecord,
+  GroupChatRecord,
   MessageAcceptanceResponse,
   MatchOrdersCommandRequest,
   PlayerMatchEnvelope,
-  ResourceType,
-  TreatyAction,
   TreatyActionAcceptanceResponse,
-  TreatyRecord,
-  TreatyType,
-  UpgradeTrack,
   VisibleArmyState
 } from "../../../lib/types";
 import type { BritainMapLayout } from "../../../lib/britain-map";
 import {
   MatchLiveMap,
-  describeTransitListText,
   type MatchLiveMapArmyDatum,
   type MatchLiveMapCityDatum
 } from "../match-live-map";
-
-type MovementDraft = {
-  armyId: string;
-  destination: string;
-};
-
-type RecruitmentDraft = {
-  city: string;
-  troops: string;
-};
-
-type UpgradeDraft = {
-  city: string;
-  track: UpgradeTrack;
-  targetTier: string;
-};
-
-type TransferDraft = {
-  to: string;
-  resource: ResourceType;
-  amount: string;
-};
-
-type OrderDraftState = {
-  movements: MovementDraft[];
-  recruitment: RecruitmentDraft[];
-  upgrades: UpgradeDraft[];
-  transfers: TransferDraft[];
-};
-
-type MapSelection =
-  | { kind: "city"; cityId: string }
-  | { kind: "army"; armyId: string };
-
-type SubmissionFeedback =
-  | {
-      status: "idle";
-    }
-  | {
-      status: "submitting";
-    }
-  | {
-      status: "success";
-      message: string;
-    }
-  | {
-      status: "error";
-      message: string;
-      code: string;
-      statusCode: number;
-    };
-
-type LiveMessagingChannel = "world" | "direct" | "group";
-
-type MessageDraftState = {
-  channel: LiveMessagingChannel;
-  directRecipientId: string;
-  groupChatId: string;
-  content: string;
-};
-
-type GroupChatCreateDraftState = {
-  name: string;
-  selectedInviteeIds: string[];
-};
-
-type AsyncSubmissionFeedback =
-  | {
-      status: "idle";
-    }
-  | {
-      status: "submitting";
-    }
-  | {
-      status: "success";
-      message: string;
-      details?: string[];
-    }
-  | {
-      status: "error";
-      message: string;
-      code: string;
-      statusCode: number;
-    };
-
-type TreatyDraftState = {
-  action: TreatyAction;
-  treatyType: TreatyType;
-  counterpartyId: string;
-};
-
-type AllianceDraftState = {
-  action: AllianceAction;
-  name: string;
-  allianceId: string;
-};
-
-const resourceRows: Array<{
-  label: string;
-  value: (envelope: PlayerMatchEnvelope) => number | string;
-}> = [
-  { label: "Food", value: (envelope) => envelope.data.state.resources.food },
-  { label: "Production", value: (envelope) => envelope.data.state.resources.production },
-  { label: "Money", value: (envelope) => envelope.data.state.resources.money }
-];
+import { HumanLiveDiplomacyPanel } from "./human-live-diplomacy-panel";
+import { HumanLiveMessagingPanel } from "./human-live-messaging-panel";
+import { HumanLiveOrdersPanel } from "./human-live-orders-panel";
+import { HumanMatchLiveSelectionPanel } from "./human-match-live-selection-panel";
+import { HumanMatchLiveSummaryPanels } from "./human-match-live-summary-panels";
+import type {
+  AllianceDraftState,
+  AsyncSubmissionFeedback,
+  GroupChatCreateDraftState,
+  LiveMessagingChannel,
+  MapSelection,
+  MessageDraftState,
+  MovementDraft,
+  OrderDraftState,
+  RecruitmentDraft,
+  SubmissionFeedback,
+  TransferDraft,
+  TreatyDraftState,
+  UpgradeDraft
+} from "./human-match-live-types";
 
 const emptyDraftState = (): OrderDraftState => ({
   movements: [],
@@ -1269,13 +1177,19 @@ export function HumanMatchLiveSnapshot({
 
   return (
     <>
-      <section className="panel panel-section">
-        <div className="section-heading">
-          <h2>Live player state</h2>
-          <span className="status-pill">{liveStatus === "live" ? "Live" : "Not live"}</span>
-        </div>
-        <p>Fog-filtered state plus player-safe diplomacy and chat summaries from the current websocket snapshot.</p>
-      </section>
+      <HumanMatchLiveSummaryPanels
+        envelope={envelope}
+        liveStatus={liveStatus}
+        mapArmies={mapArmies}
+        cityNamesById={cityNamesById}
+        latestWorldMessage={latestWorldMessage}
+        latestDirectMessage={latestDirectMessage}
+        latestGroupChat={latestGroupChat}
+        latestGroupMessage={latestGroupMessage}
+        latestTreaty={latestTreaty}
+        latestAlliance={latestAlliance}
+        partialArmy={partialArmy}
+      />
 
       <MatchLiveMap
         mapLayout={mapLayout}
@@ -1290,612 +1204,68 @@ export function HumanMatchLiveSnapshot({
         onArmySelect={selectArmy}
       />
 
-      <section className="panel panel-section" aria-label="Map selection inspector">
-        <h2>Map selection inspector</h2>
-        {selectedMapEntity === null ? (
-          <p>Select a visible city or army marker to inspect it and use explicit draft helpers.</p>
-        ) : selectedCity !== null ? (
-          <>
-            <p>{`Selected city: ${selectedCity.cityName}`}</p>
-            <p>{selectedCity.ownerLabel === null ? "Owner hidden or unknown" : `Owner ${selectedCity.ownerLabel}`}</p>
-            <p>{selectedCity.garrisonLabel === null ? "Garrison hidden or unknown" : `Visible garrison ${selectedCity.garrisonLabel}`}</p>
-          </>
-        ) : selectedArmy !== null ? (
-          <>
-            <p>{`Selected army: ${selectedArmy.armyId}`}</p>
-            <p>{`Owner ${selectedArmy.ownerLabel}`}</p>
-            <p>{selectedArmy.troopsLabel === null ? "Visible troops hidden or unknown" : `Visible troops ${selectedArmy.troopsLabel}`}</p>
-            <p>
-              {selectedArmy.visibleLocationCityId === null
-                ? "Visible location hidden or unknown"
-                : `Visible location ${formatCityName(selectedArmy.visibleLocationCityId)}`}
-            </p>
-          </>
-        ) : (
-          <p>Selected marker is no longer visible in the current snapshot.</p>
-        )}
-        {selectionGuidance ? <p role="status">{selectionGuidance}</p> : null}
-      </section>
+      <HumanMatchLiveSelectionPanel
+        selectedMapEntity={selectedMapEntity}
+        selectedCity={selectedCity}
+        selectedArmy={selectedArmy}
+        selectionGuidance={selectionGuidance}
+      />
 
-      <dl className="panel panel-grid" aria-label="Live player summary">
-        <SummaryRow label="Match ID" value={envelope.data.match_id} />
-        <SummaryRow label="Viewing player" value={envelope.data.player_id} />
-        <SummaryRow label="Tick" value={envelope.data.state.tick} />
-        <SummaryRow label="Visible cities" value={Object.keys(envelope.data.state.cities).length} />
-        <SummaryRow label="Visible armies" value={envelope.data.state.visible_armies.length} />
-        <SummaryRow label="Alliance" value={envelope.data.state.alliance_id ?? "No alliance"} />
-      </dl>
+      <HumanLiveMessagingPanel
+        visiblePlayerIds={visiblePlayerIds}
+        visibleGroupChats={visibleGroupChats}
+        groupChatCreateDraft={groupChatCreateDraft}
+        groupChatCreateFeedback={groupChatCreateFeedback}
+        messageDraft={messageDraft}
+        messageSubmissionFeedback={messageSubmissionFeedback}
+        canSubmitGroupChatCreate={canSubmitGroupChatCreate}
+        canSubmitMessage={canSubmitMessage}
+        updateGroupChatCreateDraft={updateGroupChatCreateDraft}
+        updateMessageDraft={updateMessageDraft}
+        submitGroupChatCreateDraft={submitGroupChatCreateDraft}
+        submitMessageDraft={submitMessageDraft}
+      />
 
-      <section className="panel panel-section">
-        <h2>Resources</h2>
-        <ul className="roster-list" aria-label="Player resources">
-          {resourceRows.map((row) => (
-            <li key={row.label} className="roster-row">
-              <span>{`${row.label} ${row.value(envelope)}`}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <HumanLiveDiplomacyPanel
+        currentAllianceId={envelope.data.state.alliance_id}
+        treatyCounterpartyIds={treatyCounterpartyIds}
+        joinableAlliances={joinableAlliances}
+        treatyDraft={treatyDraft}
+        treatySubmissionFeedback={treatySubmissionFeedback}
+        allianceDraft={allianceDraft}
+        allianceSubmissionFeedback={allianceSubmissionFeedback}
+        canSubmitTreaty={canSubmitTreaty}
+        canSubmitAlliance={canSubmitAlliance}
+        updateTreatyDraft={updateTreatyDraft}
+        updateAllianceDraft={updateAllianceDraft}
+        applyTreatyCounterpartySelection={applyTreatyCounterpartySelection}
+        submitTreatyDraft={submitTreatyDraft}
+        submitAllianceDraft={submitAllianceDraft}
+      />
 
-      <section className="panel panel-section">
-        <h2>Fog-filtered movement</h2>
-        {envelope.data.state.visible_armies.length === 0 ? (
-          <p>No player-safe army movement is visible in this update.</p>
-        ) : (
-          <ul className="roster-list" aria-label="Visible player armies">
-            {envelope.data.state.visible_armies.map((army) => {
-              const mapArmy = mapArmies.find((entry) => entry.armyId === army.id) ?? null;
-              const transitText =
-                mapArmy === null ? null : describeTransitListText(mapArmy, cityNamesById);
-
-              return (
-                <li key={army.id} className="roster-row">
-                  <span>{transitText ?? describeArmy(army)}</span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {partialArmy ? <p>{`Visible enemy army near ${partialArmy.destination ?? partialArmy.location ?? "the frontier"}`}</p> : null}
-      </section>
-
-      <section className="panel panel-section">
-        <h2>Chat and diplomacy</h2>
-        <ul className="roster-list" aria-label="Player chat and diplomacy summaries">
-          <li className="roster-row">
-            <span>{latestWorldMessage ? latestWorldMessage.content : "No world message yet."}</span>
-          </li>
-          <li className="roster-row">
-            <span>{latestDirectMessage ? latestDirectMessage.content : "No direct message yet."}</span>
-          </li>
-          <li className="roster-row">
-            <span>{describeGroupChat(latestGroupChat, latestGroupMessage)}</span>
-          </li>
-          <li className="roster-row">
-            <span>{describeTreaty(latestTreaty)}</span>
-          </li>
-          <li className="roster-row">
-            <span>{describeAlliance(latestAlliance)}</span>
-          </li>
-        </ul>
-      </section>
-
-      <section className="panel panel-section">
-        <h2>Live messaging</h2>
-        <p>Submit world, direct, or group messages for the current websocket tick. The live timeline stays read-only.</p>
-
-        <section aria-label="Create group chat">
-          <h3>Create group chat</h3>
-          <p>Use the current websocket snapshot to choose visible players, then wait for the next snapshot to show the chat in the live list.</p>
-
-          {groupChatCreateFeedback.status === "success" ? (
-            <div role="status">
-              <p>{groupChatCreateFeedback.message}</p>
-              {groupChatCreateFeedback.details?.map((detail) => <p key={detail}>{detail}</p>)}
-            </div>
-          ) : null}
-
-          {groupChatCreateFeedback.status === "error" ? (
-            <div role="alert">
-              <p>{groupChatCreateFeedback.message}</p>
-              <p>{`Error code: ${groupChatCreateFeedback.code}`}</p>
-              <p>{`HTTP status: ${groupChatCreateFeedback.statusCode}`}</p>
-            </div>
-          ) : null}
-
-          <label>
-            Group chat name
-            <input
-              type="text"
-              value={groupChatCreateDraft.name}
-              onChange={(event) => updateGroupChatCreateDraft({ name: event.target.value })}
-            />
-          </label>
-
-          {visiblePlayerIds.length === 0 ? (
-            <p>No other visible players can be invited from the current snapshot.</p>
-          ) : (
-            <fieldset>
-              <legend>Invite players</legend>
-              {visiblePlayerIds.map((playerId) => {
-                const isChecked = groupChatCreateDraft.selectedInviteeIds.includes(playerId);
-
-                return (
-                  <label key={playerId}>
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={(event) => {
-                        const nextSelectedInviteeIds = event.target.checked
-                          ? [...groupChatCreateDraft.selectedInviteeIds, playerId]
-                          : groupChatCreateDraft.selectedInviteeIds.filter(
-                              (selectedPlayerId) => selectedPlayerId !== playerId
-                            );
-
-                        updateGroupChatCreateDraft({
-                          selectedInviteeIds: nextSelectedInviteeIds
-                        });
-                      }}
-                    />
-                    {playerId}
-                  </label>
-                );
-              })}
-            </fieldset>
-          )}
-
-          <button
-            className="button-link"
-            type="button"
-            onClick={() => void submitGroupChatCreateDraft()}
-            disabled={!canSubmitGroupChatCreate}
-          >
-            {groupChatCreateFeedback.status === "submitting" ? "Submitting…" : "Create group chat"}
-          </button>
-        </section>
-
-        {messageSubmissionFeedback.status === "success" ? (
-          <p role="status">{messageSubmissionFeedback.message}</p>
-        ) : null}
-
-        {messageSubmissionFeedback.status === "error" ? (
-          <div role="alert">
-            <p>{messageSubmissionFeedback.message}</p>
-            <p>{`Error code: ${messageSubmissionFeedback.code}`}</p>
-            <p>{`HTTP status: ${messageSubmissionFeedback.statusCode}`}</p>
-          </div>
-        ) : null}
-
-        <label>
-          Channel
-          <select
-            value={messageDraft.channel}
-            onChange={(event) =>
-              updateMessageDraft({ channel: event.target.value as LiveMessagingChannel })
-            }
-          >
-            <option value="world">world</option>
-            <option value="direct">direct</option>
-            <option value="group">group</option>
-          </select>
-        </label>
-
-        {messageDraft.channel === "direct" ? (
-          <label>
-            Direct target
-            <select
-              value={messageDraft.directRecipientId}
-              onChange={(event) => updateMessageDraft({ directRecipientId: event.target.value })}
-            >
-              {directTargetIds.length === 0 ? <option value="">No visible players</option> : null}
-              {directTargetIds.map((playerId) => (
-                <option key={playerId} value={playerId}>
-                  {playerId}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-
-        {messageDraft.channel === "group" ? (
-          <label>
-            Group chat
-            <select
-              value={messageDraft.groupChatId}
-              onChange={(event) => updateMessageDraft({ groupChatId: event.target.value })}
-            >
-              {visibleGroupChats.length === 0 ? <option value="">No visible group chats</option> : null}
-              {visibleGroupChats.map((groupChat) => (
-                <option key={groupChat.group_chat_id} value={groupChat.group_chat_id}>
-                  {groupChat.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-
-        <label>
-          Message content
-          <textarea
-            value={messageDraft.content}
-            onChange={(event) => updateMessageDraft({ content: event.target.value })}
-          />
-        </label>
-
-        <button className="button-link" type="button" onClick={() => void submitMessageDraft()} disabled={!canSubmitMessage}>
-          {messageSubmissionFeedback.status === "submitting" ? "Submitting…" : "Submit message"}
-        </button>
-      </section>
-
-      <section className="panel panel-section">
-        <h2>Live diplomacy</h2>
-        <p>Submit treaty and alliance actions through the shipped routes. The websocket snapshot stays authoritative.</p>
-
-        {treatySubmissionFeedback.status === "success" ? (
-          <div role="status">
-            <p>{treatySubmissionFeedback.message}</p>
-            {treatySubmissionFeedback.details?.map((detail) => <p key={detail}>{detail}</p>)}
-          </div>
-        ) : null}
-
-        {treatySubmissionFeedback.status === "error" ? (
-          <div role="alert">
-            <p>{treatySubmissionFeedback.message}</p>
-            <p>{`Error code: ${treatySubmissionFeedback.code}`}</p>
-            <p>{`HTTP status: ${treatySubmissionFeedback.statusCode}`}</p>
-          </div>
-        ) : null}
-
-        <label>
-          Treaty action
-          <select
-            value={treatyDraft.action}
-            onChange={(event) => updateTreatyDraft({ action: event.target.value as TreatyAction })}
-          >
-            <option value="propose">propose</option>
-            <option value="accept">accept</option>
-            <option value="withdraw">withdraw</option>
-          </select>
-        </label>
-
-        <label>
-          Treaty type
-          <select
-            value={treatyDraft.treatyType}
-            onChange={(event) => updateTreatyDraft({ treatyType: event.target.value as TreatyType })}
-          >
-            <option value="non_aggression">non_aggression</option>
-            <option value="defensive">defensive</option>
-            <option value="trade">trade</option>
-          </select>
-        </label>
-
-        <label>
-          Treaty counterparty
-          <select
-            value={treatyDraft.counterpartyId}
-            onChange={(event) => updateTreatyDraft({ counterpartyId: event.target.value })}
-          >
-            {treatyCounterpartyIds.length === 0 ? <option value="">No visible players</option> : null}
-            {treatyCounterpartyIds.map((playerId) => (
-              <option key={playerId} value={playerId}>
-                {playerId}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <button className="button-link secondary" type="button" onClick={applyTreatyCounterpartySelection}>
-          Use selected marker for treaty counterparty
-        </button>
-
-        {allianceSubmissionFeedback.status === "success" ? (
-          <div role="status">
-            <p>{allianceSubmissionFeedback.message}</p>
-            {allianceSubmissionFeedback.details?.map((detail) => <p key={detail}>{detail}</p>)}
-          </div>
-        ) : null}
-
-        {allianceSubmissionFeedback.status === "error" ? (
-          <div role="alert">
-            <p>{allianceSubmissionFeedback.message}</p>
-            <p>{`Error code: ${allianceSubmissionFeedback.code}`}</p>
-            <p>{`HTTP status: ${allianceSubmissionFeedback.statusCode}`}</p>
-          </div>
-        ) : null}
-
-        <button className="button-link" type="button" onClick={() => void submitTreatyDraft()} disabled={!canSubmitTreaty}>
-          {treatySubmissionFeedback.status === "submitting" ? "Submitting…" : "Submit treaty"}
-        </button>
-
-        <p>{`Current alliance: ${envelope.data.state.alliance_id ?? "none"}`}</p>
-
-        <label>
-          Alliance action
-          <select
-            value={allianceDraft.action}
-            onChange={(event) => updateAllianceDraft({ action: event.target.value as AllianceAction })}
-          >
-            <option value="create">create</option>
-            <option value="join">join</option>
-            <option value="leave">leave</option>
-          </select>
-        </label>
-
-        {allianceDraft.action === "create" ? (
-          <label>
-            Alliance name
-            <input
-              type="text"
-              value={allianceDraft.name}
-              onChange={(event) => updateAllianceDraft({ name: event.target.value })}
-            />
-          </label>
-        ) : null}
-
-        {allianceDraft.action === "join" ? (
-          <label>
-            Join alliance
-            <select
-              value={allianceDraft.allianceId}
-              onChange={(event) => updateAllianceDraft({ allianceId: event.target.value })}
-            >
-              {joinableAlliances.length === 0 ? <option value="">No joinable alliances</option> : null}
-              {joinableAlliances.map((alliance) => (
-                <option key={alliance.alliance_id} value={alliance.alliance_id}>
-                  {alliance.alliance_id}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-
-        <button className="button-link" type="button" onClick={() => void submitAllianceDraft()} disabled={!canSubmitAlliance}>
-          {allianceSubmissionFeedback.status === "submitting" ? "Submitting…" : "Submit alliance"}
-        </button>
-      </section>
-
-      <section className="panel panel-section">
-        <h2>Order Drafts</h2>
-        <p>Draft text-first orders for the current live tick. Submission only confirms what the server accepted.</p>
-
-        {submissionFeedback.status === "success" ? <p role="status">{submissionFeedback.message}</p> : null}
-
-        {submissionFeedback.status === "error" ? (
-          <div role="alert">
-            <p>{submissionFeedback.message}</p>
-            <p>{`Error code: ${submissionFeedback.code}`}</p>
-            <p>{`HTTP status: ${submissionFeedback.statusCode}`}</p>
-          </div>
-        ) : null}
-
-        <section aria-label="Movement drafts">
-          <h3>Movement</h3>
-          <button className="button-link secondary" type="button" onClick={addMovementDraft}>
-            Add movement order
-          </button>
-          {drafts.movements.length === 0 ? <p>No movement orders drafted.</p> : null}
-          {drafts.movements.map((draft, index) => (
-            <div key={`movement-${index}`}>
-              <label>
-                {`Movement army ID ${index + 1}`}
-                <input
-                  type="text"
-                  value={draft.armyId}
-                  onChange={(event) => updateMovementDraft(index, "armyId", event.target.value)}
-                />
-              </label>
-              <label>
-                {`Movement destination ${index + 1}`}
-                <input
-                  type="text"
-                  value={draft.destination}
-                  onChange={(event) => updateMovementDraft(index, "destination", event.target.value)}
-                />
-              </label>
-              <button
-                className="button-link secondary"
-                type="button"
-                onClick={() => removeMovementDraft(index)}
-              >
-                {`Remove movement order ${index + 1}`}
-              </button>
-              <button className="button-link secondary" type="button" onClick={() => applyMovementArmySelection(index)}>
-                {`Use selected army for movement army ID ${index + 1}`}
-              </button>
-              <button className="button-link secondary" type="button" onClick={() => applyMovementDestinationSelection(index)}>
-                {`Use selected marker for movement destination ${index + 1}`}
-              </button>
-            </div>
-          ))}
-        </section>
-
-        <section aria-label="Recruitment drafts">
-          <h3>Recruitment</h3>
-          <button className="button-link secondary" type="button" onClick={addRecruitmentDraft}>
-            Add recruitment order
-          </button>
-          {drafts.recruitment.length === 0 ? <p>No recruitment orders drafted.</p> : null}
-          {drafts.recruitment.map((draft, index) => (
-            <div key={`recruitment-${index}`}>
-              <label>
-                {`Recruitment city ${index + 1}`}
-                <input
-                  type="text"
-                  value={draft.city}
-                  onChange={(event) => updateRecruitmentDraft(index, "city", event.target.value)}
-                />
-              </label>
-              <label>
-                {`Recruitment troops ${index + 1}`}
-                <input
-                  type="number"
-                  value={draft.troops}
-                  onChange={(event) => updateRecruitmentDraft(index, "troops", event.target.value)}
-                />
-              </label>
-              <button
-                className="button-link secondary"
-                type="button"
-                onClick={() => removeRecruitmentDraft(index)}
-              >
-                {`Remove recruitment order ${index + 1}`}
-              </button>
-              <button className="button-link secondary" type="button" onClick={() => applyRecruitmentCitySelection(index)}>
-                {`Use selected city for recruitment city ${index + 1}`}
-              </button>
-            </div>
-          ))}
-        </section>
-
-        <section aria-label="Upgrade drafts">
-          <h3>Upgrade</h3>
-          <button className="button-link secondary" type="button" onClick={addUpgradeDraft}>
-            Add upgrade order
-          </button>
-          {drafts.upgrades.length === 0 ? <p>No upgrade orders drafted.</p> : null}
-          {drafts.upgrades.map((draft, index) => (
-            <div key={`upgrade-${index}`}>
-              <label>
-                {`Upgrade city ${index + 1}`}
-                <input
-                  type="text"
-                  value={draft.city}
-                  onChange={(event) => updateUpgradeDraft(index, "city", event.target.value)}
-                />
-              </label>
-              <label>
-                {`Upgrade track ${index + 1}`}
-                <select
-                  value={draft.track}
-                  onChange={(event) => updateUpgradeDraft(index, "track", event.target.value)}
-                >
-                  <option value="economy">economy</option>
-                  <option value="military">military</option>
-                  <option value="fortification">fortification</option>
-                </select>
-              </label>
-              <label>
-                {`Upgrade target tier ${index + 1}`}
-                <input
-                  type="number"
-                  value={draft.targetTier}
-                  onChange={(event) => updateUpgradeDraft(index, "targetTier", event.target.value)}
-                />
-              </label>
-              <button
-                className="button-link secondary"
-                type="button"
-                onClick={() => removeUpgradeDraft(index)}
-              >
-                {`Remove upgrade order ${index + 1}`}
-              </button>
-              <button className="button-link secondary" type="button" onClick={() => applyUpgradeCitySelection(index)}>
-                {`Use selected city for upgrade city ${index + 1}`}
-              </button>
-            </div>
-          ))}
-        </section>
-
-        <section aria-label="Transfer drafts">
-          <h3>Transfer</h3>
-          <button className="button-link secondary" type="button" onClick={addTransferDraft}>
-            Add transfer order
-          </button>
-          {drafts.transfers.length === 0 ? <p>No transfer orders drafted.</p> : null}
-          {drafts.transfers.map((draft, index) => (
-            <div key={`transfer-${index}`}>
-              <label>
-                {`Transfer destination ${index + 1}`}
-                <input
-                  type="text"
-                  value={draft.to}
-                  onChange={(event) => updateTransferDraft(index, "to", event.target.value)}
-                />
-              </label>
-              <label>
-                {`Transfer resource ${index + 1}`}
-                <select
-                  value={draft.resource}
-                  onChange={(event) => updateTransferDraft(index, "resource", event.target.value)}
-                >
-                  <option value="food">food</option>
-                  <option value="production">production</option>
-                  <option value="money">money</option>
-                </select>
-              </label>
-              <label>
-                {`Transfer amount ${index + 1}`}
-                <input
-                  type="number"
-                  value={draft.amount}
-                  onChange={(event) => updateTransferDraft(index, "amount", event.target.value)}
-                />
-              </label>
-              <button
-                className="button-link secondary"
-                type="button"
-                onClick={() => removeTransferDraft(index)}
-              >
-                {`Remove transfer order ${index + 1}`}
-              </button>
-              <button className="button-link secondary" type="button" onClick={() => applyTransferDestinationSelection(index)}>
-                {`Use selected marker for transfer destination ${index + 1}`}
-              </button>
-            </div>
-          ))}
-        </section>
-
-        <button className="button-link" type="button" onClick={() => void submitDrafts()} disabled={!canSubmit}>
-          {submissionFeedback.status === "submitting" ? "Submitting…" : "Submit drafted orders"}
-        </button>
-      </section>
+      <HumanLiveOrdersPanel
+        drafts={drafts}
+        submissionFeedback={submissionFeedback}
+        canSubmit={canSubmit}
+        addMovementDraft={addMovementDraft}
+        addRecruitmentDraft={addRecruitmentDraft}
+        addUpgradeDraft={addUpgradeDraft}
+        addTransferDraft={addTransferDraft}
+        updateMovementDraft={updateMovementDraft}
+        updateRecruitmentDraft={updateRecruitmentDraft}
+        updateUpgradeDraft={updateUpgradeDraft}
+        updateTransferDraft={updateTransferDraft}
+        removeMovementDraft={removeMovementDraft}
+        removeRecruitmentDraft={removeRecruitmentDraft}
+        removeUpgradeDraft={removeUpgradeDraft}
+        removeTransferDraft={removeTransferDraft}
+        applyMovementArmySelection={applyMovementArmySelection}
+        applyMovementDestinationSelection={applyMovementDestinationSelection}
+        applyRecruitmentCitySelection={applyRecruitmentCitySelection}
+        applyUpgradeCitySelection={applyUpgradeCitySelection}
+        applyTransferDestinationSelection={applyTransferDestinationSelection}
+        submitDrafts={submitDrafts}
+      />
     </>
   );
-}
-
-function SummaryRow({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="metadata-row">
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
-  );
-}
-
-function describeArmy(army: VisibleArmyState): string {
-  const location = army.location ?? army.destination ?? "in transit";
-  const troops = typeof army.troops === "number" ? `${army.troops} troops` : "unknown strength";
-  return `${army.owner} at ${location} with ${troops} (${army.visibility})`;
-}
-
-function describeGroupChat(
-  groupChat: GroupChatRecord | null,
-  groupMessage: GroupMessageRecord | null
-): string {
-  if (!groupChat) {
-    return "No alliance or group chat summary yet.";
-  }
-
-  if (!groupMessage || groupMessage.group_chat_id !== groupChat.group_chat_id) {
-    return groupChat.name;
-  }
-
-  return `${groupChat.name}: ${groupMessage.content}`;
-}
-
-function describeTreaty(treaty: TreatyRecord | null): string {
-  if (!treaty) {
-    return "No treaty summary yet.";
-  }
-
-  return `${treaty.treaty_type} ${treaty.status} between ${treaty.player_a_id} and ${treaty.player_b_id}`;
-}
-
-function describeAlliance(alliance: AllianceRecord | null): string {
-  if (!alliance) {
-    return "No alliance summary yet.";
-  }
-
-  return `Alliance ${alliance.name} led by ${alliance.leader_id}`;
 }
