@@ -1695,3 +1695,51 @@ So that future API/runtime changes do not require one monolithic registry file t
 **When** focused registry/API/e2e regressions plus the repo quality gate run
 **Then** the preserved contract is covered and the BMAD artifacts stay aligned with the new structure.
 
+## Epic 35: Authenticated Route Surface Decomposition
+
+Reduce concentration in `server/api/authenticated_access_routes.py` and `server/api/authenticated_match_routes.py` by extracting cohesive authenticated route groups and shared validation helpers into focused modules. Treat this as a refactor epic only: preserve the shipped HTTP/OpenAPI contracts, auth precedence, error mapping, broadcast behavior, and DB-backed/in-memory mode semantics while preferring explicit boring route builders over new framework layers.
+
+### Story 35.1: Extract authenticated lobby lifecycle routes out of `server/api/authenticated_access_routes.py`
+
+As a server maintainer,
+I want authenticated lobby creation/start flows and their mixed-auth helper logic separated into a focused route module,
+So that lobby lifecycle changes do not require one large authenticated access router to own profile reads, state reads, joins, and writes as well.
+
+**Acceptance Criteria:**
+
+**Given** `server/api/authenticated_access_routes.py` currently mixes lobby creation/start flows with unrelated profile/state/join/order routes
+**When** Story 35.1 ships
+**Then** authenticated lobby lifecycle handlers live in a focused module while the public route paths, request/response models, status codes, and mixed auth semantics remain unchanged.
+
+**And Given** the routes currently map DB-backed lobby errors into specific HTTP statuses and seed the in-memory registry after DB success
+**When** the refactor ships
+**Then** those error mappings, registry-seeding side effects, and runtime start behavior remain unchanged at the API boundary.
+
+**And Given** the story is refactor-only
+**When** focused API/process/e2e regressions and the repo quality gate run
+**Then** no HTTP contract, auth ordering, runtime-loop behavior, websocket behavior, or lobby lifecycle semantics change and the resulting structure is simpler than the starting point.
+
+### Story 35.2: Extract authenticated profile, state, and briefing reads out of `server/api/authenticated_access_routes.py`
+
+As a server maintainer,
+I want authenticated profile/state/briefing read routes grouped behind focused helpers,
+So that read-model and auth/access changes do not stay coupled to join and order submission handlers in one large file.
+
+### Story 35.3: Extract authenticated join and order submission routes out of `server/api/authenticated_access_routes.py`
+
+As a server maintainer,
+I want authenticated join and order submission flows isolated behind focused route helpers,
+So that join semantics and order-write validation can evolve without unrelated authenticated reads sharing the same monolithic module.
+
+### Story 35.4: Extract authenticated command and messaging routes out of `server/api/authenticated_match_routes.py`
+
+As a server maintainer,
+I want the authenticated command envelope and match/group messaging routes moved into focused route modules,
+So that command and collaboration changes do not require one oversized authenticated match router to own every write surface.
+
+### Story 35.5: Extract authenticated treaty and alliance routes plus shared match-route helpers out of `server/api/authenticated_match_routes.py`
+
+As a server maintainer,
+I want treaty/alliance route handlers and shared authenticated-match helper logic split into focused modules,
+So that diplomacy and route-level validation can change without one 600-line file remaining the only place that knows the authenticated match write surface.
+

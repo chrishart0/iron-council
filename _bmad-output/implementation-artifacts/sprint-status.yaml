@@ -1,9 +1,9 @@
-generated: 2026-04-01 17:35 UTC
+generated: 2026-04-01 18:45 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story:
+next_story: 35-1-extract-authenticated-lobby-lifecycle-routes-out-of-server-api-authenticated_access_routes-py
 
 development_status:
   public-readiness-epic: done
@@ -170,3 +170,6 @@ development_status:
   34-2-split-in-memory-messaging-and-diplomacy-workflows-out-of-server-agent_registry-py: done
   34-3-split-db-backed-public-reads-and-identity-loading-helpers-out-of-server-db-registry-py: done
   34-4-split-in-memory-access-and-command-workflows-out-of-server-agent_registry-py: done
+
+  epic-35: in_progress
+  35-1-extract-authenticated-lobby-lifecycle-routes-out-of-server-api-authenticated_access_routes-py: drafted
