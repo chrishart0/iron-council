@@ -33,6 +33,7 @@ from server.db.registry import (
     load_match_registry_from_database,
     persist_advanced_match_tick,
     resolve_authenticated_agent_context_from_db,
+    resolve_human_player_id_from_db,
     start_match_lobby,
 )
 from server.db.testing import provision_seeded_database
@@ -46,6 +47,7 @@ from tests.support import (
     build_persisted_player_id,
     insert_completed_match_fixture,
     insert_seeded_agent_player,
+    insert_seeded_human_player,
 )
 
 
@@ -1865,6 +1867,59 @@ def test_load_match_registry_from_database_exposes_authenticated_join_mapping_fo
             agent_id="agent-player-2",
         )
         == "player-2"
+    )
+
+
+def test_resolve_human_player_id_from_db_maps_persisted_human_membership_to_canonical_player_id(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-resolve-human-player-id.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    created = create_match_lobby(
+        database_url=database_url,
+        authenticated_human_user_id="00000000-0000-0000-0000-000000000304",
+        request=MatchLobbyCreateRequest(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=4,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        ),
+    )
+    insert_seeded_human_player(
+        database_url=database_url,
+        match_id=created.response.match_id,
+        user_id="00000000-0000-0000-0000-000000000301",
+        persisted_player_id=build_persisted_player_id(
+            match_id=created.response.match_id,
+            public_player_id="player-2",
+        ),
+    )
+
+    assert (
+        resolve_human_player_id_from_db(
+            database_url=database_url,
+            match_id=created.response.match_id,
+            user_id="00000000-0000-0000-0000-000000000304",
+        )
+        == "player-1"
+    )
+    assert (
+        resolve_human_player_id_from_db(
+            database_url=database_url,
+            match_id=created.response.match_id,
+            user_id="00000000-0000-0000-0000-000000000301",
+        )
+        == "player-2"
+    )
+    assert (
+        resolve_human_player_id_from_db(
+            database_url=database_url,
+            match_id=created.response.match_id,
+            user_id="00000000-0000-0000-0000-000000009999",
+        )
+        is None
     )
 
 
