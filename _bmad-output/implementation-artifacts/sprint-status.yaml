@@ -1,9 +1,9 @@
-generated: 2026-04-01 06:13 UTC
+generated: 2026-04-01 10:59 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: null
+next_story: 33-1-refactor-human-live-page-into-smaller-ui-and-state-slices
 
 development_status:
   public-readiness-epic: done
@@ -160,3 +160,6 @@ development_status:
   32-1-extract-public-and-realtime-route-registration-from-server-main: done
   32-2-extract-authenticated-match-command-messaging-and-diplomacy-routes-from-server-main: done
   32-3-extract-authenticated-lobby-and-player-access-helpers-behind-stable-app-services: done
+
+  epic-33: in_progress
+  33-1-refactor-human-live-page-into-smaller-ui-and-state-slices: in_progress

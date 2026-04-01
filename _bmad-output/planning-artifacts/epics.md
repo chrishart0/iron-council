@@ -1603,3 +1603,31 @@ As a server maintainer,
 I want route-level auth and DB-backed availability helpers to come from stable shared app services,
 So that the server can keep growing without `server/main.py` remaining the only place that knows how runtime state, DB-backed mode, and authenticated actor resolution fit together.
 
+## Epic 33: Human Live Client Surface Decomposition
+
+Reduce concentration in `client/src/components/matches/human-match-live-page.tsx` by extracting the route shell, websocket/session state, read-only summary panels, and interactive write surfaces into focused client modules without changing the shipped authenticated live-match browser contract. Treat this as a refactor epic: preserve the existing page headings, websocket/API behavior, and success/error semantics while preferring explicit components/hooks over generic UI frameworks or context-heavy indirection.
+
+### Story 33.1: Refactor human live page into smaller UI and state slices
+
+As a client maintainer,
+I want the authenticated human live match page split into focused shell, state, and panel modules,
+So that future live UI work can evolve without one 2k-line component remaining the only place that knows about session state, websocket lifecycle, summaries, messaging, diplomacy, and order drafting.
+
+**Acceptance Criteria:**
+
+**Given** the authenticated human live route already ships as `HumanMatchLivePage`
+**When** the refactor is complete
+**Then** `client/src/components/matches/human-match-live-page.tsx` remains the stable route-facing entrypoint while the fetch/websocket/session lifecycle and the major page surfaces move behind focused modules under `client/src/components/matches/human-live/`.
+
+**And Given** players already rely on the current hero/loading/not-live shell, map selection inspector, live summary/resources/movement panels, live messaging, live diplomacy, and order draft workflows
+**When** the refactor ships
+**Then** those visible sections, browser actions, websocket semantics, and accepted-response feedback flows remain behaviorally unchanged.
+
+**And Given** the public goal is maintainability rather than new product scope
+**When** the implementation is reviewed
+**Then** it is simpler than the starting point: no new generic UI system, no provider/context sprawl, and no abstraction added only for tests.
+
+**And Given** the story ships
+**When** focused browser-boundary client checks and the repo quality gate run
+**Then** the preserved contract is covered and the BMAD artifacts stay aligned with the new structure.
+
