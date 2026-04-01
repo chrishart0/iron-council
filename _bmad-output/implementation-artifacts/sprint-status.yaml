@@ -1,9 +1,9 @@
-generated: 2026-04-01 19:31 UTC
+generated: 2026-04-01 22:13 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 35-4-extract-authenticated-command-and-messaging-routes-out-of-server-api-authenticated_match_routes-py
+next_story: 35-5-extract-authenticated-treaty-and-alliance-routes-plus-shared-match-route-helpers-out-of-server-api-authenticated_match_routes-py
 
 development_status:
   public-readiness-epic: done
@@ -175,3 +175,4 @@ development_status:
   35-1-extract-authenticated-lobby-lifecycle-routes-out-of-server-api-authenticated_access_routes-py: done
   35-2-extract-authenticated-profile-state-and-briefing-reads-out-of-server-api-authenticated_access_routes-py: done
   35-3-extract-authenticated-join-and-order-submission-routes-out-of-server-api-authenticated_access_routes-py: done
+  35-4-extract-authenticated-command-and-messaging-routes-out-of-server-api-authenticated_match_routes-py: done
