@@ -19,6 +19,7 @@ from server.agent_registry import (
     build_seeded_agent_api_key,
     build_seeded_match_records,
 )
+from server.api import AppServices, build_authenticated_match_router, register_error_handlers
 from server.auth import hash_api_key
 from server.db.registry import load_match_registry_from_database
 from server.db.testing import provision_seeded_database
@@ -32,6 +33,7 @@ from server.models.api import (
 )
 from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
+from server.settings import get_settings
 from server.websocket import MatchWebSocketManager, build_match_realtime_envelope
 from sqlalchemy import create_engine, text
 from starlette.websockets import WebSocketDisconnect
@@ -52,6 +54,10 @@ def _match_state_dump(
     record = registry.get_match(match_id)
     assert record is not None
     return record.state.model_dump(mode="json")
+
+
+async def _record_broadcast(*, broadcasted_match_ids: list[str], match_id: str) -> None:
+    broadcasted_match_ids.append(match_id)
 
 
 def _message_payload(
@@ -4238,9 +4244,75 @@ async def test_openapi_declares_secured_match_route_contracts(app_client: AsyncC
     assert paths["/api/v1/matches/{match_id}/command"]["post"]["responses"]["401"]["content"][
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+    assert "/api/v1/matches/{match_id}/commands" not in paths
     assert paths["/api/v1/matches/{match_id}/messages"]["post"]["responses"]["401"]["content"][
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
+
+
+@pytest.mark.asyncio
+async def test_orders_only_command_envelope_does_not_broadcast_match_refresh(
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    broadcasted_match_ids: list[str] = []
+    app = FastAPI()
+    register_error_handlers(app)
+    app.include_router(
+        build_authenticated_match_router(
+            match_registry_provider=lambda: seeded_registry,
+            app_services=AppServices(
+                settings=get_settings(
+                    env={
+                        "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+                        "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+                        "HUMAN_JWT_AUDIENCE": "authenticated",
+                        "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+                    }
+                ),
+                history_database_url=None,
+            ),
+            broadcast_current_match=lambda match_id: _record_broadcast(
+                broadcasted_match_ids=broadcasted_match_ids,
+                match_id=match_id,
+            ),
+        )
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            "/api/v1/matches/match-alpha/command",
+            json=_command_envelope_payload(
+                orders={
+                    "movements": [{"army_id": "army-b", "destination": "birmingham"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                }
+            ),
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+    assert response.status_code == HTTPStatus.ACCEPTED
+    assert response.json() == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "player_id": "player-2",
+        "tick": 142,
+        "orders": {
+            "status": "accepted",
+            "match_id": "match-alpha",
+            "player_id": "player-2",
+            "tick": 142,
+            "submission_index": 0,
+        },
+        "messages": [],
+        "treaties": [],
+        "alliance": None,
+    }
+    assert broadcasted_match_ids == []
 
 
 def test_server_api_modules_expose_extracted_phase_one_seams() -> None:
