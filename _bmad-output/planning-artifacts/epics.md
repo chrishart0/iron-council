@@ -1567,3 +1567,39 @@ So that I can understand frontline motion without decoding raw army lists or lea
 **When** focused browser-boundary client checks plus the repo quality gate run
 **Then** the marching overlays are verified from the shipped websocket/browser boundary and the docs/BMAD artifacts stay aligned.
 
+## Epic 32: Server API Surface Decomposition
+
+Reduce concentration in `server/main.py` by extracting app wiring, validation handling, and route registration into stable server modules without changing the public HTTP or websocket contracts. Treat this as a refactor epic: preserve the shipped behavior, keep `create_app()` as the entrypoint, and prefer boring module boundaries over framework cleverness.
+
+### Story 32.1: Extract public and realtime route registration from `server/main.py`
+
+As a server maintainer,
+I want the public/read-only and websocket route wiring to live outside the monolithic main module,
+So that future API work can change those contracts without forcing every concern through one 2k-line file.
+
+**Acceptance Criteria:**
+
+**Given** the shipped public routes and websocket endpoints already exist behind `create_app()`
+**When** the refactor is complete
+**Then** `server/main.py` delegates public route registration and realtime websocket wiring to dedicated server modules while preserving the same FastAPI paths, response models, dependencies, and runtime behavior.
+
+**And Given** the repo already maps request-validation failures into structured API errors for lobby creation, commands, joins, messaging, treaties, alliances, and group chats
+**When** the refactor is complete
+**Then** that validation/error behavior remains intact and is owned by reusable app-wiring code instead of ad hoc branching inside the main module.
+
+**And Given** the refactor ships
+**When** focused API tests plus the repo quality gate run
+**Then** the extracted module boundaries are covered from the public boundary and the BMAD artifacts stay aligned with the new structure.
+
+### Story 32.2: Extract authenticated match command, messaging, and diplomacy routes from `server/main.py`
+
+As a server maintainer,
+I want the authenticated match write surfaces grouped into focused router modules,
+So that gameplay write contracts are easier to review and evolve without accidental regressions elsewhere in app setup.
+
+### Story 32.3: Extract authenticated lobby and player-access helpers behind stable app services
+
+As a server maintainer,
+I want route-level auth and DB-backed availability helpers to come from stable shared app services,
+So that the server can keep growing without `server/main.py` remaining the only place that knows how runtime state, DB-backed mode, and authenticated actor resolution fit together.
+
