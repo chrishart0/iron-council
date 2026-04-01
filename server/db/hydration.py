@@ -7,6 +7,7 @@ from typing import Literal
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from server import agent_registry_diplomacy
 from server.agent_registry import (
     AuthenticatedAgentKeyRecord,
     InMemoryMatchRegistry,
@@ -183,8 +184,7 @@ def load_persisted_alliances_by_match(
     for match in matches:
         match_id = str(match.id)
         state = MatchState.model_validate(match.state)
-        derived_registry = InMemoryMatchRegistry()
-        derived_alliances = derived_registry._derive_alliances_from_state(state)  # noqa: SLF001
+        derived_alliances = agent_registry_diplomacy.derive_alliances_from_state(state)
         persisted_player_mapping = build_persisted_player_mapping(
             canonical_player_ids=sorted(state.players),
             persisted_players=players_by_match.get(match_id, []),

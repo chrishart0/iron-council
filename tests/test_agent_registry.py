@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from server import agent_registry_diplomacy
 from server.agent_registry import (
     AdvancedMatchTick,
     GroupChatAccessError,
@@ -11,8 +12,11 @@ from server.agent_registry import (
     build_seeded_agent_profiles,
     build_seeded_match_records,
 )
+from server.auth import hash_api_key
 from server.models.api import (
+    AgentCommandEnvelopeRequest,
     AllianceActionRequest,
+    AuthenticatedAgentContext,
     GroupChatCreateRequest,
     GroupChatMessageCreateRequest,
     MatchMessageCreateRequest,
@@ -108,7 +112,6 @@ def test_join_initializes_victory_countdown_for_new_sole_leader() -> None:
 
 
 def test_sync_victory_state_ignores_unowned_and_unknown_city_holders() -> None:
-    registry = InMemoryMatchRegistry()
     state = MatchState.model_validate(
         {
             "tick": 8,
@@ -147,7 +150,7 @@ def test_sync_victory_state_ignores_unowned_and_unknown_city_holders() -> None:
         }
     )
 
-    registry._sync_victory_state(state)  # noqa: SLF001
+    agent_registry_diplomacy.sync_victory_state(state)
 
     assert state.victory.model_dump(mode="json") == {
         "leading_alliance": None,
@@ -158,7 +161,6 @@ def test_sync_victory_state_ignores_unowned_and_unknown_city_holders() -> None:
 
 
 def test_sync_victory_state_reinitializes_missing_countdown_for_same_leader() -> None:
-    registry = InMemoryMatchRegistry()
     state = MatchState.model_validate(
         {
             "tick": 8,
@@ -203,7 +205,7 @@ def test_sync_victory_state_reinitializes_missing_countdown_for_same_leader() ->
         }
     )
 
-    registry._sync_victory_state(state)  # noqa: SLF001
+    agent_registry_diplomacy.sync_victory_state(state)
 
     assert state.victory.model_dump(mode="json") == {
         "leading_alliance": "alliance-red",
@@ -574,6 +576,54 @@ def test_resolve_authenticated_agent_rejects_unknown_and_inactive_keys() -> None
     )
 
 
+def test_deactivate_agent_api_key_removes_all_seeded_key_hashes_for_agent_only() -> None:
+    registry = InMemoryMatchRegistry()
+    primary_key = build_seeded_agent_api_key("agent-player-2")
+    backup_key = "seed-api-key-for-agent-player-2-backup"
+    other_key = build_seeded_agent_api_key("agent-player-3")
+    primary_hash = hash_api_key(primary_key)
+    backup_hash = hash_api_key(backup_key)
+    other_hash = hash_api_key(other_key)
+
+    registry.seed_authenticated_agent_key(
+        AuthenticatedAgentContext(
+            agent_id="agent-player-2",
+            display_name="Morgana",
+            is_seeded=True,
+        ),
+        key_hash=primary_hash,
+    )
+    registry.seed_authenticated_agent_key(
+        AuthenticatedAgentContext(
+            agent_id="agent-player-2",
+            display_name="Morgana",
+            is_seeded=True,
+        ),
+        key_hash=backup_hash,
+    )
+    registry.seed_authenticated_agent_key(
+        AuthenticatedAgentContext(
+            agent_id="agent-player-3",
+            display_name="Merlin",
+            is_seeded=True,
+        ),
+        key_hash=other_hash,
+    )
+
+    registry.deactivate_agent_api_key("agent-player-2")
+
+    assert registry.resolve_authenticated_agent(primary_key) is None
+    assert registry.resolve_authenticated_agent(backup_key) is None
+    assert registry.resolve_authenticated_agent(other_key) is not None
+    assert registry._authenticated_agents_by_key_hash == {  # noqa: SLF001
+        other_hash: AuthenticatedAgentContext(
+            agent_id="agent-player-3",
+            display_name="Merlin",
+            is_seeded=True,
+        )
+    }
+
+
 def test_join_rejects_non_joinable_and_full_matches_without_side_effects() -> None:
     registry = InMemoryMatchRegistry()
     for record in build_seeded_match_records():
@@ -819,3 +869,204 @@ def test_advance_match_tick_returns_resolved_tick_contract_for_persistence() -> 
             },
         }
     ]
+
+
+def test_apply_command_envelope_accepts_orders_and_messages_without_contract_drift() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    accepted = registry.apply_command_envelope(
+        match_id="match-alpha",
+        player_id="player-2",
+        command=AgentCommandEnvelopeRequest.model_validate(
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "manchester", "troops": 3}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+                "messages": [
+                    {
+                        "channel": "direct",
+                        "recipient_id": "player-3",
+                        "content": "Reinforcements en route.",
+                    }
+                ],
+            }
+        ),
+    )
+
+    assert accepted.model_dump(mode="json") == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "player_id": "player-2",
+        "tick": 142,
+        "orders": {
+            "status": "accepted",
+            "match_id": "match-alpha",
+            "player_id": "player-2",
+            "tick": 142,
+            "submission_index": 0,
+        },
+        "messages": [
+            {
+                "status": "accepted",
+                "match_id": "match-alpha",
+                "message_id": 0,
+                "channel": "direct",
+                "sender_id": "player-2",
+                "recipient_id": "player-3",
+                "tick": 142,
+                "content": "Reinforcements en route.",
+            }
+        ],
+        "treaties": [],
+        "alliance": None,
+    }
+    assert registry.list_order_submissions("match-alpha") == [
+        {
+            "match_id": "match-alpha",
+            "player_id": "player-2",
+            "tick": 142,
+            "orders": {
+                "movements": [],
+                "recruitment": [{"city": "manchester", "troops": 3}],
+                "upgrades": [],
+                "transfers": [],
+            },
+        }
+    ]
+    assert [
+        message.model_dump(mode="json")
+        for message in registry.list_visible_messages(match_id="match-alpha", player_id="player-3")
+        if message.channel == "direct"
+    ] == [
+        {
+            "message_id": 0,
+            "channel": "direct",
+            "sender_id": "player-2",
+            "recipient_id": "player-3",
+            "tick": 142,
+            "content": "Reinforcements en route.",
+        }
+    ]
+
+
+def test_apply_command_envelope_routes_treaty_acceptance_world_side_effects() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-3",
+            action="propose",
+            treaty_type="trade",
+        ),
+        player_id="player-2",
+    )
+
+    accepted = registry.apply_command_envelope(
+        match_id="match-alpha",
+        player_id="player-3",
+        command=AgentCommandEnvelopeRequest.model_validate(
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "treaties": [
+                    {
+                        "counterparty_id": "player-2",
+                        "action": "accept",
+                        "treaty_type": "trade",
+                    }
+                ],
+            }
+        ),
+    )
+
+    assert accepted.model_dump(mode="json") == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "player_id": "player-3",
+        "tick": 142,
+        "orders": None,
+        "messages": [],
+        "treaties": [
+            {
+                "status": "accepted",
+                "match_id": "match-alpha",
+                "treaty": {
+                    "treaty_id": 0,
+                    "player_a_id": "player-2",
+                    "player_b_id": "player-3",
+                    "treaty_type": "trade",
+                    "status": "active",
+                    "proposed_by": "player-2",
+                    "proposed_tick": 142,
+                    "signed_tick": 142,
+                    "withdrawn_by": None,
+                    "withdrawn_tick": None,
+                },
+            }
+        ],
+        "alliance": None,
+    }
+    assert [
+        message.content
+        for message in registry.list_visible_messages(match_id="match-alpha", player_id="player-1")
+        if message.channel == "world"
+    ] == ["Treaty signed: player-2 and player-3 entered a trade treaty."]
+
+
+def test_apply_command_envelope_uses_scratch_registry_to_prevent_partial_mutation() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    before_state = registry.snapshot_match("match-alpha")
+
+    try:
+        registry.apply_command_envelope(
+            match_id="match-alpha",
+            player_id="player-2",
+            command=AgentCommandEnvelopeRequest.model_validate(
+                {
+                    "match_id": "match-alpha",
+                    "tick": 142,
+                    "orders": {
+                        "movements": [],
+                        "recruitment": [{"city": "manchester", "troops": 3}],
+                        "upgrades": [],
+                        "transfers": [],
+                    },
+                    "messages": [
+                        {
+                            "channel": "world",
+                            "content": "This should not persist.",
+                        }
+                    ],
+                    "treaties": [
+                        {
+                            "counterparty_id": "player-2",
+                            "action": "propose",
+                            "treaty_type": "trade",
+                        }
+                    ],
+                }
+            ),
+        )
+    except MatchAccessError as exc:
+        assert exc.code == "self_targeted_treaty"
+        assert exc.message == "Treaty actions require two different players."
+    else:  # pragma: no cover
+        raise AssertionError("expected command envelope validation to reject self-targeted treaty")
+
+    after_state = registry.snapshot_match("match-alpha")
+    assert registry.list_order_submissions("match-alpha") == []
+    assert after_state == before_state
