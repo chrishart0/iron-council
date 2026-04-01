@@ -2,7 +2,6 @@
 
 from .app_services import AppServices
 from .authenticated_access_routes import build_authenticated_access_router
-from .authenticated_lobby_routes import build_authenticated_lobby_router
 from .authenticated_match_routes import build_authenticated_match_router
 from .errors import API_ERROR_RESPONSE_SCHEMA, ApiError, register_error_handlers
 from .public_routes import build_public_api_router, register_public_metadata_routes
@@ -13,7 +12,6 @@ __all__ = [
     "AppServices",
     "ApiError",
     "build_authenticated_access_router",
-    "build_authenticated_lobby_router",
     "build_authenticated_match_router",
     "build_public_api_router",
     "register_error_handlers",

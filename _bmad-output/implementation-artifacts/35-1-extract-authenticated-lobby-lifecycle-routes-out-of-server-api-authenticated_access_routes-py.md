@@ -1,6 +1,6 @@
 # Story: 35.1 Extract authenticated lobby lifecycle routes out of `server/api/authenticated_access_routes.py`
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -18,11 +18,11 @@ So that lobby lifecycle changes do not require one large authenticated access ro
 
 ## Tasks / Subtasks
 
-- [ ] Pin current authenticated lobby create/start behavior with focused API and real-process regressions. (AC: 2, 4)
-- [ ] Extract lobby lifecycle route handlers and shared mixed-auth helper logic into a focused module. (AC: 1, 5)
-- [ ] Rewire `server/api/authenticated_access_routes.py` to compose the extracted route builder without contract drift. (AC: 1, 5)
-- [ ] Run focused verification, simplification review, and the repo quality gate. (AC: 4, 5)
-- [ ] Update sprint tracking and completion notes after merge. (AC: 4)
+- [x] Pin current authenticated lobby create/start behavior with focused API and real-process regressions. (AC: 2, 4)
+- [x] Extract lobby lifecycle route handlers and shared mixed-auth helper logic into a focused module. (AC: 1, 5)
+- [x] Rewire `server/api/authenticated_access_routes.py` to compose the extracted route builder without contract drift. (AC: 1, 5)
+- [x] Run focused verification, simplification review, and the repo quality gate. (AC: 4, 5)
+- [x] Update sprint tracking and completion notes after merge. (AC: 4)
 
 ## Dev Notes
 
@@ -35,16 +35,30 @@ So that lobby lifecycle changes do not require one large authenticated access ro
 
 ### Debug Log
 
-- Pending.
+- `uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'create_match_lobby or start_match_lobby'`
+- `uv run pytest -o addopts='' tests/e2e/test_api_smoke.py -k 'create_match_lobby or start_match_lobby'`
+- `uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'profile or state or briefing or join or orders or create_match_lobby or start_match_lobby'`
+- `uv run pytest -o addopts='' tests/e2e/test_api_smoke.py -k 'profile or join or state or create_match_lobby or start_match_lobby'`
+- `make format`
+- `make quality`
 
 ### Completion Notes
 
-- Pending.
+- Extracted authenticated lobby create/start route registration into `server/api/authenticated_lobby_routes.py` and rewired `server/api/authenticated_access_routes.py` to compose that focused router under the existing `/api/v1` surface.
+- Preserved mixed-auth lobby actor resolution, DB-backed error-to-HTTP mapping, registry seeding after create/start success, and `ensure_match_running(match_id)` side effects without changing the public contract.
+- Fixed a follow-up join-route regression by restoring the shared DB binding used by the remaining join path, then reran focused API/e2e verification plus the full quality gate.
+- Dropped the unnecessary `build_authenticated_lobby_router` export from `server/api.__init__` to keep the public app-wiring surface boring and aligned with actual callers.
 
 ### File List
 
-- Pending.
+- `_bmad-output/implementation-artifacts/35-1-extract-authenticated-lobby-lifecycle-routes-out-of-server-api-authenticated_access_routes-py.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `docs/plans/2026-04-01-story-35-1-authenticated-lobby-route-extraction.md`
+- `server/api/__init__.py`
+- `server/api/authenticated_access_routes.py`
+- `server/api/authenticated_lobby_routes.py`
 
 ### Change Log
 
 - 2026-04-01: Drafted Story 35.1 to continue autonomous cleanup after Epic 34 by decomposing authenticated lobby lifecycle routes from `server/api/authenticated_access_routes.py`.
+- 2026-04-01: Completed Story 35.1 by extracting authenticated lobby lifecycle routes into `server/api/authenticated_lobby_routes.py`, validating focused API/e2e coverage, and passing `make quality`.
