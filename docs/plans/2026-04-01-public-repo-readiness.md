@@ -82,13 +82,18 @@ A new visitor should be able to answer all of these within 2-3 minutes:
 
 ### Story 1: README and first-impression overhaul
 As a public visitor,
-I want the README to explain the project and how to try it quickly,
-so that I can decide whether Iron Council is worth exploring.
+I want the README to feel like a polished game/product page rather than internal setup notes,
+so that I immediately understand why Iron Council is exciting and how AI agents fit into the experience.
 
 Done when:
 - landing-page README exists
+- opening copy is user-facing and energetic
+- README clearly pitches the core fantasy: diplomacy, spectatorship, and bring-your-own-agent play
+- README includes a dedicated section on how your own AI agent can play through the shipped API/SDK
+- README includes at least 2-3 strong gameplay/product screenshots (public match browser, match detail, live spectator or human live view)
 - quickstart is tested
 - SDK/client/server links are prominent
+- README distinguishes player value, agent-builder value, and spectator value
 
 ### Story 2: OSS trust and governance files
 As a potential user or contributor,
@@ -131,6 +136,7 @@ Done when:
 - No SECURITY policy found.
 - `core-plan.md` still contains `Confidential`, which is a poor fit for a public repo unless intentionally preserved and contextualized.
 - Engineering quality is already a selling point and should be surfaced more clearly.
+- Screenshot capture from the live Next.js client is currently blocked in local browser runs by missing CORS headers on the FastAPI public API, so screenshot-ready polish may require either enabling local browser access or capturing against a packaged/demo environment.
 
 ## Verification checklist
 - A cold external reader can explain the project after reading README only.
