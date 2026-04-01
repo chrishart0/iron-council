@@ -170,15 +170,17 @@ Completed-match cards now link to the shipped replay/history inspector at
 `GET /api/v1/matches/{id}/history` and `GET /api/v1/matches/{id}/history/{tick}`
 routes and renders one persisted snapshot/orders/events payload at a time.
 `http://127.0.0.1:3000/matches/<match_id>/live` is the spectator websocket page
-with a shared read-only Britain strategic map plus a text-first situation room
-for readable world chat, treaty status, alliance membership, deterministic
+with a shared read-only Britain strategic map plus deterministic live transit
+overlays/ETA copy for visible marches and a text-first situation room for
+readable world chat, treaty status, alliance membership, deterministic
 territory pressure summaries, and victory context sourced from the shipped
 public match detail plus spectator websocket contracts,
 `http://127.0.0.1:3000/matches/<match_id>/play` is the authenticated human live
 page with the same shared Britain strategic map rendered through player-safe
-fog-of-war masking, clickable visible city/army inspection, deterministic
-selection helpers for the existing movement/recruitment/upgrade/transfer order
-draft rows through the shipped `/api/v1/matches/{id}/commands` route plus
+fog-of-war masking, visibility-safe march-in-progress indicators, clickable
+visible city/army inspection, deterministic selection helpers for the existing
+movement/recruitment/upgrade/transfer order draft rows through the shipped
+`/api/v1/matches/{id}/commands` route plus
 world/direct/group live messaging through the shipped
 `/api/v1/matches/{id}/messages` and
 `/api/v1/matches/{id}/group-chats/{group_chat_id}/messages` routes, text-first

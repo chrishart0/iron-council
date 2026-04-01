@@ -1,6 +1,6 @@
 # Story 31.3: Add visibility-safe live map transit overlays
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -22,10 +22,10 @@ So that I can understand frontline motion without decoding raw army lists or lea
 
 ## Tasks / Subtasks
 
-- [ ] Add focused browser-boundary tests for visible transit overlays, spectator route/ETA copy, player fog-safe masking, and empty/not-live explanatory states. (AC: 1, 2, 3)
-- [ ] Extend the shared strategic map surface with read-only transit overlays and marching summaries derived only from existing visible army payload fields. (AC: 1, 3)
-- [ ] Keep the authenticated human live page visibility-safe by masking route geometry/copy whenever the payload exposes only partial army information while still surfacing safe marching/ETA context. (AC: 2, 3)
-- [ ] Re-run focused client verification plus the repo quality gate, then close docs/BMAD artifacts. (AC: 4)
+- [x] Add focused browser-boundary tests for visible transit overlays, spectator route/ETA copy, player fog-safe masking, and empty/not-live explanatory states. (AC: 1, 2, 3)
+- [x] Extend the shared strategic map surface with read-only transit overlays and marching summaries derived only from existing visible army payload fields. (AC: 1, 3)
+- [x] Keep the authenticated human live page visibility-safe by masking route geometry/copy whenever the payload exposes only partial army information while still surfacing safe marching/ETA context. (AC: 2, 3)
+- [x] Re-run focused client verification plus the repo quality gate, then close docs/BMAD artifacts. (AC: 4)
 
 ## Dev Notes
 
@@ -48,17 +48,31 @@ So that I can understand frontline motion without decoding raw army lists or lea
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Debug Log References
 
-- Pending implementation.
+- `cd client && npm test -- --run src/components/matches/match-live-map.test.tsx src/components/matches/public-match-live-page.test.tsx src/components/matches/human-match-live-page.test.tsx src/components/matches/match-live-view.test.tsx`
+- `cd client && npm run build`
+- `make quality`
 
 ## Completion Notes
 
-- Pending implementation.
+- Extended the shared `MatchLiveMap` surface with deterministic transit overlays plus ETA summaries derived only from existing live websocket army fields (`location`, `destination`, `path`, `ticks_remaining`, `visibility`).
+- Kept spectator transit rendering route-aware only when the public payload already exposes the full visible path, while the authenticated player surface falls back to visibility-safe `march in progress` copy whenever route details are partial or hidden.
+- Added focused browser-boundary tests for shared-map overlays, spectator transit copy, player fog-safe masking, and the offline/no-transit explanatory states so stale marching paths do not persist after the feed drops.
+- Updated the README live-page walkthrough to describe the shipped spectator transit overlays and the player-safe march indicators.
 
 ## Files
 
-- Pending implementation.
+- `client/src/components/matches/match-live-map.tsx`
+- `client/src/components/matches/match-live-map.test.tsx`
+- `client/src/components/matches/match-live-view.tsx`
+- `client/src/components/matches/match-live-view.test.tsx`
+- `client/src/components/matches/human-match-live-page.tsx`
+- `client/src/components/matches/human-match-live-page.test.tsx`
+- `client/src/components/matches/public-match-live-page.test.tsx`
+- `README.md`
+- `_bmad-output/implementation-artifacts/31-3-add-visibility-safe-live-map-transit-overlays.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`

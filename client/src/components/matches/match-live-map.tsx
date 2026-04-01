@@ -17,6 +17,14 @@ export type MatchLiveMapArmyDatum = {
   troopsLabel: string | null;
   visibility: "full" | "partial";
   visibleLocationCityId: string | null;
+  transit: MatchLiveMapTransitDatum;
+};
+
+export type MatchLiveMapTransitDatum = {
+  status: "stationary" | "in_transit";
+  ticksRemaining: number;
+  destinationCityId: string | null;
+  pathCityIds: string[] | null;
 };
 
 type MatchLiveMapProps = {
@@ -86,6 +94,62 @@ function armySelectionLabel(army: MatchLiveMapArmyDatum) {
     : `Select army ${army.armyId} at ${army.cityName}`;
 }
 
+function formatTicksRemaining(ticksRemaining: number) {
+  return `ETA ${ticksRemaining} ${ticksRemaining === 1 ? "tick" : "ticks"}`;
+}
+
+function formatTransitPath(pathCityIds: string[], cityNamesById: Map<string, string>) {
+  return pathCityIds
+    .map((cityId) => cityNamesById.get(cityId) ?? cityId)
+    .join(" to ");
+}
+
+function canRenderTransitGeometry(army: MatchLiveMapArmyDatum) {
+  return (
+    army.visibility === "full" &&
+    army.transit.status === "in_transit" &&
+    army.transit.destinationCityId !== null &&
+    army.transit.pathCityIds !== null &&
+    army.transit.pathCityIds.length >= 2
+  );
+}
+
+export function describeTransitMapText(
+  army: MatchLiveMapArmyDatum,
+  cityNamesById: Map<string, string>
+) {
+  if (army.transit.status !== "in_transit" || army.transit.ticksRemaining <= 0) {
+    return null;
+  }
+
+  if (canRenderTransitGeometry(army)) {
+    const destinationCityName =
+      cityNamesById.get(army.transit.destinationCityId ?? "") ?? army.transit.destinationCityId;
+    const pathLabel = formatTransitPath(army.transit.pathCityIds ?? [], cityNamesById);
+
+    return `${army.ownerLabel} marching ${army.cityName} to ${destinationCityName} via ${pathLabel} • ${formatTicksRemaining(army.transit.ticksRemaining)}`;
+  }
+
+  return `${army.ownerLabel} march in progress • ${formatTicksRemaining(army.transit.ticksRemaining)}`;
+}
+
+export function describeTransitListText(
+  army: MatchLiveMapArmyDatum,
+  cityNamesById: Map<string, string>
+) {
+  if (army.transit.status !== "in_transit" || army.transit.ticksRemaining <= 0) {
+    return null;
+  }
+
+  if (army.visibility === "full" && army.transit.destinationCityId !== null) {
+    const destinationCityName =
+      cityNamesById.get(army.transit.destinationCityId) ?? army.transit.destinationCityId;
+    return `${army.ownerLabel} march ${army.cityName} to ${destinationCityName} • ${formatTicksRemaining(army.transit.ticksRemaining)}`;
+  }
+
+  return `${army.ownerLabel} march in progress • ${formatTicksRemaining(army.transit.ticksRemaining)}`;
+}
+
 function handleSvgButtonKeyDown(event: KeyboardEvent<SVGGElement>, activate: () => void) {
   if (event.key !== "Enter" && event.key !== " ") {
     return;
@@ -112,12 +176,18 @@ export function MatchLiveMap({
   const canonicalCities = mapLayout.cities;
   const canonicalEdges = mapLayout.edges;
   const citiesById = new Map(canonicalCities.map((city) => [city.id, city]));
+  const cityNamesById = new Map(canonicalCities.map((city) => [city.id, city.name]));
 
   for (const army of armies) {
     const currentArmies = armyOverlaysByCity.get(army.cityId) ?? [];
     currentArmies.push(army);
     armyOverlaysByCity.set(army.cityId, currentArmies);
   }
+
+  const visibleTransitArmies =
+    liveStatus === "live"
+      ? armies.filter((army) => army.transit.status === "in_transit" && army.transit.ticksRemaining > 0)
+      : [];
 
   const statusMessage =
     liveStatus === "not_live"
@@ -176,6 +246,37 @@ export function MatchLiveMap({
               stroke={edge.traversalMode === "sea" ? "#0f766e" : "#94a3b8"}
               strokeDasharray={edge.traversalMode === "sea" ? "8 6" : undefined}
               strokeWidth={edge.traversalMode === "sea" ? 4 : 3}
+            />
+          );
+        })}
+
+        {visibleTransitArmies.map((army) => {
+          if (!canRenderTransitGeometry(army)) {
+            return null;
+          }
+
+          const pathCities = (army.transit.pathCityIds ?? [])
+            .map((cityId) => citiesById.get(cityId) ?? null)
+            .filter((city): city is NonNullable<typeof city> => city !== null);
+
+          if (pathCities.length < 2) {
+            return null;
+          }
+
+          const destinationCityName =
+            cityNamesById.get(army.transit.destinationCityId ?? "") ?? army.transit.destinationCityId;
+
+          return (
+            <polyline
+              key={`transit-${army.armyId}`}
+              aria-label={`Transit overlay ${army.ownerLabel} ${army.cityName} to ${destinationCityName}`}
+              points={pathCities.map((city) => `${city.x + 48},${city.y + 48}`).join(" ")}
+              fill="none"
+              stroke={perspective === "spectator" ? "#0f766e" : "#2563eb"}
+              strokeDasharray="10 6"
+              strokeWidth={5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
           );
         })}
@@ -291,6 +392,32 @@ export function MatchLiveMap({
               <span>{armySummaryText(army)}</span>
             </li>
           ))
+        )}
+      </ul>
+
+      <ul className="roster-list" aria-label="Transit overlays">
+        {visibleTransitArmies.length === 0 ? (
+          <li className="roster-row">
+            <span>
+              {liveStatus === "not_live"
+                ? "No visible transit overlays in the last confirmed update."
+                : "No visible transit overlays in this update."}
+            </span>
+          </li>
+        ) : (
+          visibleTransitArmies.map((army) => {
+            const summaryText = describeTransitMapText(army, cityNamesById);
+
+            if (summaryText === null) {
+              return null;
+            }
+
+            return (
+              <li key={`transit-summary-${army.armyId}`} className="roster-row">
+                <span>{summaryText}</span>
+              </li>
+            );
+          })
         )}
       </ul>
     </section>

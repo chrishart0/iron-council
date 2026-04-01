@@ -43,7 +43,12 @@ import type {
 } from "../../lib/types";
 import type { BritainMapLayout } from "../../lib/britain-map";
 import { useSession } from "../session/session-provider";
-import { MatchLiveMap, type MatchLiveMapArmyDatum, type MatchLiveMapCityDatum } from "./match-live-map";
+import {
+  MatchLiveMap,
+  describeTransitListText,
+  type MatchLiveMapArmyDatum,
+  type MatchLiveMapCityDatum
+} from "./match-live-map";
 
 type HumanMatchLivePageProps = {
   matchId: string;
@@ -772,11 +777,20 @@ function HumanMatchLiveSnapshot({
         ownerLabel: army.owner,
         troopsLabel: army.visibility === "full" && army.troops !== "unknown" ? String(army.troops) : null,
         visibility: army.visibility,
-        visibleLocationCityId: army.visibility === "full" ? (army.location ?? army.destination) : null
+        visibleLocationCityId: army.visibility === "full" ? (army.location ?? army.destination) : null,
+        transit: {
+          status: army.ticks_remaining > 0 ? "in_transit" : "stationary",
+          ticksRemaining: army.ticks_remaining,
+          destinationCityId:
+            army.visibility === "full" && typeof army.destination === "string" ? army.destination : null,
+          pathCityIds:
+            army.visibility === "full" && Array.isArray(army.path) ? army.path : null
+        }
       };
     })
     .filter((army): army is MatchLiveMapArmyDatum => army !== null)
     .sort((left, right) => left.cityName.localeCompare(right.cityName));
+  const cityNamesById = new Map(mapLayout.cities.map((city) => [city.id, city.name]));
   const selectedCity =
     selectedMapEntity?.kind === "city"
       ? mapCities.find((city) => city.cityId === selectedMapEntity.cityId) ?? null
@@ -1595,11 +1609,17 @@ function HumanMatchLiveSnapshot({
           <p>No player-safe army movement is visible in this update.</p>
         ) : (
           <ul className="roster-list" aria-label="Visible player armies">
-            {envelope.data.state.visible_armies.map((army) => (
-              <li key={army.id} className="roster-row">
-                <span>{describeArmy(army)}</span>
-              </li>
-            ))}
+            {envelope.data.state.visible_armies.map((army) => {
+              const mapArmy = mapArmies.find((entry) => entry.armyId === army.id) ?? null;
+              const transitText =
+                mapArmy === null ? null : describeTransitListText(mapArmy, cityNamesById);
+
+              return (
+                <li key={army.id} className="roster-row">
+                  <span>{transitText ?? describeArmy(army)}</span>
+                </li>
+              );
+            })}
           </ul>
         )}
         {partialArmy ? <p>{`Visible enemy army near ${partialArmy.destination ?? partialArmy.location ?? "the frontier"}`}</p> : null}

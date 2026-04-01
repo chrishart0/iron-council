@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 31-3-add-visibility-safe-live-map-transit-overlays
+next_story: null
 
 development_status:
   epic-1: done
@@ -144,7 +144,8 @@ development_status:
   30-2-add-territory-pressure-and-victory-context-to-the-spectator-live-page: done
   epic-30-retrospective: optional
 
-  epic-31: in_progress
+  epic-31: done
   31-1-add-a-shared-read-only-strategic-svg-map-to-the-live-web-client: done
   31-2-add-click-assisted-city-inspection-and-order-draft-helpers-on-the-human-live-map: done
-  31-3-add-visibility-safe-live-map-transit-overlays: ready
+  31-3-add-visibility-safe-live-map-transit-overlays: done
+  epic-31-retrospective: optional

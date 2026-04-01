@@ -227,6 +227,70 @@ function makePressureEnvelope() {
   };
 }
 
+function makeTransitEnvelope() {
+  return {
+    type: "tick_update",
+    data: {
+      match_id: "match-alpha",
+      viewer_role: "spectator" as const,
+      player_id: null,
+      state: {
+        match_id: "match-alpha",
+        tick: 143,
+        cities: {
+          manchester: {
+            owner: "player-1",
+            population: 12,
+            resources: { food: 3, production: 2, money: 8 },
+            upgrades: { economy: 2, military: 1, fortification: 0 },
+            garrison: 7,
+            building_queue: []
+          },
+          leeds: {
+            owner: "player-1",
+            population: 12,
+            resources: { food: 3, production: 2, money: 8 },
+            upgrades: { economy: 2, military: 1, fortification: 0 },
+            garrison: 3,
+            building_queue: []
+          }
+        },
+        armies: [
+          {
+            id: "army-transit",
+            owner: "player-1",
+            troops: 9,
+            location: "manchester",
+            destination: "leeds",
+            path: ["manchester", "leeds"],
+            ticks_remaining: 3
+          }
+        ],
+        players: {
+          "player-1": {
+            resources: { food: 120, production: 85, money: 200 },
+            cities_owned: ["manchester", "leeds"],
+            alliance_id: null,
+            is_eliminated: false
+          }
+        },
+        victory: {
+          leading_alliance: null,
+          cities_held: 2,
+          threshold: 13,
+          countdown_ticks_remaining: null
+        }
+      },
+      world_messages: [],
+      direct_messages: [],
+      group_chats: [],
+      group_messages: [],
+      treaties: [],
+      alliances: []
+    }
+  };
+}
+
 function makeCollisionEnvelope() {
   return {
     type: "tick_update",
@@ -460,6 +524,44 @@ describe("PublicMatchLivePage", () => {
       screen.getByText("Western Accord leads the victory race with 2 of 13 cities.")
     ).toBeVisible();
     expect(screen.getByText("Victory countdown: 4 ticks remaining.")).toBeVisible();
+  });
+
+  it("renders spectator transit route and ETA copy from the live websocket snapshot", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        match_id: "match-alpha",
+        status: "active",
+        map: "britain",
+        tick: 142,
+        tick_interval_seconds: 30,
+        current_player_count: 3,
+        max_player_count: 5,
+        open_slot_count: 2,
+        roster: [{ player_id: "player-1", display_name: "Arthur", competitor_kind: "human" }]
+      })
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <PublicMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket?.emitOpen();
+    socket?.emitMessage(makeTransitEnvelope());
+
+    expect(
+      await screen.findByText("Arthur marching Manchester to Leeds via Manchester to Leeds • ETA 3 ticks")
+    ).toBeVisible();
+    expect(screen.getByText("Arthur march Manchester to Leeds • ETA 3 ticks")).toBeVisible();
   });
 
   it("keeps same-label players separate in the territory pressure section", async () => {

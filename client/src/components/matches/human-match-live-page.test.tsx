@@ -238,6 +238,31 @@ function makeSoloVisibleEnvelope(tick: number) {
   };
 }
 
+function makeHiddenTransitEnvelope() {
+  const envelope = makeEnvelope(143);
+  return {
+    ...envelope,
+    data: {
+      ...envelope.data,
+      state: {
+        ...envelope.data.state,
+        visible_armies: [
+          {
+            id: "army-2",
+            owner: "player-3",
+            visibility: "partial" as const,
+            troops: "unknown" as const,
+            location: null,
+            destination: "birmingham",
+            path: "unknown" as const,
+            ticks_remaining: 2
+          }
+        ]
+      }
+    }
+  };
+}
+
 function makePublicMatchDetailResponse() {
   return {
     match_id: "match-alpha",
@@ -390,6 +415,40 @@ describe("HumanMatchLivePage", () => {
     expect(screen.getByText("player-2 at leeds with 5 troops (full)")).toBeVisible();
     const updatedMapRegion = screen.getByRole("region", { name: "Britain strategic map" });
     expect(within(updatedMapRegion).getByText("Tick 144")).toBeVisible();
+  });
+
+  it("keeps player transit copy fog-safe when the websocket snapshot hides route details", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => makePublicMatchDetailResponse()
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "http://127.0.0.1:8000",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket?.emitOpen();
+    socket?.emitMessage(makeHiddenTransitEnvelope());
+
+    expect((await screen.findAllByText("player-3 march in progress • ETA 2 ticks")).length).toBe(2);
+    expect(screen.queryByText(/marching .* to .* via/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Transit overlay player-3/i)).not.toBeInTheDocument();
   });
 
   it("renders the live messaging composer after the first live player snapshot arrives", async () => {

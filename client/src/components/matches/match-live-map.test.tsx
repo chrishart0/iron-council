@@ -39,7 +39,13 @@ describe("MatchLiveMap", () => {
             ownerLabel: "Morgana",
             troopsLabel: "5",
             visibility: "full",
-            visibleLocationCityId: "manchester"
+            visibleLocationCityId: "manchester",
+            transit: {
+              status: "stationary",
+              ticksRemaining: 0,
+              destinationCityId: null,
+              pathCityIds: null
+            }
           }
         ]}
       />
@@ -84,7 +90,13 @@ describe("MatchLiveMap", () => {
             ownerLabel: "player-3",
             troopsLabel: null,
             visibility: "partial",
-            visibleLocationCityId: null
+            visibleLocationCityId: null,
+            transit: {
+              status: "in_transit",
+              ticksRemaining: 2,
+              destinationCityId: null,
+              pathCityIds: null
+            }
           }
         ]}
       />
@@ -130,7 +142,13 @@ describe("MatchLiveMap", () => {
             ownerLabel: "player-2",
             troopsLabel: "5",
             visibility: "full",
-            visibleLocationCityId: "manchester"
+            visibleLocationCityId: "manchester",
+            transit: {
+              status: "stationary",
+              ticksRemaining: 0,
+              destinationCityId: null,
+              pathCityIds: null
+            }
           }
         ]}
       />
@@ -170,5 +188,168 @@ describe("MatchLiveMap", () => {
     const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
     expect(within(mapRegion).getByText("No live strategic map data is available yet.")).toBeVisible();
     expect(within(mapRegion).getByText("London")).toBeVisible();
+  });
+
+  it("renders deterministic spectator transit overlays and readable marching ETA copy from visible route fields", () => {
+    render(
+      <MatchLiveMap
+        mapLayout={loadBritainMapLayout()}
+        liveStatus="live"
+        tick={143}
+        perspective="spectator"
+        cities={[
+          {
+            cityId: "manchester",
+            cityName: "Manchester",
+            ownerLabel: "Arthur",
+            ownerVisibility: "full",
+            garrisonLabel: "7"
+          },
+          {
+            cityId: "leeds",
+            cityName: "Leeds",
+            ownerLabel: "Arthur",
+            ownerVisibility: "full",
+            garrisonLabel: "3"
+          }
+        ]}
+        armies={[
+          {
+            armyId: "army-transit",
+            cityId: "manchester",
+            cityName: "Manchester",
+            ownerLabel: "Arthur",
+            troopsLabel: "9",
+            visibility: "full",
+            visibleLocationCityId: "manchester",
+            transit: {
+              status: "in_transit",
+              ticksRemaining: 3,
+              destinationCityId: "leeds",
+              pathCityIds: ["manchester", "leeds"]
+            }
+          }
+        ]}
+      />
+    );
+
+    const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(
+      within(mapRegion).getByLabelText("Transit overlay Arthur Manchester to Leeds")
+    ).toBeVisible();
+    expect(
+      within(mapRegion).getByText("Arthur marching Manchester to Leeds via Manchester to Leeds • ETA 3 ticks")
+    ).toBeVisible();
+  });
+
+  it("keeps player transit summaries fog-safe when route details are hidden", () => {
+    render(
+      <MatchLiveMap
+        mapLayout={loadBritainMapLayout()}
+        liveStatus="live"
+        tick={143}
+        perspective="player"
+        cities={[
+          {
+            cityId: "birmingham",
+            cityName: "Birmingham",
+            ownerLabel: null,
+            ownerVisibility: "partial",
+            garrisonLabel: null
+          }
+        ]}
+        armies={[
+          {
+            armyId: "army-hidden-transit",
+            cityId: "birmingham",
+            cityName: "Birmingham",
+            ownerLabel: "player-3",
+            troopsLabel: null,
+            visibility: "partial",
+            visibleLocationCityId: null,
+            transit: {
+              status: "in_transit",
+              ticksRemaining: 2,
+              destinationCityId: null,
+              pathCityIds: null
+            }
+          }
+        ]}
+      />
+    );
+
+    const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(
+      within(mapRegion).queryByLabelText(/Transit overlay player-3/i)
+    ).not.toBeInTheDocument();
+    expect(
+      within(mapRegion).getByText("player-3 march in progress • ETA 2 ticks")
+    ).toBeVisible();
+    expect(within(mapRegion).queryByText(/Birmingham to/i)).not.toBeInTheDocument();
+  });
+
+  it("suppresses stale transit overlays when the feed is offline and shows the offline explanatory state", () => {
+    render(
+      <MatchLiveMap
+        mapLayout={loadBritainMapLayout()}
+        liveStatus="not_live"
+        tick={143}
+        perspective="spectator"
+        cities={[
+          {
+            cityId: "manchester",
+            cityName: "Manchester",
+            ownerLabel: "Arthur",
+            ownerVisibility: "full",
+            garrisonLabel: "7"
+          },
+          {
+            cityId: "leeds",
+            cityName: "Leeds",
+            ownerLabel: "Arthur",
+            ownerVisibility: "full",
+            garrisonLabel: "3"
+          }
+        ]}
+        armies={[
+          {
+            armyId: "army-transit",
+            cityId: "manchester",
+            cityName: "Manchester",
+            ownerLabel: "Arthur",
+            troopsLabel: "9",
+            visibility: "full",
+            visibleLocationCityId: "manchester",
+            transit: {
+              status: "in_transit",
+              ticksRemaining: 3,
+              destinationCityId: "leeds",
+              pathCityIds: ["manchester", "leeds"]
+            }
+          }
+        ]}
+      />
+    );
+
+    const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(mapRegion).queryByLabelText("Transit overlay Arthur Manchester to Leeds")).not.toBeInTheDocument();
+    expect(within(mapRegion).queryByText("Arthur marching Manchester to Leeds via Manchester to Leeds • ETA 3 ticks")).not.toBeInTheDocument();
+    expect(within(mapRegion).getByText("No visible transit overlays in the last confirmed update.")).toBeVisible();
+  });
+
+  it("renders deterministic transit empty messaging when no visible overlays exist", () => {
+    render(
+      <MatchLiveMap
+        mapLayout={loadBritainMapLayout()}
+        liveStatus="live"
+        tick={143}
+        perspective="spectator"
+        cities={[]}
+        armies={[]}
+      />
+    );
+
+    const mapRegion = screen.getByRole("region", { name: "Britain strategic map" });
+    expect(within(mapRegion).getByText("No visible transit overlays in this update.")).toBeVisible();
   });
 });

@@ -5,7 +5,12 @@ import type {
   AllianceRecord
 } from "../../lib/types";
 import type { BritainMapLayout } from "../../lib/britain-map";
-import { MatchLiveMap, type MatchLiveMapArmyDatum, type MatchLiveMapCityDatum } from "./match-live-map";
+import {
+  MatchLiveMap,
+  describeTransitListText,
+  type MatchLiveMapArmyDatum,
+  type MatchLiveMapCityDatum
+} from "./match-live-map";
 
 type MatchLiveViewProps = {
   envelope: SpectatorMatchEnvelope;
@@ -104,10 +109,17 @@ export function MatchLiveView({ envelope, mapLayout, roster, liveStatus }: Match
         ownerLabel: resolvePlayerLabel(army.owner),
         troopsLabel: String(army.troops),
         visibility: "full" as const,
-        visibleLocationCityId: army.location ?? army.destination
+        visibleLocationCityId: army.location ?? army.destination,
+        transit: {
+          status: army.ticks_remaining > 0 ? "in_transit" : "stationary",
+          ticksRemaining: army.ticks_remaining,
+          destinationCityId: army.destination,
+          pathCityIds: army.path
+        }
       }];
     })
     .sort((left, right) => left.cityName.localeCompare(right.cityName));
+  const cityNamesById = new Map(mapLayout.cities.map((city) => [city.id, city.name]));
 
   const renderUnavailable = (message: string) => {
     if (liveStatus === "not_live") {
@@ -163,12 +175,24 @@ export function MatchLiveView({ envelope, mapLayout, roster, liveStatus }: Match
           <p>No public army movement is visible in this update.</p>
         ) : (
           <ul className="roster-list" aria-label="Visible armies">
-            {envelope.data.state.armies.map((army) => (
-              <li key={army.id} className="roster-row">
-                <span>{army.owner}</span>
-                <span>{army.location ?? army.destination ?? "In transit"}</span>
-              </li>
-            ))}
+            {envelope.data.state.armies.map((army) => {
+              const armyDatum = mapArmies.find((entry) => entry.armyId === army.id) ?? null;
+              const transitText =
+                armyDatum === null ? null : describeTransitListText(armyDatum, cityNamesById);
+
+              return (
+                <li key={army.id} className="roster-row">
+                  {transitText === null ? (
+                    <>
+                      <span>{army.owner}</span>
+                      <span>{army.location ?? army.destination ?? "In transit"}</span>
+                    </>
+                  ) : (
+                    <span>{transitText}</span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

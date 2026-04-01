@@ -137,6 +137,82 @@ describe("MatchLiveView", () => {
     expect(screen.getByText("Western Accord: Arthur, player-9")).toBeVisible();
   });
 
+  it("renders spectator marching route and ETA copy from visible transit fields", () => {
+    render(
+      <MatchLiveView
+        envelope={{
+          type: "tick_update",
+          data: {
+            match_id: "match-transit",
+            viewer_role: "spectator",
+            player_id: null,
+            state: {
+              match_id: "match-transit",
+              tick: 143,
+              cities: {
+                manchester: {
+                  owner: "player-1",
+                  population: 12,
+                  resources: { food: 3, production: 2, money: 8 },
+                  upgrades: { economy: 2, military: 1, fortification: 0 },
+                  garrison: 7,
+                  building_queue: []
+                },
+                leeds: {
+                  owner: "player-1",
+                  population: 12,
+                  resources: { food: 3, production: 2, money: 8 },
+                  upgrades: { economy: 2, military: 1, fortification: 0 },
+                  garrison: 3,
+                  building_queue: []
+                }
+              },
+              armies: [
+                {
+                  id: "army-1",
+                  owner: "player-1",
+                  troops: 9,
+                  location: "manchester",
+                  destination: "leeds",
+                  path: ["manchester", "leeds"],
+                  ticks_remaining: 3
+                }
+              ],
+              players: {
+                "player-1": {
+                  resources: { food: 120, production: 85, money: 200 },
+                  cities_owned: ["manchester", "leeds"],
+                  alliance_id: null,
+                  is_eliminated: false
+                }
+              },
+              victory: {
+                leading_alliance: null,
+                cities_held: 2,
+                threshold: 13,
+                countdown_ticks_remaining: null
+              }
+            },
+            world_messages: [],
+            direct_messages: [],
+            group_chats: [],
+            group_messages: [],
+            treaties: [],
+            alliances: []
+          }
+        }}
+        mapLayout={loadBritainMapLayout()}
+        roster={[{ player_id: "player-1", display_name: "Arthur", competitor_kind: "human" }]}
+        liveStatus="live"
+      />
+    );
+
+    expect(
+      screen.getByText("Arthur marching Manchester to Leeds via Manchester to Leeds • ETA 3 ticks")
+    ).toBeVisible();
+    expect(screen.getByText("Arthur march Manchester to Leeds • ETA 3 ticks")).toBeVisible();
+  });
+
   it("renders explicit empty states for text-first situation-room panels", () => {
     render(
       <MatchLiveView
