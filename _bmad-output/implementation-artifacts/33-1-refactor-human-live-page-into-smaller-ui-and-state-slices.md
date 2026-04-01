@@ -1,6 +1,6 @@
 # Story: 33.1 Refactor human live page into smaller UI and state slices
 
-Status: drafted
+Status: in_progress
 
 ## Story
 

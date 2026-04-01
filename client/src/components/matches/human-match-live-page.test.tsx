@@ -1759,6 +1759,65 @@ describe("HumanMatchLivePage", () => {
     expect(within(mapRegion).getByText("Manchester")).toBeVisible();
   });
 
+  it("preserves the route-facing shell and major live sections after the player feed drops", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "http://127.0.0.1:8000",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => makePublicMatchDetailResponse()
+      })
+    );
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
+      </SessionProvider>
+    );
+
+    expect(screen.getByRole("heading", { name: "Live Match match-alpha" })).toBeVisible();
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const socket = MockWebSocket.instances[0];
+    socket?.emitOpen();
+    socket?.emitMessage(makeEnvelope(144));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Map selection inspector" })).toBeVisible();
+    });
+
+    expect(screen.getByRole("heading", { name: "Live player state" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Live messaging" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Live diplomacy" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Order Drafts" })).toBeVisible();
+    expect(screen.getByText("Advance at dawn.")).toBeVisible();
+
+    socket?.emitClose();
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("Live connection lost");
+    });
+
+    expect(screen.getByRole("heading", { name: "Live Match match-alpha" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Live player state" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Map selection inspector" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Live messaging" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Live diplomacy" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Order Drafts" })).toBeVisible();
+    expect(screen.getByText("Advance at dawn.")).toBeVisible();
+    expect(screen.getByText("Showing the last confirmed player snapshot. Reconnect to resume live updates.")).toBeVisible();
+  });
+
   it("fails closed on invalid player websocket payloads while preserving the last confirmed snapshot", async () => {
     window.localStorage.setItem(
       SESSION_STORAGE_KEY,
