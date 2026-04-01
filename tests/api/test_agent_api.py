@@ -1851,6 +1851,43 @@ async def test_command_envelope_rejects_invalid_route_and_action_contracts(
 
 
 @pytest.mark.asyncio
+async def test_post_commands_alias_preserves_command_envelope_contract(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        response = await client.post(
+            "/api/v1/matches/match-alpha/commands",
+            json=_command_envelope_payload(
+                messages=[_command_message(channel="world", content="Alias world update.")]
+            ),
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+    assert response.status_code == HTTPStatus.ACCEPTED
+    assert response.json() == {
+        "status": "accepted",
+        "match_id": "match-alpha",
+        "player_id": "player-2",
+        "tick": 142,
+        "orders": None,
+        "messages": [
+            {
+                "status": "accepted",
+                "message_id": 0,
+                "match_id": "match-alpha",
+                "channel": "world",
+                "sender_id": "player-2",
+                "recipient_id": None,
+                "tick": 142,
+                "content": "Alias world update.",
+            }
+        ],
+        "treaties": [],
+        "alliance": None,
+    }
+
+
+@pytest.mark.asyncio
 async def test_post_messages_accepts_world_and_direct_messages_and_lists_visible_history(
     app_client: AsyncClient,
     seeded_registry: InMemoryMatchRegistry,
@@ -4669,6 +4706,72 @@ def test_command_envelope_message_writes_broadcast_private_chat_refresh(
             "created_tick": 142,
         }
     ]
+
+
+def test_treaty_and_alliance_writes_broadcast_match_refresh(
+    websocket_client: TestClient,
+) -> None:
+    with (
+        websocket_client.websocket_connect(
+            "/ws/match/match-alpha?viewer=player"
+            f"&token={_human_jwt_token(user_id='00000000-0000-0000-0000-000000000302')}"
+        ) as player_two_socket,
+        websocket_client.websocket_connect(
+            "/ws/match/match-alpha?viewer=spectator"
+        ) as spectator_socket,
+    ):
+        player_two_socket.receive_json()
+        spectator_socket.receive_json()
+
+        treaty_response = websocket_client.post(
+            "/api/v1/matches/match-alpha/treaties",
+            json=_treaty_payload(counterparty_id="player-1"),
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+        player_treaty_update = player_two_socket.receive_json()
+        spectator_treaty_update = spectator_socket.receive_json()
+
+        alliance_response = websocket_client.post(
+            "/api/v1/matches/match-alpha/alliances",
+            json=_alliance_payload(action="leave", alliance_id=None, name=None),
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+        player_alliance_update = player_two_socket.receive_json()
+        spectator_alliance_update = spectator_socket.receive_json()
+
+    assert treaty_response.status_code == HTTPStatus.ACCEPTED
+    assert player_treaty_update["data"]["treaties"] == [
+        {
+            "treaty_id": 0,
+            "player_a_id": "player-1",
+            "player_b_id": "player-2",
+            "treaty_type": "trade",
+            "status": "proposed",
+            "proposed_by": "player-2",
+            "proposed_tick": 142,
+            "signed_tick": None,
+            "withdrawn_by": None,
+            "withdrawn_tick": None,
+        }
+    ]
+    assert spectator_treaty_update["data"]["treaties"] == player_treaty_update["data"]["treaties"]
+
+    assert alliance_response.status_code == HTTPStatus.ACCEPTED
+    assert player_alliance_update["data"]["alliances"] == [
+        {
+            "alliance_id": "alliance-red",
+            "name": "alliance-red",
+            "leader_id": "player-1",
+            "formed_tick": 142,
+            "members": [{"player_id": "player-1", "joined_tick": 142}],
+        }
+    ]
+    assert (
+        spectator_alliance_update["data"]["alliances"]
+        == player_alliance_update["data"]["alliances"]
+    )
 
 
 def test_runtime_broadcasts_post_tick_payload_to_connected_player_and_spectator(
