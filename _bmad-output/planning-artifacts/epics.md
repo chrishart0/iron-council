@@ -1671,3 +1671,27 @@ As a server maintainer,
 I want the DB registry's public-read models, identity resolution, and hydration helpers separated into stable modules,
 So that persistence code can evolve without one 1.5k-line file remaining the only place that knows how lobby lifecycle, read models, and seeded auth fallback fit together.
 
+### Story 34.4: Split in-memory access and command workflows out of `server/agent_registry.py`
+
+As a server maintainer,
+I want the in-memory registry's authenticated access, join-slot resolution, tick advancement, and command-envelope mutation helpers separated into focused modules,
+So that future API/runtime changes do not require one monolithic registry file to own every non-persistence workflow.
+
+**Acceptance Criteria:**
+
+**Given** `server/agent_registry.py` still owns authenticated-key resolution, join-slot assignment, joined-player access, tick advancement, and command-envelope mutations
+**When** Story 34.4 ships
+**Then** those concerns live behind clearly named in-memory registry helper modules while `InMemoryMatchRegistry` keeps the same public method names and compatibility imports for existing callers.
+
+**And Given** agents and tests already rely on idempotent joins, structured access errors, accepted command-envelope response shapes, world-message treaty side effects, and current-tick-only advancement behavior
+**When** the refactor ships
+**Then** those behaviors remain unchanged from the API boundary and registry test boundary.
+
+**And Given** the story is a refactor-only slice
+**When** the implementation is reviewed
+**Then** no HTTP contract, auth semantics, DB schema, websocket behavior, runtime-loop behavior, or gameplay rules change and the resulting structure is simpler than the starting point.
+
+**And Given** the extracted module boundaries ship
+**When** focused registry/API/e2e regressions plus the repo quality gate run
+**Then** the preserved contract is covered and the BMAD artifacts stay aligned with the new structure.
+
