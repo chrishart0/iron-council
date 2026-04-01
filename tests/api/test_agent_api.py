@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
@@ -4163,6 +4164,54 @@ async def test_openapi_declares_secured_match_route_contracts(app_client: AsyncC
     ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
 
 
+def test_server_api_modules_expose_extracted_phase_one_seams() -> None:
+    errors = importlib.import_module("server.api.errors")
+    public_routes = importlib.import_module("server.api.public_routes")
+    realtime_routes = importlib.import_module("server.api.realtime_routes")
+
+    assert hasattr(errors, "ApiError")
+    assert hasattr(errors, "register_error_handlers")
+    assert hasattr(public_routes, "build_public_api_router")
+    assert hasattr(realtime_routes, "register_realtime_routes")
+
+
+@pytest.mark.asyncio
+async def test_openapi_declares_public_read_contracts(app_client: AsyncClient) -> None:
+    async with app_client as client:
+        root_response = await client.get("/")
+        health_response = await client.get("/health")
+        openapi_response = await client.get("/openapi.json")
+
+    assert root_response.status_code == HTTPStatus.OK
+    assert root_response.json()["service"] == "iron-council-server"
+    assert root_response.json()["status"] == "ok"
+    assert root_response.json()["version"]
+
+    assert health_response.status_code == HTTPStatus.OK
+    assert health_response.json() == {"status": "ok"}
+
+    assert openapi_response.status_code == HTTPStatus.OK
+    paths = openapi_response.json()["paths"]
+    assert paths["/api/v1/matches"]["get"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/MatchListResponse"}
+    assert paths["/api/v1/leaderboard"]["get"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/PublicLeaderboardResponse"}
+    assert paths["/api/v1/matches/completed"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/CompletedMatchSummaryListResponse"}
+    assert paths["/api/v1/matches/{match_id}"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/PublicMatchDetailResponse"}
+    assert paths["/api/v1/matches/{match_id}/history"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/MatchHistoryResponse"}
+    assert paths["/api/v1/matches/{match_id}/history/{tick}"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/MatchReplayTickResponse"}
+
+
 def test_match_websocket_registers_player_connection_and_sends_initial_fog_filtered_payload(
     websocket_app: FastAPI,
     websocket_client: TestClient,
@@ -4198,6 +4247,21 @@ def test_match_websocket_registers_player_connection_and_sends_initial_fog_filte
             }
         ]
         assert manager.connection_count("match-alpha") == 1
+
+
+def test_legacy_match_websocket_route_preserves_initial_envelope_contract(
+    websocket_client: TestClient,
+) -> None:
+    with websocket_client.websocket_connect(
+        "/ws/matches/match-alpha?viewer=player"
+        f"&token={_human_jwt_token(user_id='00000000-0000-0000-0000-000000000302')}"
+    ) as websocket:
+        payload = websocket.receive_json()
+
+    assert payload["type"] == "tick_update"
+    assert payload["data"]["viewer_role"] == "player"
+    assert payload["data"]["player_id"] == "player-2"
+    assert payload["data"]["state"]["match_id"] == "match-alpha"
 
 
 def test_match_websocket_registers_spectator_connection_and_sends_full_visibility_payload(

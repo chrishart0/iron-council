@@ -7,19 +7,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Annotated, Any, Final, Literal, cast
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    FastAPI,
-    Header,
-    Query,
-    Request,
-    WebSocket,
-    WebSocketDisconnect,
-)
-from fastapi.exception_handlers import request_validation_exception_handler
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, WebSocket
 from starlette.websockets import WebSocketState
 
 from server import __version__
@@ -33,6 +21,9 @@ from server.agent_registry import (
     MatchRecord,
     TreatyTransitionError,
 )
+from server.api.errors import API_ERROR_RESPONSE_SCHEMA, ApiError, register_error_handlers
+from server.api.public_routes import build_public_api_router, register_public_metadata_routes
+from server.api.realtime_routes import register_realtime_routes
 from server.auth import (
     HumanJwtValidationError,
     extract_bearer_token,
@@ -40,18 +31,9 @@ from server.auth import (
     validate_human_jwt,
 )
 from server.db.registry import (
-    MatchHistoryNotFoundError,
     MatchLobbyCreationError,
     MatchLobbyStartError,
-    PublicMatchDetailNotFoundError,
-    TickHistoryNotFoundError,
     create_match_lobby,
-    get_completed_match_summaries,
-    get_match_history,
-    get_match_replay_tick,
-    get_public_leaderboard,
-    get_public_match_detail,
-    get_public_match_summaries,
     load_match_registry_from_database,
     persist_advanced_match_tick,
     resolve_authenticated_agent_context_from_db,
@@ -74,28 +56,21 @@ from server.models.api import (
     ApiErrorResponse,
     AuthenticatedAgentContext,
     AuthenticatedOrderSubmissionRequest,
-    CompletedMatchSummaryListResponse,
     GroupChatCreateAcceptanceResponse,
     GroupChatCreateRequest,
     GroupChatListResponse,
     GroupChatMessageAcceptanceResponse,
     GroupChatMessageCreateRequest,
     GroupChatMessageListResponse,
-    MatchHistoryResponse,
     MatchJoinRequest,
     MatchJoinResponse,
-    MatchListResponse,
     MatchLobbyCreateRequest,
     MatchLobbyCreateResponse,
     MatchLobbyStartResponse,
     MatchMessageCreateRequest,
     MatchMessageInboxResponse,
-    MatchReplayTickResponse,
-    MatchSummary,
     MessageAcceptanceResponse,
     OrderAcceptanceResponse,
-    PublicLeaderboardResponse,
-    PublicMatchDetailResponse,
     PublicMatchRosterRow,
     TreatyActionAcceptanceResponse,
     TreatyActionRequest,
@@ -104,22 +79,12 @@ from server.models.api import (
 from server.models.domain import MatchStatus
 from server.models.fog import AgentStateProjection
 from server.models.orders import OrderEnvelope
-from server.models.realtime import RealtimeViewerRole
 from server.runtime import MatchRuntime
 from server.settings import Settings, get_settings
 from server.websocket import (
     MatchWebSocketManager,
     broadcast_match_update,
-    build_match_realtime_envelope,
 )
-
-
-class ApiError(Exception):
-    def __init__(self, *, status_code: int, code: str, message: str) -> None:
-        self.status_code = status_code
-        self.code = code
-        self.message = message
-        super().__init__(message)
 
 
 def get_match_registry(request: Request) -> InMemoryMatchRegistry:
@@ -131,7 +96,6 @@ TickPersistence = Callable[[AdvancedMatchTick], None]
 _DEFAULT_TICK_PERSISTENCE: Final = object()
 ApiKeyHeader = Annotated[str | None, Header(alias="X-API-Key")]
 AuthorizationHeader = Annotated[str | None, Header(alias="Authorization")]
-API_ERROR_RESPONSE_SCHEMA: dict[str, Any] = {"model": ApiErrorResponse}
 AUTHENTICATED_API_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
 }
@@ -162,264 +126,6 @@ def _public_match_status_priority(status: MatchStatus) -> int:
     if status is MatchStatus.PAUSED:
         return 2
     return 3
-
-
-def _build_validation_error_response(*, code: str, message: str) -> JSONResponse:
-    payload = ApiErrorResponse(error=ApiErrorDetail(code=code, message=message))
-    return JSONResponse(
-        status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
-        content=payload.model_dump(mode="json"),
-    )
-
-
-def _message_validation_error_response(exc: RequestValidationError) -> JSONResponse:
-    for error in exc.errors():
-        location = list(error.get("loc", ()))
-        error_type = error.get("type")
-        if location == ["body", "content"] and error_type == "string_too_short":
-            return _build_validation_error_response(
-                code="invalid_message_content",
-                message="Message content must be at least 1 character long.",
-            )
-        if location and location[0] == "body" and error_type == "missing":
-            return _build_validation_error_response(
-                code="invalid_message_request",
-                message="Message request is missing required fields.",
-            )
-
-    return _build_validation_error_response(
-        code="invalid_message_request",
-        message="Message request validation failed.",
-    )
-
-
-def _group_chat_validation_error_response(exc: RequestValidationError) -> JSONResponse:
-    for error in exc.errors():
-        location = list(error.get("loc", ()))
-        error_type = error.get("type")
-        if location == ["body", "name"] and error_type == "string_too_short":
-            return _build_validation_error_response(
-                code="invalid_group_chat_name",
-                message="Group chat name must be at least 1 character long.",
-            )
-        if location == ["body", "member_ids"] and error_type == "too_short":
-            return _build_validation_error_response(
-                code="invalid_group_chat_members",
-                message="Group chat creation requires at least 1 invited member.",
-            )
-        if location == ["body", "content"] and error_type == "string_too_short":
-            return _build_validation_error_response(
-                code="invalid_message_content",
-                message="Message content must be at least 1 character long.",
-            )
-        if location and location[0] == "body" and error_type == "missing":
-            return _build_validation_error_response(
-                code="invalid_group_chat_request",
-                message="Group chat request is missing required fields.",
-            )
-
-    return _build_validation_error_response(
-        code="invalid_group_chat_request",
-        message="Group chat request validation failed.",
-    )
-
-
-def _treaty_validation_error_response(exc: RequestValidationError) -> JSONResponse:
-    for error in exc.errors():
-        location = list(error.get("loc", ()))
-        error_type = error.get("type")
-        if location and location[0] == "body" and error_type == "missing":
-            return _build_validation_error_response(
-                code="invalid_treaty_request",
-                message="Treaty request is missing required fields.",
-            )
-        if location == ["body", "action"] and error_type == "literal_error":
-            return _build_validation_error_response(
-                code="invalid_treaty_action",
-                message="Treaty action must be one of: propose, accept, withdraw.",
-            )
-        if location == ["body", "treaty_type"] and error_type == "literal_error":
-            return _build_validation_error_response(
-                code="invalid_treaty_type",
-                message="Treaty type must be one of: non_aggression, defensive, trade.",
-            )
-
-    return _build_validation_error_response(
-        code="invalid_treaty_request",
-        message="Treaty request validation failed.",
-    )
-
-
-def _alliance_validation_error_response(exc: RequestValidationError) -> JSONResponse:
-    for error in exc.errors():
-        location = list(error.get("loc", ()))
-        error_type = error.get("type")
-        error_message = str(error.get("msg", "")).lower()
-        if location and location[0] == "body" and error_type == "missing":
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance request is missing required fields.",
-            )
-        if location == ["body", "action"] and error_type == "literal_error":
-            return _build_validation_error_response(
-                code="invalid_alliance_action",
-                message="Alliance action must be one of: create, join, leave.",
-            )
-        if "alliance create does not accept alliance_id" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance create does not accept alliance_id.",
-            )
-        if "alliance create requires name" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance create requires name.",
-            )
-        if "alliance join requires alliance_id" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance join requires alliance_id.",
-            )
-        if "alliance join does not accept name" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance join does not accept name.",
-            )
-        if "alliance leave does not accept alliance_id" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance leave does not accept alliance_id.",
-            )
-        if "alliance leave does not accept name" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance leave does not accept name.",
-            )
-
-    return _build_validation_error_response(
-        code="invalid_alliance_request",
-        message="Alliance request validation failed.",
-    )
-
-
-def _join_validation_error_response(exc: RequestValidationError) -> JSONResponse:
-    for error in exc.errors():
-        location = list(error.get("loc", ()))
-        error_type = error.get("type")
-        if location and location[0] == "body" and error_type == "missing":
-            return _build_validation_error_response(
-                code="invalid_join_request",
-                message="Join request is missing required fields.",
-            )
-
-    return _build_validation_error_response(
-        code="invalid_join_request",
-        message="Join request validation failed.",
-    )
-
-
-def _create_match_validation_error_response(exc: RequestValidationError) -> JSONResponse:
-    for error in exc.errors():
-        location = list(error.get("loc", ()))
-        error_type = error.get("type")
-        if location and location[0] == "body" and error_type == "missing":
-            return _build_validation_error_response(
-                code="invalid_match_lobby_request",
-                message="Match lobby request is missing required fields.",
-            )
-        if location == ["body", "map"] and error_type == "literal_error":
-            return _build_validation_error_response(
-                code="invalid_match_map",
-                message="Match map must be 'britain'.",
-            )
-
-    return _build_validation_error_response(
-        code="invalid_match_lobby_request",
-        message="Match lobby request validation failed.",
-    )
-
-
-def _command_validation_error_response(exc: RequestValidationError) -> JSONResponse:
-    for error in exc.errors():
-        location = list(error.get("loc", ()))
-        error_type = error.get("type")
-        error_message = str(error.get("msg", "")).lower()
-        if (
-            len(location) == 4
-            and location[0] == "body"
-            and location[1] == "messages"
-            and isinstance(location[2], int)
-            and location[3] == "content"
-            and error_type == "string_too_short"
-        ):
-            return _build_validation_error_response(
-                code="invalid_message_content",
-                message="Message content must be at least 1 character long.",
-            )
-        if (
-            len(location) == 4
-            and location[0] == "body"
-            and location[1] == "treaties"
-            and isinstance(location[2], int)
-            and location[3] == "action"
-            and error_type == "literal_error"
-        ):
-            return _build_validation_error_response(
-                code="invalid_treaty_action",
-                message="Treaty action must be one of: propose, accept, withdraw.",
-            )
-        if (
-            len(location) == 4
-            and location[0] == "body"
-            and location[1] == "treaties"
-            and isinstance(location[2], int)
-            and location[3] == "treaty_type"
-            and error_type == "literal_error"
-        ):
-            return _build_validation_error_response(
-                code="invalid_treaty_type",
-                message="Treaty type must be one of: non_aggression, defensive, trade.",
-            )
-        if location and location[0] == "body" and error_type == "missing":
-            return _build_validation_error_response(
-                code="invalid_command_request",
-                message="Command request is missing required fields.",
-            )
-        if "alliance create does not accept alliance_id" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance create does not accept alliance_id.",
-            )
-        if "alliance create requires name" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance create requires name.",
-            )
-        if "alliance join requires alliance_id" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance join requires alliance_id.",
-            )
-        if "alliance join does not accept name" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance join does not accept name.",
-            )
-        if "alliance leave does not accept alliance_id" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance leave does not accept alliance_id.",
-            )
-        if "alliance leave does not accept name" in error_message:
-            return _build_validation_error_response(
-                code="invalid_alliance_request",
-                message="Alliance leave does not accept name.",
-            )
-
-    return _build_validation_error_response(
-        code="invalid_command_request",
-        message="Command request validation failed.",
-    )
 
 
 def get_authenticated_agent(
@@ -742,177 +448,33 @@ def create_app(
     app.state.settings = settings
     app.state.history_database_url = history_database_url
 
-    @app.exception_handler(ApiError)
-    async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:
-        payload = ApiErrorResponse(error=ApiErrorDetail(code=exc.code, message=exc.message))
-        return JSONResponse(status_code=exc.status_code, content=payload.model_dump(mode="json"))
-
-    @app.exception_handler(RequestValidationError)
-    async def handle_request_validation_error(
-        request: Request,
-        exc: RequestValidationError,
-    ) -> JSONResponse:
-        if request.method == "POST" and request.url.path == "/api/v1/matches":
-            return _create_match_validation_error_response(exc)
-        if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
-            ("/command", "/commands")
-        ):
-            return _command_validation_error_response(exc)
-        if request.url.path.startswith("/api/v1/matches/") and "/group-chats" in request.url.path:
-            return _group_chat_validation_error_response(exc)
-        if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
-            "/messages"
-        ):
-            return _message_validation_error_response(exc)
-        if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
-            "/treaties"
-        ):
-            return _treaty_validation_error_response(exc)
-        if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith(
-            "/alliances"
-        ):
-            return _alliance_validation_error_response(exc)
-        if request.url.path.startswith("/api/v1/matches/") and request.url.path.endswith("/join"):
-            return _join_validation_error_response(exc)
-        return await request_validation_exception_handler(request, exc)
-
-    @app.get("/")
-    async def root() -> dict[str, str]:
-        return {
-            "service": app.title,
-            "status": "ok",
-            "version": app.version,
-        }
-
-    @app.get("/health")
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
-
-    async def _handle_match_websocket(
-        websocket: WebSocket,
-        match_id: str,
-        viewer: str = Query(default="spectator"),
-        player_id: str | None = Query(default=None),
-        token: str | None = Query(default=None),
-    ) -> None:
-        record = registry.get_match(match_id)
-        if record is None:
-            await websocket.close(code=1008, reason="match_not_found")
-            return
-
-        try:
-            if viewer not in {"player", "spectator"}:
-                raise ApiError(
-                    status_code=HTTPStatus.BAD_REQUEST,
-                    code="invalid_viewer",
-                    message="Websocket viewer must be either 'player' or 'spectator'.",
-                )
-            viewer_role = cast(RealtimeViewerRole, viewer)
-            resolved_player_id = (
-                _resolve_websocket_player_viewer(
+    register_error_handlers(app)
+    register_public_metadata_routes(app)
+    register_realtime_routes(
+        app,
+        registry=registry,
+        websocket_manager=websocket_manager,
+        settings=settings,
+        history_database_url=history_database_url,
+        resolve_websocket_player_viewer=_resolve_websocket_player_viewer,
+        send_websocket_auth_error=_send_websocket_auth_error,
+        close_websocket_for_api_error=_close_websocket_for_api_error,
+    )
+    app.include_router(
+        build_public_api_router(
+            match_registry_provider=get_match_registry,
+            history_database_url=history_database_url,
+            public_match_status_priority=_public_match_status_priority,
+            build_in_memory_public_match_roster=(
+                lambda registry, record: _build_in_memory_public_match_roster(
                     registry=registry,
-                    settings=settings,
-                    history_database_url=history_database_url,
-                    match_id=match_id,
-                    player_id=player_id,
-                    token=token,
+                    record=record,
                 )
-                if viewer_role == "player"
-                else None
-            )
-        except ApiError as exc:
-            if exc.code in {"invalid_websocket_auth", "player_auth_mismatch"}:
-                await _send_websocket_auth_error(websocket, exc)
-                return
-            await _close_websocket_for_api_error(websocket, exc)
-            return
-
-        await websocket.accept()
-        try:
-            await websocket.send_json(
-                build_match_realtime_envelope(
-                    registry=registry,
-                    match_id=match_id,
-                    viewer_role=viewer_role,
-                    player_id=resolved_player_id,
-                ).model_dump(mode="json")
-            )
-            websocket_manager.register(
-                match_id=match_id,
-                websocket=websocket,
-                viewer_role=viewer_role,
-                player_id=resolved_player_id,
-            )
-            while True:
-                await websocket.receive_text()
-        except WebSocketDisconnect:
-            pass
-        finally:
-            websocket_manager.unregister(match_id=match_id, websocket=websocket)
-
-    @app.websocket("/ws/match/{match_id}")
-    async def match_websocket(
-        websocket: WebSocket,
-        match_id: str,
-        viewer: str = Query(default="spectator"),
-        player_id: str | None = Query(default=None),
-        token: str | None = Query(default=None),
-    ) -> None:
-        await _handle_match_websocket(
-            websocket=websocket,
-            match_id=match_id,
-            viewer=viewer,
-            player_id=player_id,
-            token=token,
+            ),
         )
-
-    @app.websocket("/ws/matches/{match_id}")
-    async def legacy_match_websocket(
-        websocket: WebSocket,
-        match_id: str,
-        viewer: str = Query(default="spectator"),
-        player_id: str | None = Query(default=None),
-        token: str | None = Query(default=None),
-    ) -> None:
-        await _handle_match_websocket(
-            websocket=websocket,
-            match_id=match_id,
-            viewer=viewer,
-            player_id=player_id,
-            token=token,
-        )
+    )
 
     api_router = APIRouter(prefix="/api/v1")
-
-    @api_router.get("/matches", response_model=MatchListResponse)
-    async def list_matches(
-        registry: MatchRegistryDependency,
-    ) -> MatchListResponse:
-        if history_database_url is not None:
-            return get_public_match_summaries(database_url=history_database_url)
-
-        return MatchListResponse(
-            matches=[
-                MatchSummary(
-                    match_id=record.match_id,
-                    status=record.status,
-                    map=record.map_id,
-                    tick=record.state.tick,
-                    tick_interval_seconds=record.tick_interval_seconds,
-                    current_player_count=record.public_current_player_count,
-                    max_player_count=record.public_max_player_count,
-                    open_slot_count=record.public_open_slot_count,
-                )
-                for record in sorted(
-                    registry.list_matches(),
-                    key=lambda match: (
-                        _public_match_status_priority(match.status),
-                        -match.state.tick,
-                        match.match_id,
-                    ),
-                )
-            ]
-        )
 
     @api_router.post(
         "/matches",
@@ -1054,141 +616,6 @@ def create_app(
         registry.seed_match(started_lobby.record)
         await request.app.state.match_runtime.ensure_match_running(match_id)
         return started_lobby.response
-
-    def require_history_database_url() -> str:
-        if history_database_url is None:
-            raise ApiError(
-                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-                code="match_history_unavailable",
-                message="Persisted match history is only available in DB-backed mode.",
-            )
-        return history_database_url
-
-    def require_db_backed_public_read_database_url(*, code: str, message: str) -> str:
-        if history_database_url is None:
-            raise ApiError(
-                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-                code=code,
-                message=message,
-            )
-        return history_database_url
-
-    @api_router.get(
-        "/leaderboard",
-        response_model=PublicLeaderboardResponse,
-        responses={HTTPStatus.SERVICE_UNAVAILABLE: API_ERROR_RESPONSE_SCHEMA},
-    )
-    async def list_public_leaderboard() -> PublicLeaderboardResponse:
-        return get_public_leaderboard(
-            database_url=require_db_backed_public_read_database_url(
-                code="leaderboard_unavailable",
-                message="Persisted leaderboard is only available in DB-backed mode.",
-            )
-        )
-
-    @api_router.get(
-        "/matches/completed",
-        response_model=CompletedMatchSummaryListResponse,
-        responses={HTTPStatus.SERVICE_UNAVAILABLE: API_ERROR_RESPONSE_SCHEMA},
-    )
-    async def list_completed_match_summaries() -> CompletedMatchSummaryListResponse:
-        return get_completed_match_summaries(
-            database_url=require_db_backed_public_read_database_url(
-                code="completed_match_summaries_unavailable",
-                message="Completed match summaries are only available in DB-backed mode.",
-            )
-        )
-
-    @api_router.get(
-        "/matches/{match_id}",
-        response_model=PublicMatchDetailResponse,
-        responses={HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA},
-    )
-    async def get_public_match_detail_route(
-        match_id: str,
-        registry: MatchRegistryDependency,
-    ) -> PublicMatchDetailResponse:
-        if history_database_url is not None:
-            try:
-                return get_public_match_detail(
-                    database_url=history_database_url,
-                    match_id=match_id,
-                )
-            except PublicMatchDetailNotFoundError as exc:
-                raise ApiError(
-                    status_code=HTTPStatus.NOT_FOUND,
-                    code="match_not_found",
-                    message=f"Match '{match_id}' was not found.",
-                ) from exc
-
-        record = registry.get_match(match_id)
-        if record is None or record.status is MatchStatus.COMPLETED:
-            raise ApiError(
-                status_code=HTTPStatus.NOT_FOUND,
-                code="match_not_found",
-                message=f"Match '{match_id}' was not found.",
-            )
-
-        return PublicMatchDetailResponse(
-            match_id=record.match_id,
-            status=record.status,
-            map=record.map_id,
-            tick=record.state.tick,
-            tick_interval_seconds=record.tick_interval_seconds,
-            current_player_count=record.public_current_player_count,
-            max_player_count=record.public_max_player_count,
-            open_slot_count=record.public_open_slot_count,
-            roster=_build_in_memory_public_match_roster(registry=registry, record=record),
-        )
-
-    @api_router.get(
-        "/matches/{match_id}/history",
-        response_model=MatchHistoryResponse,
-        responses={
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.SERVICE_UNAVAILABLE: API_ERROR_RESPONSE_SCHEMA,
-        },
-    )
-    async def get_persisted_match_history(match_id: str) -> MatchHistoryResponse:
-        try:
-            return get_match_history(
-                database_url=require_history_database_url(),
-                match_id=match_id,
-            )
-        except MatchHistoryNotFoundError as exc:
-            raise ApiError(
-                status_code=HTTPStatus.NOT_FOUND,
-                code="match_not_found",
-                message=f"Match '{match_id}' was not found.",
-            ) from exc
-
-    @api_router.get(
-        "/matches/{match_id}/history/{tick}",
-        response_model=MatchReplayTickResponse,
-        responses={
-            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
-            HTTPStatus.SERVICE_UNAVAILABLE: API_ERROR_RESPONSE_SCHEMA,
-        },
-    )
-    async def get_persisted_match_replay_tick(match_id: str, tick: int) -> MatchReplayTickResponse:
-        try:
-            return get_match_replay_tick(
-                database_url=require_history_database_url(),
-                match_id=match_id,
-                tick=tick,
-            )
-        except MatchHistoryNotFoundError as exc:
-            raise ApiError(
-                status_code=HTTPStatus.NOT_FOUND,
-                code="match_not_found",
-                message=f"Match '{match_id}' was not found.",
-            ) from exc
-        except TickHistoryNotFoundError as exc:
-            raise ApiError(
-                status_code=HTTPStatus.NOT_FOUND,
-                code="tick_not_found",
-                message=f"Tick '{tick}' was not found for match '{match_id}'.",
-            ) from exc
 
     @api_router.get(
         "/agent/profile",
