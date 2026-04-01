@@ -1,9 +1,9 @@
-generated: 2026-04-01 10:59 UTC
+generated: 2026-04-01 14:04 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: none
+next_story: 34-1-extract-seeded-registry-fixture-builders-into-a-dedicated-module
 
 development_status:
   public-readiness-epic: done
@@ -164,3 +164,8 @@ development_status:
   epic-33: done
   33-1-refactor-human-live-page-into-smaller-ui-and-state-slices: done
   epic-33-retrospective: optional
+
+  epic-34: ready-for-dev
+  34-1-extract-seeded-registry-fixture-builders-into-a-dedicated-module: ready-for-dev
+  34-2-split-in-memory-messaging-and-diplomacy-workflows-out-of-server-agent_registry-py: backlog
+  34-3-split-db-backed-public-reads-and-identity-loading-helpers-out-of-server-db-registry-py: backlog

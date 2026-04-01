@@ -1631,3 +1631,43 @@ So that future live UI work can evolve without one 2k-line component remaining t
 **When** focused browser-boundary client checks and the repo quality gate run
 **Then** the preserved contract is covered and the BMAD artifacts stay aligned with the new structure.
 
+## Epic 34: Registry Seed and Persistence Decomposition
+
+Reduce concentration in `server/agent_registry.py` and prepare later persistence splits by extracting the shared seeded fixture builders into a dedicated server module first. Treat this as a refactor epic: preserve the shipped API, DB, runtime, and test-facing contracts while preferring explicit boring helpers over new registry abstractions.
+
+### Story 34.1: Extract seeded registry fixture builders into a dedicated module
+
+As a server maintainer,
+I want the seeded match/profile/API-key fixture builders moved out of `server/agent_registry.py` into a dedicated module,
+So that the registry and DB persistence layers can share one pure seeded-data seam without leaving test helpers and public imports scattered across multiple oversized files.
+
+**Acceptance Criteria:**
+
+**Given** the repo's seeded match/profile/API-key fixtures currently live at the bottom of `server/agent_registry.py`
+**When** Story 34.1 ships
+**Then** those seeded builders live in a dedicated server module while `server.agent_registry` keeps stable compatibility exports for existing callers.
+
+**And Given** `server/db/registry.py` currently rebuilds seeded profile-by-key-hash maps inline
+**When** the story ships
+**Then** the DB registry reuses the shared seeded helper instead of duplicating that construction in multiple places.
+
+**And Given** the story is a safe structural refactor only
+**When** the implementation is reviewed
+**Then** no HTTP route, DB schema, runtime-loop, websocket, or match-resolution behavior changes and the implementation stays simpler than the starting point.
+
+**And Given** the seeded helpers are used by tests, local DB seeding, and runtime auth/profile loading
+**When** focused registry tests and the repo quality gate run
+**Then** those existing consumers keep working without import churn or contract drift.
+
+### Story 34.2: Split in-memory messaging and diplomacy workflows out of `server/agent_registry.py`
+
+As a server maintainer,
+I want message, treaty, alliance, and group-chat mutations grouped behind focused registry modules,
+So that future live gameplay and API changes do not require one monolithic in-memory registry file to own every collaboration workflow.
+
+### Story 34.3: Split DB-backed public reads and identity-loading helpers out of `server/db/registry.py`
+
+As a server maintainer,
+I want the DB registry's public-read models, identity resolution, and hydration helpers separated into stable modules,
+So that persistence code can evolve without one 1.5k-line file remaining the only place that knows how lobby lifecycle, read models, and seeded auth fallback fit together.
+
