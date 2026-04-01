@@ -10,7 +10,9 @@ import pytest
 from server.agent_registry import (
     InMemoryMatchRegistry,
     build_seeded_agent_api_key,
+    build_seeded_agent_profiles,
     build_seeded_match_records,
+    build_seeded_profiles_by_key_hash,
 )
 from server.auth import hash_api_key
 from server.db import registry as db_registry_module
@@ -107,6 +109,23 @@ def test_load_match_registry_from_database_falls_back_to_derived_alliances(
     assert primary_match.alliances[0].name == "alliance-red"
     assert primary_match.alliances[0].leader_id == "player-1"
     assert primary_match.alliances[0].formed_tick == 142
+
+
+def test_shared_seeded_profiles_by_key_hash_matches_seeded_agent_profiles() -> None:
+    seeded_profiles_by_key_hash = build_seeded_profiles_by_key_hash()
+
+    expected_profiles_by_key_hash = {
+        hash_api_key(build_seeded_agent_api_key(profile.agent_id)): profile
+        for profile in build_seeded_agent_profiles()
+    }
+
+    assert seeded_profiles_by_key_hash == expected_profiles_by_key_hash
+    assert (
+        seeded_profiles_by_key_hash[
+            hash_api_key(build_seeded_agent_api_key("agent-player-2"))
+        ].agent_id
+        == "agent-player-2"
+    )
 
 
 def test_create_match_lobby_persists_match_and_creator_membership_atomically(
