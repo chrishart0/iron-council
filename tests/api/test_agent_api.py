@@ -3748,6 +3748,48 @@ async def test_join_match_rejects_invalid_authenticated_requests(
 
 
 @pytest.mark.asyncio
+async def test_authenticated_write_routes_keep_api_key_precedence_over_human_bearer_auth(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+    representative_order_payload: dict[str, Any],
+) -> None:
+    order_payload = deepcopy(representative_order_payload)
+    order_payload["match_id"] = "match-alpha"
+    order_payload["tick"] = 142
+    order_payload.pop("player_id", None)
+    headers = {
+        "X-API-Key": "invalid-key",
+        **_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+    }
+    before_state = _match_state_dump(seeded_registry)
+
+    async with app_client as client:
+        join_response = await client.post(
+            "/api/v1/matches/match-beta/join",
+            json=_join_payload(),
+            headers=headers,
+        )
+        order_response = await client.post(
+            "/api/v1/matches/match-alpha/orders",
+            json=order_payload,
+            headers=headers,
+        )
+
+    expected_error = {
+        "error": {
+            "code": "invalid_api_key",
+            "message": "A valid active X-API-Key header is required.",
+        }
+    }
+    assert join_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert join_response.json() == expected_error
+    assert order_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert order_response.json() == expected_error
+    assert _match_state_dump(seeded_registry) == before_state
+    assert seeded_registry.list_order_submissions("match-alpha") == []
+
+
+@pytest.mark.asyncio
 async def test_join_match_persists_db_backed_lobby_membership_and_remains_idempotent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
