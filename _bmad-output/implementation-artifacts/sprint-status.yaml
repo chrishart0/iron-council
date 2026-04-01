@@ -1,4 +1,4 @@
-generated: 2026-04-01 03:36 UTC
+generated: 2026-04-01 05:30 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
@@ -9,6 +9,8 @@ development_status:
   public-readiness-epic: in-progress
   public-readiness-story-1-readme-and-docs-entrypoint: done
   public-readiness-story-2-add-oss-governance-files: done
+  public-readiness-story-3-public-docs-curation-and-naming-cleanup: in-progress
+  public-readiness-story-4-clean-code-consultant-pass: done
 
   epic-1: done
   1-1-scaffold-fastapi-server-and-core-domain-contracts: done

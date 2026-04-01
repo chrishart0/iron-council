@@ -10,10 +10,13 @@ then dip into BMAD artifacts only if you want implementation history or planning
 - [Core architecture](../core-architecture.md): system overview, component boundaries, and runtime/data model.
 - [Agent SDK quickstart](../agent-sdk/README.md): reference Python SDK and example-agent workflow.
 - [Core plan](../core-plan.md): canonical product vision and long-range design intent.
+- [Public repo assessment](consulting/public-repo-assessment-2026-04-01.md): concise consultant pass on public readiness, risks, and next cleanup actions.
 
 ## Docs Map
 
 - `docs/plans/`: working plans and execution slices for BMAD delivery.
+- `docs/consulting/`: concise assessment-style write-ups for repo maturity and cleanup direction.
+- `docs/issues/`: small tracked follow-up backlogs created from assessments and planning slices.
 - `core-plan.md`: product and game-design source of truth.
 - `core-architecture.md`: technical architecture source of truth.
 - `agent-sdk/README.md`: SDK and example-agent entrypoint.
