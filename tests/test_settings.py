@@ -39,8 +39,14 @@ def test_get_settings_prefers_explicit_environment_over_local_env_file(tmp_path:
     )
 
 
-def test_get_settings_falls_back_to_default_database_url_when_no_env_source_exists() -> None:
-    settings = get_settings(env={}, worktree_path=Path("/tmp/iron-12-3"))
+def test_get_settings_falls_back_to_default_database_url_when_no_env_source_exists(
+    tmp_path: Path,
+) -> None:
+    settings = get_settings(
+        env={},
+        env_file=tmp_path / "missing.env",
+        worktree_path=Path("/tmp/iron-12-3"),
+    )
 
     assert (
         DEFAULT_DATABASE_URL
