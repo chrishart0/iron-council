@@ -15,7 +15,7 @@ async def test_root_returns_service_metadata_contract() -> None:
 
     assert response.status_code == HTTPStatus.OK
     assert response.json() == {
-        "service": "iron-counsil-server",
+        "service": "iron-council-server",
         "status": "ok",
         "version": "0.1.0",
     }

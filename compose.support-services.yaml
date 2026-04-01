@@ -1,11 +1,11 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: iron-counsil-postgres
+    container_name: iron-council-postgres
     environment:
-      POSTGRES_DB: iron_counsil
-      POSTGRES_USER: iron_counsil
-      POSTGRES_PASSWORD: iron_counsil
+      POSTGRES_DB: iron_council
+      POSTGRES_USER: iron_council
+      POSTGRES_PASSWORD: iron_council
     ports:
       - "54321:5432"
     healthcheck:

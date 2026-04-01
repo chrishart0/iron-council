@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy.engine import make_url
 
-DEFAULT_DATABASE_URL = "postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil"
+DEFAULT_DATABASE_URL = "postgresql+psycopg://iron_council:iron_council@127.0.0.1:54321/iron_council"
 DEFAULT_ENV_FILE = Path(".env.local")
 ENV_FILE_VARIABLE = "IRON_COUNCIL_ENV_FILE"
 DB_LANE_VARIABLE = "IRON_COUNCIL_DB_LANE"
@@ -70,7 +70,7 @@ def derive_worktree_database_url(
         return normalized_database_url
 
     identity = _build_worktree_identity(worktree_path=worktree_path, lane=lane)
-    base_database_name = _slugify_identifier(url.database) or "iron_counsil"
+    base_database_name = _slugify_identifier(url.database) or "iron_council"
     database_name = _limit_identifier_length(f"{base_database_name}_{identity}")
     return url.set(database=database_name).render_as_string(hide_password=False)
 

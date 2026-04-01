@@ -44,11 +44,11 @@ def test_get_settings_falls_back_to_default_database_url_when_no_env_source_exis
 
     assert (
         DEFAULT_DATABASE_URL
-        == "postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil"
+        == "postgresql+psycopg://iron_council:iron_council@127.0.0.1:54321/iron_council"
     )
     assert settings.database_url != DEFAULT_DATABASE_URL
     assert settings.database_url.startswith(
-        "postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil_iron_12_3_"
+        "postgresql+psycopg://iron_council:iron_council@127.0.0.1:54321/iron_council_iron_12_3_"
     )
 
 
@@ -75,10 +75,10 @@ def test_derive_worktree_database_url_is_deterministic_for_same_inputs() -> None
     second = derive_worktree_database_url(DEFAULT_DATABASE_URL, worktree_path=worktree)
 
     assert first == second
-    assert first.startswith("postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/")
+    assert first.startswith("postgresql+psycopg://iron_council:iron_council@127.0.0.1:54321/")
     assert first.removeprefix(
-        "postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/"
-    ).startswith("iron_counsil_iron_12_3_")
+        "postgresql+psycopg://iron_council:iron_council@127.0.0.1:54321/"
+    ).startswith("iron_council_iron_12_3_")
 
 
 def test_derive_worktree_database_url_isolates_parallel_lanes() -> None:
@@ -122,7 +122,7 @@ def test_derive_worktree_database_url_ignores_empty_lane_slug() -> None:
         lane="!!!",
     )
 
-    assert derived.endswith("iron_counsil_iron_12_3_89b0fbd6")
+    assert derived.endswith("iron_council_iron_12_3_89b0fbd6")
 
 
 def test_get_settings_normalizes_legacy_postgresql_scheme_to_psycopg(tmp_path: Path) -> None:

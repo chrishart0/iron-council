@@ -735,7 +735,7 @@ def create_app(
         finally:
             await match_runtime.stop()
 
-    app = FastAPI(title="iron-counsil-server", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="iron-council-server", version=__version__, lifespan=lifespan)
     app.state.match_registry = registry
     app.state.match_websocket_manager = websocket_manager
     app.state.match_runtime = match_runtime

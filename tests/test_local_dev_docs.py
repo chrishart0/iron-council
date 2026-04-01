@@ -12,13 +12,15 @@ def test_local_postgres_defaults_stay_in_sync_across_settings_and_docs() -> None
 
     assert (
         DEFAULT_DATABASE_URL
-        == "postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil"
+        == "postgresql+psycopg://iron_council:iron_council@127.0.0.1:54321/iron_council"
     )
     assert f"DATABASE_URL={DEFAULT_DATABASE_URL}" in env_example
     assert DEFAULT_DATABASE_URL in readme
-    assert "POSTGRES_DB: iron_counsil" in support_services
-    assert "POSTGRES_USER: iron_counsil" in support_services
-    assert "POSTGRES_PASSWORD: iron_counsil" in support_services
+    assert "docker compose -f compose.support-services.yaml down -v" in readme
+    assert "older `iron_counsil` support-services volume" in readme
+    assert "POSTGRES_DB: iron_council" in support_services
+    assert "POSTGRES_USER: iron_council" in support_services
+    assert "POSTGRES_PASSWORD: iron_council" in support_services
 
 
 def test_readme_explains_how_to_run_a_focused_pytest_without_the_coverage_gate() -> None:

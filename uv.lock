@@ -337,7 +337,7 @@ wheels = [
 ]
 
 [[package]]
-name = "iron-counsil-server"
+name = "iron-council-server"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

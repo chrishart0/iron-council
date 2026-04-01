@@ -7,7 +7,7 @@ Scope: public-readiness Story 4 consultant pass
 
 Iron Council now presents as a credible public engineering project rather than an internal-only worktree. The README, docs entrypoint, and governance files give an external visitor enough context to understand the product, the quality bar, and how to engage with the repo.
 
-The remaining public-readiness debt is narrower and more structural than existential. The biggest visible issue is unresolved naming inconsistency between `Iron Council` and `iron-counsil` across package, service, and local-dev surfaces. That mismatch is still noticeable enough to keep the broader public-readiness epic in progress.
+The remaining public-readiness debt is narrower and more structural than existential. The public-facing naming cleanup has now aligned the primary repo, package, service, and local-dev surfaces around `Iron Council` / `iron-council`, so the remaining work is more about ongoing curation than obvious branding drift.
 
 ## Strengths
 
@@ -18,7 +18,6 @@ The remaining public-readiness debt is narrower and more structural than existen
 
 ## Public-Facing Risks
 
-- Naming inconsistency remains unresolved. Public branding now says `Iron Council`, but runtime and package-facing surfaces still expose `iron-counsil`, including [`pyproject.toml`](../../pyproject.toml), [`server/main.py`](../../server/main.py), [`server/settings.py`](../../server/settings.py), [`compose.support-services.yaml`](../../compose.support-services.yaml), and [`env.local.example`](../../env.local.example). This creates avoidable friction for external readers and future package consumers.
 - Public docs still require some explanation of BMAD-heavy repository structure. The new docs do that honestly, but the repo still reads as "built in public with process artifacts attached" rather than a fully curated external product repo.
 
 ## Maintainability Hotspots
@@ -32,7 +31,6 @@ These are not immediate blockers, and this assessment does not claim they are br
 
 ## Priority Follow-Ups
 
-1. Resolve the `iron-counsil` versus `iron-council` naming debt across package metadata, service metadata, local dev defaults, and user-visible strings, with a compatibility plan where direct renames would be disruptive.
-2. Split the largest public-facing modules along stable boundaries, starting with [server/main.py](../../server/main.py) and [client/src/components/matches/human-match-live-page.tsx](../../client/src/components/matches/human-match-live-page.tsx).
-3. Define a lighter-weight public-facing explanation strategy for BMAD artifacts over time so external readers can find product and developer docs before process history.
-4. Add a small public demo/deployment guidance slice when the project is ready, since local quality is now well documented but public try-it-now guidance is still intentionally absent.
+1. Split the largest public-facing modules along stable boundaries, starting with [server/main.py](../../server/main.py) and [client/src/components/matches/human-match-live-page.tsx](../../client/src/components/matches/human-match-live-page.tsx).
+2. Define a lighter-weight public-facing explanation strategy for BMAD artifacts over time so external readers can find product and developer docs before process history.
+3. Add a small public demo/deployment guidance slice when the project is ready, since local quality is now well documented but public try-it-now guidance is still intentionally absent.

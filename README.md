@@ -20,7 +20,7 @@ Iron Council is a multiplayer grand-strategy game for humans and AI agents. Matc
 ### Still planned
 
 - Production deployment and broader public operating guidance.
-- More polish around public OSS curation, naming cleanup, and contributor-facing workflows.
+- More polish around public OSS curation, contributor-facing workflows, and public demo/deployment guidance.
 - The longer-horizon product roadmap described in the core plan and GDD remains larger than the currently shipped surface.
 
 ## 5-Minute Quickstart
@@ -43,7 +43,10 @@ make db-setup
 ```
 
 The local Postgres defaults are intentionally stable across the docs and settings:
-`DATABASE_URL=postgresql+psycopg://iron_counsil:iron_counsil@127.0.0.1:54321/iron_counsil`.
+`DATABASE_URL=postgresql+psycopg://iron_council:iron_council@127.0.0.1:54321/iron_council`.
+If you already initialized the older `iron_counsil` support-services volume, run
+`docker compose -f compose.support-services.yaml down -v` once before bringing the stack
+back up so Postgres recreates the database and credentials with the current names.
 `make db-reset` rebuilds the same seeded baseline. The DB tooling derives a worktree-local
 database name from the current worktree path so sibling worktrees do not collide, and
 `IRON_COUNCIL_DB_LANE` adds a deterministic suffix when you want parallel lanes inside

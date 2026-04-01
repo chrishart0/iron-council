@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "iron-counsil-server"
+name = "iron-council-server"
 version = "0.1.0"
-description = "FastAPI service scaffold for iron-counsil."
+description = "FastAPI service scaffold for Iron Council."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
