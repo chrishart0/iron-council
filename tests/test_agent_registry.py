@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from server.agent_registry import (
     AdvancedMatchTick,
+    GroupChatAccessError,
     InMemoryMatchRegistry,
     MatchAccessError,
     MatchJoinError,
@@ -10,7 +11,13 @@ from server.agent_registry import (
     build_seeded_agent_profiles,
     build_seeded_match_records,
 )
-from server.models.api import AllianceActionRequest
+from server.models.api import (
+    AllianceActionRequest,
+    GroupChatCreateRequest,
+    GroupChatMessageCreateRequest,
+    MatchMessageCreateRequest,
+    TreatyActionRequest,
+)
 from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
 from server.models.state import MatchState
@@ -277,6 +284,248 @@ def test_registry_list_helpers_return_empty_for_unknown_match() -> None:
     assert registry.list_order_submissions("match-missing") == []
     assert registry.list_treaties(match_id="match-missing") == []
     assert registry.list_alliances(match_id="match-missing") == []
+
+
+def test_registry_message_and_briefing_views_preserve_visibility_and_since_tick_filters() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    registry.record_message(
+        match_id="match-alpha",
+        message=MatchMessageCreateRequest.model_validate(
+            {
+                "match_id": "match-alpha",
+                "tick": 140,
+                "channel": "world",
+                "recipient_id": None,
+                "content": "Old world intel.",
+            }
+        ),
+        sender_id="player-1",
+    )
+    registry.record_message(
+        match_id="match-alpha",
+        message=MatchMessageCreateRequest.model_validate(
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "channel": "direct",
+                "recipient_id": "player-2",
+                "content": "Fresh direct ping.",
+            }
+        ),
+        sender_id="player-1",
+    )
+    registry.record_message(
+        match_id="match-alpha",
+        message=MatchMessageCreateRequest.model_validate(
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "channel": "world",
+                "recipient_id": None,
+                "content": "Fresh world intel.",
+            }
+        ),
+        sender_id="player-3",
+    )
+    created_group_chat = registry.create_group_chat(
+        match_id="match-alpha",
+        request=GroupChatCreateRequest(
+            match_id="match-alpha",
+            tick=140,
+            name="Northern Channel",
+            member_ids=["player-1"],
+        ),
+        creator_id="player-2",
+    )
+    registry.record_group_chat_message(
+        match_id="match-alpha",
+        group_chat_id=created_group_chat.group_chat_id,
+        message=GroupChatMessageCreateRequest(
+            match_id="match-alpha",
+            tick=140,
+            content="Old group note.",
+        ),
+        sender_id="player-1",
+    )
+    registry.record_group_chat_message(
+        match_id="match-alpha",
+        group_chat_id=created_group_chat.group_chat_id,
+        message=GroupChatMessageCreateRequest(
+            match_id="match-alpha",
+            tick=142,
+            content="Fresh group note.",
+        ),
+        sender_id="player-2",
+    )
+
+    assert [
+        message.content
+        for message in registry.list_visible_messages(match_id="match-alpha", player_id="player-2")
+    ] == [
+        "Old world intel.",
+        "Fresh direct ping.",
+        "Fresh world intel.",
+    ]
+    briefing = registry.list_briefing_messages(
+        match_id="match-alpha",
+        player_id="player-2",
+        since_tick=142,
+    )
+
+    assert [message.content for message in briefing.direct] == ["Fresh direct ping."]
+    assert [message.content for message in briefing.world] == ["Fresh world intel."]
+    assert [message.content for message in briefing.group] == ["Fresh group note."]
+
+
+def test_registry_group_chat_helpers_preserve_sorted_visibility_and_membership_errors() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    first_group_chat = registry.create_group_chat(
+        match_id="match-alpha",
+        request=GroupChatCreateRequest(
+            match_id="match-alpha",
+            tick=142,
+            name="Northern Channel",
+            member_ids=["player-1"],
+        ),
+        creator_id="player-2",
+    )
+    second_group_chat = registry.create_group_chat(
+        match_id="match-alpha",
+        request=GroupChatCreateRequest(
+            match_id="match-alpha",
+            tick=142,
+            name="Western Channel",
+            member_ids=["player-2"],
+        ),
+        creator_id="player-3",
+    )
+
+    assert [
+        group_chat.group_chat_id
+        for group_chat in registry.list_visible_group_chats(
+            match_id="match-alpha", player_id="player-2"
+        )
+    ] == [
+        first_group_chat.group_chat_id,
+        second_group_chat.group_chat_id,
+    ]
+
+    try:
+        registry.list_group_chat_messages(
+            match_id="match-alpha",
+            group_chat_id=second_group_chat.group_chat_id,
+            player_id="player-1",
+        )
+    except GroupChatAccessError as exc:
+        assert exc.code == "group_chat_not_visible"
+        assert exc.message == "Group chat 'group-chat-2' is not visible to player 'player-1'."
+    else:
+        raise AssertionError("expected GroupChatAccessError for hidden group chat")
+
+
+def test_registry_treaty_helpers_preserve_transition_side_effects_and_tick_filtering() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-3",
+            action="propose",
+            treaty_type="trade",
+        ),
+        player_id="player-2",
+    )
+    accepted_treaty = registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-2",
+            action="accept",
+            treaty_type="trade",
+        ),
+        player_id="player-3",
+    )
+
+    assert accepted_treaty.status == "active"
+    assert [
+        message.content
+        for message in registry.list_visible_messages(match_id="match-alpha", player_id="player-1")
+        if message.channel == "world"
+    ] == ["Treaty signed: player-2 and player-3 entered a trade treaty."]
+    assert [
+        treaty.treaty_id
+        for treaty in registry.list_treaties(match_id="match-alpha", since_tick=142)
+    ] == [0]
+
+    withdrawn_treaty = registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-3",
+            action="withdraw",
+            treaty_type="trade",
+        ),
+        player_id="player-2",
+    )
+
+    assert withdrawn_treaty.status == "withdrawn"
+    assert [
+        message.content
+        for message in registry.list_visible_messages(match_id="match-alpha", player_id="player-1")
+        if message.channel == "world"
+    ] == [
+        "Treaty signed: player-2 and player-3 entered a trade treaty.",
+        "Treaty withdrawn: player-2 withdrew the trade treaty with player-3.",
+    ]
+
+
+def test_registry_alliance_helpers_preserve_leader_reassignment_and_empty_removal() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    remaining_alliance = registry.apply_alliance_action(
+        match_id="match-alpha",
+        action=AllianceActionRequest(
+            match_id="match-alpha",
+            action="leave",
+            alliance_id=None,
+            name=None,
+        ),
+        player_id="player-1",
+    )
+
+    assert remaining_alliance is not None
+    assert remaining_alliance.model_dump(mode="json") == {
+        "alliance_id": "alliance-red",
+        "name": "alliance-red",
+        "leader_id": "player-2",
+        "formed_tick": 142,
+        "members": [{"player_id": "player-2", "joined_tick": 142}],
+    }
+
+    removed_alliance = registry.apply_alliance_action(
+        match_id="match-alpha",
+        action=AllianceActionRequest(
+            match_id="match-alpha",
+            action="leave",
+            alliance_id=None,
+            name=None,
+        ),
+        player_id="player-2",
+    )
+
+    assert removed_alliance is None
+    assert registry.list_alliances(match_id="match-alpha") == []
 
 
 def test_get_agent_profile_returns_stable_seeded_placeholder_shape() -> None:

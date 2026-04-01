@@ -1,9 +1,25 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass, field
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import Any
 
+from server import agent_registry_diplomacy, agent_registry_messaging
+from server.agent_registry_types import (
+    AllianceTransitionError,
+    AuthenticatedAgentKeyRecord,
+    GroupChatAccessError,
+    MatchAccessError,
+    MatchAlliance,
+    MatchAllianceMember,
+    MatchGroupChat,
+    MatchGroupChatMessage,
+    MatchJoinError,
+    MatchMessage,
+    MatchRecord,
+    MatchTreaty,
+    TreatyTransitionError,
+)
 from server.auth import hash_api_key
 from server.data.maps import load_uk_1900_map
 from server.models.api import (
@@ -15,7 +31,6 @@ from server.models.api import (
     AgentProfileResponse,
     AllianceActionAcceptanceResponse,
     AllianceActionRequest,
-    AllianceMemberRecord,
     AllianceRecord,
     AuthenticatedAgentContext,
     GroupChatCreateRequest,
@@ -27,15 +42,11 @@ from server.models.api import (
     MatchMessageCreateRequest,
     MatchMessageRecord,
     MessageAcceptanceResponse,
-    MessageChannel,
     OrderAcceptanceResponse,
     TreatyActionAcceptanceResponse,
     TreatyActionRequest,
     TreatyRecord,
-    TreatyStatus,
-    TreatyType,
 )
-from server.models.domain import MatchStatus
 from server.models.orders import OrderBatch, OrderEnvelope
 from server.models.state import MatchState
 from server.order_validation import validate_order_envelope
@@ -49,152 +60,27 @@ from server.registry_seed_data import (
 from server.resolver import TickPhaseEvent, resolve_tick
 
 __all__ = [
+    "AllianceTransitionError",
+    "AuthenticatedAgentKeyRecord",
+    "GroupChatAccessError",
+    "InMemoryMatchRegistry",
+    "MatchAccessError",
+    "MatchAlliance",
+    "MatchAllianceMember",
+    "MatchGroupChat",
+    "MatchGroupChatMessage",
+    "MatchJoinError",
+    "MatchMessage",
+    "MatchRecord",
+    "MatchTreaty",
+    "TreatyTransitionError",
+    "AdvancedMatchTick",
     "build_seeded_agent_api_key",
     "build_seeded_agent_profiles",
     "build_seeded_authenticated_agent_keys",
     "build_seeded_match_records",
     "build_seeded_profiles_by_key_hash",
 ]
-
-
-@dataclass(slots=True)
-class MatchMessage:
-    message_id: int
-    channel: MessageChannel
-    sender_id: str
-    recipient_id: str | None
-    tick: int
-    content: str
-
-
-@dataclass(slots=True)
-class MatchTreaty:
-    treaty_id: int
-    player_a_id: str
-    player_b_id: str
-    treaty_type: TreatyType
-    status: TreatyStatus
-    proposed_by: str
-    proposed_tick: int
-    signed_tick: int | None = None
-    withdrawn_by: str | None = None
-    withdrawn_tick: int | None = None
-
-
-@dataclass(slots=True)
-class MatchAllianceMember:
-    player_id: str
-    joined_tick: int
-
-
-@dataclass(slots=True)
-class MatchAlliance:
-    alliance_id: str
-    name: str
-    leader_id: str
-    formed_tick: int
-    members: list[MatchAllianceMember] = field(default_factory=list)
-
-
-@dataclass(slots=True)
-class MatchGroupChatMessage:
-    message_id: int
-    group_chat_id: str
-    sender_id: str
-    tick: int
-    content: str
-
-
-@dataclass(slots=True)
-class MatchGroupChat:
-    group_chat_id: str
-    name: str
-    member_ids: list[str]
-    created_by: str
-    created_tick: int
-    messages: list[MatchGroupChatMessage] = field(default_factory=list)
-
-
-class TreatyTransitionError(Exception):
-    def __init__(self, *, code: str, message: str) -> None:
-        self.code = code
-        self.message = message
-        super().__init__(message)
-
-
-class AllianceTransitionError(Exception):
-    def __init__(self, *, code: str, message: str) -> None:
-        self.code = code
-        self.message = message
-        super().__init__(message)
-
-
-class MatchJoinError(Exception):
-    def __init__(self, *, code: str, message: str) -> None:
-        self.code = code
-        self.message = message
-        super().__init__(message)
-
-
-class MatchAccessError(Exception):
-    def __init__(self, *, code: str, message: str) -> None:
-        self.code = code
-        self.message = message
-        super().__init__(message)
-
-
-class GroupChatAccessError(Exception):
-    def __init__(self, *, code: str, message: str) -> None:
-        self.code = code
-        self.message = message
-        super().__init__(message)
-
-
-@dataclass(slots=True)
-class MatchRecord:
-    match_id: str
-    status: MatchStatus
-    tick_interval_seconds: int
-    state: MatchState
-    map_id: str = "britain"
-    max_player_count: int | None = None
-    current_player_count: int | None = None
-    joinable_player_ids: list[str] = field(default_factory=list)
-    agent_profiles: list[AgentProfileResponse] = field(default_factory=list)
-    public_competitor_kinds: dict[str, Literal["human", "agent"]] = field(default_factory=dict)
-    joined_agents: dict[str, str] = field(default_factory=dict)
-    joined_humans: dict[str, str] = field(default_factory=dict)
-    order_submissions: list[OrderEnvelope] = field(default_factory=list)
-    messages: list[MatchMessage] = field(default_factory=list)
-    group_chats: list[MatchGroupChat] = field(default_factory=list)
-    treaties: list[MatchTreaty] = field(default_factory=list)
-    alliances: list[MatchAlliance] = field(default_factory=list)
-    authenticated_agent_keys: list[AuthenticatedAgentKeyRecord] = field(default_factory=list)
-
-    @property
-    def public_max_player_count(self) -> int:
-        if self.max_player_count is not None:
-            return self.max_player_count
-        return len(self.state.players)
-
-    @property
-    def public_current_player_count(self) -> int:
-        if self.current_player_count is not None:
-            return self.current_player_count
-        if self.joined_agents or self.joined_humans:
-            return len(self.joined_agents) + len(self.joined_humans)
-        return max(len(self.state.players) - len(self.joinable_player_ids), 0)
-
-    @property
-    def public_open_slot_count(self) -> int:
-        return max(self.public_max_player_count - self.public_current_player_count, 0)
-
-
-@dataclass(slots=True)
-class AuthenticatedAgentKeyRecord:
-    agent_id: str
-    key_hash: str
-    is_active: bool = True
 
 
 @dataclass(slots=True)
@@ -507,21 +393,10 @@ class InMemoryMatchRegistry:
         message: MatchMessageCreateRequest,
         sender_id: str,
     ) -> MatchMessageRecord:
-        stored_message = self._append_message(
-            match_id=match_id,
-            channel=message.channel,
+        return agent_registry_messaging.record_message(
+            record=self._matches[match_id],
+            message=message,
             sender_id=sender_id,
-            recipient_id=message.recipient_id,
-            tick=message.tick,
-            content=message.content,
-        )
-        return MatchMessageRecord(
-            message_id=stored_message.message_id,
-            channel=stored_message.channel,
-            sender_id=stored_message.sender_id,
-            recipient_id=stored_message.recipient_id,
-            tick=stored_message.tick,
-            content=stored_message.content,
         )
 
     def create_group_chat(
@@ -531,29 +406,22 @@ class InMemoryMatchRegistry:
         request: GroupChatCreateRequest,
         creator_id: str,
     ) -> GroupChatRecord:
-        record = self._matches[match_id]
-        member_ids = sorted({creator_id, *request.member_ids})
-        stored_group_chat = MatchGroupChat(
-            group_chat_id=self._next_group_chat_id(record.group_chats),
-            name=request.name,
-            member_ids=member_ids,
-            created_by=creator_id,
-            created_tick=request.tick,
+        return agent_registry_messaging.create_group_chat(
+            record=self._matches[match_id],
+            request=request,
+            creator_id=creator_id,
         )
-        record.group_chats.append(stored_group_chat)
-        return self._to_group_chat_record(stored_group_chat)
 
-    def list_visible_group_chats(self, *, match_id: str, player_id: str) -> list[GroupChatRecord]:
-        record = self._matches.get(match_id)
-        if record is None:
-            return []
-
-        visible_group_chats = [
-            self._to_group_chat_record(group_chat)
-            for group_chat in record.group_chats
-            if player_id in group_chat.member_ids
-        ]
-        return sorted(visible_group_chats, key=lambda group_chat: group_chat.group_chat_id)
+    def list_visible_group_chats(
+        self,
+        *,
+        match_id: str,
+        player_id: str,
+    ) -> list[GroupChatRecord]:
+        return agent_registry_messaging.list_visible_group_chats(
+            record=self._matches.get(match_id),
+            player_id=player_id,
+        )
 
     def list_group_chat_messages(
         self,
@@ -563,22 +431,12 @@ class InMemoryMatchRegistry:
         player_id: str,
         since_tick: int | None = None,
     ) -> list[GroupChatMessageRecord]:
-        group_chat = self._require_group_chat_member(
-            match_id=match_id,
+        return agent_registry_messaging.list_group_chat_messages(
+            record=self._matches[match_id],
             group_chat_id=group_chat_id,
             player_id=player_id,
+            since_tick=since_tick,
         )
-        return [
-            GroupChatMessageRecord(
-                message_id=message.message_id,
-                group_chat_id=message.group_chat_id,
-                sender_id=message.sender_id,
-                tick=message.tick,
-                content=message.content,
-            )
-            for message in group_chat.messages
-            if since_tick is None or message.tick >= since_tick
-        ]
 
     def record_group_chat_message(
         self,
@@ -588,57 +446,26 @@ class InMemoryMatchRegistry:
         message: GroupChatMessageCreateRequest,
         sender_id: str,
     ) -> GroupChatMessageRecord:
-        group_chat = self._require_group_chat_member(
-            match_id=match_id,
+        return agent_registry_messaging.record_group_chat_message(
+            record=self._matches[match_id],
             group_chat_id=group_chat_id,
-            player_id=sender_id,
-        )
-        stored_message = MatchGroupChatMessage(
-            message_id=len(group_chat.messages),
-            group_chat_id=group_chat.group_chat_id,
+            message=message,
             sender_id=sender_id,
-            tick=message.tick,
-            content=message.content,
-        )
-        group_chat.messages.append(stored_message)
-        return GroupChatMessageRecord(
-            message_id=stored_message.message_id,
-            group_chat_id=stored_message.group_chat_id,
-            sender_id=stored_message.sender_id,
-            tick=stored_message.tick,
-            content=stored_message.content,
         )
 
-    def list_treaties(self, *, match_id: str, since_tick: int | None = None) -> list[TreatyRecord]:
-        record = self._matches.get(match_id)
-        if record is None:
-            return []
-
-        treaties = sorted(
-            (
-                treaty
-                for treaty in record.treaties
-                if since_tick is None or self._treaty_latest_tick(treaty) >= since_tick
-            ),
-            key=lambda treaty: (
-                treaty.player_a_id,
-                treaty.player_b_id,
-                treaty.treaty_type,
-                treaty.treaty_id,
-            ),
+    def list_treaties(
+        self,
+        *,
+        match_id: str,
+        since_tick: int | None = None,
+    ) -> list[TreatyRecord]:
+        return agent_registry_diplomacy.list_treaties(
+            record=self._matches.get(match_id),
+            since_tick=since_tick,
         )
-        return [self._to_treaty_record(treaty) for treaty in treaties]
 
     def list_alliances(self, *, match_id: str) -> list[AllianceRecord]:
-        record = self._matches.get(match_id)
-        if record is None:
-            return []
-
-        alliances = sorted(
-            record.alliances or self._derive_alliances_from_state(record.state),
-            key=lambda alliance: alliance.alliance_id,
-        )
-        return [self._to_alliance_record(alliance) for alliance in alliances]
+        return agent_registry_diplomacy.list_alliances(record=self._matches.get(match_id))
 
     def apply_alliance_action(
         self,
@@ -647,113 +474,12 @@ class InMemoryMatchRegistry:
         action: AllianceActionRequest,
         player_id: str,
     ) -> AllianceRecord | None:
-        record = self._matches[match_id]
-
-        player_state = record.state.players[player_id]
-        current_alliance_id = player_state.alliance_id
-
-        if action.action == "create":
-            if current_alliance_id is not None:
-                raise AllianceTransitionError(
-                    code="player_already_in_alliance",
-                    message=(
-                        f"Player '{player_id}' is already in alliance '{current_alliance_id}'."
-                    ),
-                )
-            if action.name is None:
-                raise AllianceTransitionError(
-                    code="alliance_name_required",
-                    message="Alliance creation requires a non-empty name.",
-                )
-
-            stored_alliance = MatchAlliance(
-                alliance_id=self._next_alliance_id(record.alliances),
-                name=action.name,
-                leader_id=player_id,
-                formed_tick=record.state.tick,
-                members=[
-                    MatchAllianceMember(
-                        player_id=player_id,
-                        joined_tick=record.state.tick,
-                    )
-                ],
-            )
-            record.alliances.append(stored_alliance)
-            player_state.alliance_id = stored_alliance.alliance_id
-            self._sync_victory_state(record.state)
-            return self._to_alliance_record(stored_alliance)
-
-        if action.action == "join":
-            if current_alliance_id is not None:
-                raise AllianceTransitionError(
-                    code="player_already_in_alliance",
-                    message=(
-                        f"Player '{player_id}' is already in alliance '{current_alliance_id}'."
-                    ),
-                )
-            if action.alliance_id is None:
-                raise AllianceTransitionError(
-                    code="alliance_id_required",
-                    message="Alliance join requires an alliance_id.",
-                )
-
-            join_alliance = self._find_alliance(
-                alliances=record.alliances,
-                alliance_id=action.alliance_id,
-            )
-            if join_alliance is None:
-                raise AllianceTransitionError(
-                    code="alliance_not_found",
-                    message=(
-                        f"Alliance '{action.alliance_id}' was not found in match '{match_id}'."
-                    ),
-                )
-
-            join_alliance.members.append(
-                MatchAllianceMember(
-                    player_id=player_id,
-                    joined_tick=record.state.tick,
-                )
-            )
-            player_state.alliance_id = join_alliance.alliance_id
-            self._sync_victory_state(record.state)
-            return self._to_alliance_record(join_alliance)
-
-        if current_alliance_id is None:
-            raise AllianceTransitionError(
-                code="player_not_in_alliance",
-                message=f"Player '{player_id}' is not currently in an alliance.",
-            )
-
-        leave_alliance = self._find_alliance(
-            alliances=record.alliances,
-            alliance_id=current_alliance_id,
+        return agent_registry_diplomacy.apply_alliance_action(
+            record=self._matches[match_id],
+            match_id=match_id,
+            action=action,
+            player_id=player_id,
         )
-        if leave_alliance is None:
-            raise AllianceTransitionError(
-                code="alliance_not_found",
-                message=f"Alliance '{current_alliance_id}' was not found in match '{match_id}'.",
-            )
-
-        leave_alliance.members = [
-            member for member in leave_alliance.members if member.player_id != player_id
-        ]
-        player_state.alliance_id = None
-
-        if not leave_alliance.members:
-            record.alliances = [
-                alliance
-                for alliance in record.alliances
-                if alliance.alliance_id != leave_alliance.alliance_id
-            ]
-            self._sync_victory_state(record.state)
-            return None
-
-        if leave_alliance.leader_id == player_id:
-            leave_alliance.leader_id = min(member.player_id for member in leave_alliance.members)
-
-        self._sync_victory_state(record.state)
-        return self._to_alliance_record(leave_alliance)
 
     def apply_treaty_action(
         self,
@@ -762,119 +488,24 @@ class InMemoryMatchRegistry:
         action: TreatyActionRequest,
         player_id: str,
     ) -> TreatyRecord:
-        record = self._matches[match_id]
-
-        player_a_id, player_b_id = sorted((player_id, action.counterparty_id))
-        latest_treaty = self._find_latest_treaty(
-            treaties=record.treaties,
-            player_a_id=player_a_id,
-            player_b_id=player_b_id,
-            treaty_type=action.treaty_type,
-        )
-
-        if action.action == "propose":
-            if latest_treaty is not None and latest_treaty.status != "withdrawn":
-                raise TreatyTransitionError(
-                    code="unsupported_treaty_transition",
-                    message=(
-                        f"Cannot propose treaty '{action.treaty_type}' for players "
-                        f"'{player_a_id}' and '{player_b_id}'."
-                    ),
-                )
-            stored_treaty = MatchTreaty(
-                treaty_id=len(record.treaties),
-                player_a_id=player_a_id,
-                player_b_id=player_b_id,
-                treaty_type=action.treaty_type,
-                status="proposed",
-                proposed_by=player_id,
-                proposed_tick=record.state.tick,
-            )
-            record.treaties.append(stored_treaty)
-            return self._to_treaty_record(stored_treaty)
-
-        if latest_treaty is None and action.action == "accept":
-            raise TreatyTransitionError(
-                code="unsupported_treaty_transition",
-                message=(
-                    f"Cannot accept treaty '{action.treaty_type}' for players "
-                    f"'{player_a_id}' and '{player_b_id}'."
-                ),
-            )
-
-        if latest_treaty is None:
-            raise TreatyTransitionError(
-                code="treaty_not_found",
-                message=(
-                    f"No treaty exists for players '{player_a_id}' and '{player_b_id}' "
-                    f"with type '{action.treaty_type}'."
-                ),
-            )
-
-        if action.action == "accept":
-            if latest_treaty.status != "proposed" or latest_treaty.proposed_by == player_id:
-                raise TreatyTransitionError(
-                    code="unsupported_treaty_transition",
-                    message=(
-                        f"Cannot accept treaty '{action.treaty_type}' for players "
-                        f"'{player_a_id}' and '{player_b_id}'."
-                    ),
-                )
-            latest_treaty.status = "active"
-            latest_treaty.signed_tick = record.state.tick
-            self._record_world_treaty_message(
-                match_id=match_id,
-                tick=record.state.tick,
-                content=(
-                    f"Treaty signed: {player_a_id} and {player_b_id} entered a "
-                    f"{action.treaty_type} treaty."
-                ),
-            )
-            return self._to_treaty_record(latest_treaty)
-
-        if latest_treaty.status not in {"proposed", "active"}:
-            raise TreatyTransitionError(
-                code="unsupported_treaty_transition",
-                message=(
-                    f"Cannot withdraw treaty '{action.treaty_type}' for players "
-                    f"'{player_a_id}' and '{player_b_id}'."
-                ),
-            )
-        latest_treaty.status = "withdrawn"
-        latest_treaty.withdrawn_by = player_id
-        latest_treaty.withdrawn_tick = record.state.tick
-        self._record_world_treaty_message(
+        return agent_registry_diplomacy.apply_treaty_action(
+            record=self._matches[match_id],
             match_id=match_id,
-            tick=record.state.tick,
-            content=(
-                f"Treaty withdrawn: {player_id} withdrew the {action.treaty_type} "
-                f"treaty with {action.counterparty_id}."
-            ),
+            action=action,
+            player_id=player_id,
+            record_world_message=self._record_world_treaty_message,
         )
-        return self._to_treaty_record(latest_treaty)
 
-    def list_visible_messages(self, *, match_id: str, player_id: str) -> list[MatchMessageRecord]:
-        record = self._matches.get(match_id)
-        if record is None:
-            return []
-
-        visible_messages: list[MatchMessageRecord] = []
-        for message in record.messages:
-            is_visible_direct_message = message.channel == "direct" and (
-                message.sender_id == player_id or message.recipient_id == player_id
-            )
-            if message.channel == "world" or is_visible_direct_message:
-                visible_messages.append(
-                    MatchMessageRecord(
-                        message_id=message.message_id,
-                        channel=message.channel,
-                        sender_id=message.sender_id,
-                        recipient_id=message.recipient_id,
-                        tick=message.tick,
-                        content=message.content,
-                    )
-                )
-        return visible_messages
+    def list_visible_messages(
+        self,
+        *,
+        match_id: str,
+        player_id: str,
+    ) -> list[MatchMessageRecord]:
+        return agent_registry_messaging.list_visible_messages(
+            record=self._matches.get(match_id),
+            player_id=player_id,
+        )
 
     def list_briefing_messages(
         self,
@@ -883,24 +514,10 @@ class InMemoryMatchRegistry:
         player_id: str,
         since_tick: int | None = None,
     ) -> AgentBriefingMessageBuckets:
-        visible_messages = self.list_visible_messages(
-            match_id=match_id,
-            player_id=player_id,
-        )
-        filtered_messages = [
-            message
-            for message in visible_messages
-            if since_tick is None or message.tick >= since_tick
-        ]
-        group_messages = self.list_visible_group_chat_messages(
-            match_id=match_id,
+        return agent_registry_messaging.list_briefing_messages(
+            record=self._matches.get(match_id),
             player_id=player_id,
             since_tick=since_tick,
-        )
-        return AgentBriefingMessageBuckets(
-            direct=[message for message in filtered_messages if message.channel == "direct"],
-            group=group_messages,
-            world=[message for message in filtered_messages if message.channel == "world"],
         )
 
     def list_visible_group_chat_messages(
@@ -910,49 +527,11 @@ class InMemoryMatchRegistry:
         player_id: str,
         since_tick: int | None = None,
     ) -> list[GroupChatMessageRecord]:
-        record = self._matches.get(match_id)
-        if record is None:
-            return []
-
-        visible_messages = [
-            GroupChatMessageRecord(
-                message_id=message.message_id,
-                group_chat_id=group_chat.group_chat_id,
-                sender_id=message.sender_id,
-                tick=message.tick,
-                content=message.content,
-            )
-            for group_chat in record.group_chats
-            if player_id in group_chat.member_ids
-            for message in group_chat.messages
-            if since_tick is None or message.tick >= since_tick
-        ]
-        return sorted(
-            visible_messages,
-            key=lambda message: (message.tick, message.group_chat_id, message.message_id),
+        return agent_registry_messaging.list_visible_group_chat_messages(
+            record=self._matches.get(match_id),
+            player_id=player_id,
+            since_tick=since_tick,
         )
-
-    def _append_message(
-        self,
-        *,
-        match_id: str,
-        channel: MessageChannel,
-        sender_id: str,
-        recipient_id: str | None,
-        tick: int,
-        content: str,
-    ) -> MatchMessage:
-        record = self._matches[match_id]
-        stored_message = MatchMessage(
-            message_id=len(record.messages),
-            channel=channel,
-            sender_id=sender_id,
-            recipient_id=recipient_id,
-            tick=tick,
-            content=content,
-        )
-        record.messages.append(stored_message)
-        return stored_message
 
     def _apply_command_envelope_mutations(
         self,
@@ -1079,63 +658,14 @@ class InMemoryMatchRegistry:
         )
 
     def _record_world_treaty_message(self, *, match_id: str, tick: int, content: str) -> None:
-        self._append_message(
-            match_id=match_id,
+        agent_registry_messaging.append_message(
+            record=self._matches[match_id],
             channel="world",
             sender_id="system",
             recipient_id=None,
             tick=tick,
             content=content,
         )
-
-    def _find_latest_treaty(
-        self,
-        *,
-        treaties: list[MatchTreaty],
-        player_a_id: str,
-        player_b_id: str,
-        treaty_type: TreatyType,
-    ) -> MatchTreaty | None:
-        for treaty in reversed(treaties):
-            if (
-                treaty.player_a_id == player_a_id
-                and treaty.player_b_id == player_b_id
-                and treaty.treaty_type == treaty_type
-            ):
-                return treaty
-        return None
-
-    def _treaty_latest_tick(self, treaty: MatchTreaty) -> int:
-        return max(
-            treaty.proposed_tick,
-            treaty.signed_tick if treaty.signed_tick is not None else treaty.proposed_tick,
-            treaty.withdrawn_tick if treaty.withdrawn_tick is not None else treaty.proposed_tick,
-        )
-
-    def _find_alliance(
-        self,
-        *,
-        alliances: list[MatchAlliance],
-        alliance_id: str,
-    ) -> MatchAlliance | None:
-        for alliance in alliances:
-            if alliance.alliance_id == alliance_id:
-                return alliance
-        return None
-
-    def _next_alliance_id(self, alliances: list[MatchAlliance]) -> str:
-        next_index = 1
-        existing_alliance_ids = {alliance.alliance_id for alliance in alliances}
-        while f"alliance-{next_index}" in existing_alliance_ids:
-            next_index += 1
-        return f"alliance-{next_index}"
-
-    def _next_group_chat_id(self, group_chats: list[MatchGroupChat]) -> str:
-        next_index = 1
-        existing_group_chat_ids = {group_chat.group_chat_id for group_chat in group_chats}
-        while f"group-chat-{next_index}" in existing_group_chat_ids:
-            next_index += 1
-        return f"group-chat-{next_index}"
 
     def _build_scratch_registry(self, match_id: str) -> InMemoryMatchRegistry:
         scratch_registry = InMemoryMatchRegistry()
@@ -1209,46 +739,12 @@ class InMemoryMatchRegistry:
         message: AgentCommandMessage,
         player_id: str,
     ) -> None:
-        record = self._matches[match_id]
-        if message.channel == "group":
-            if message.recipient_id is not None:
-                raise MatchAccessError(
-                    code="unsupported_recipient",
-                    message="Group chat messages do not support recipient_id.",
-                )
-            if message.group_chat_id is None:
-                raise MatchAccessError(
-                    code="unsupported_recipient",
-                    message="Group chat messages require group_chat_id.",
-                )
-            self._require_group_chat_member(
-                match_id=match_id,
-                group_chat_id=message.group_chat_id,
-                player_id=player_id,
-            )
-            return
-
-        if message.channel == "world":
-            if message.recipient_id is not None:
-                raise MatchAccessError(
-                    code="unsupported_recipient",
-                    message="World messages do not support recipient_id.",
-                )
-            return
-
-        if message.group_chat_id is not None:
-            raise MatchAccessError(
-                code="unsupported_recipient",
-                message="Direct messages do not support group_chat_id.",
-            )
-
-        if message.recipient_id not in record.state.players:
-            raise MatchAccessError(
-                code="unsupported_recipient",
-                message=(
-                    f"Direct messages require a recipient_id for a player in match '{match_id}'."
-                ),
-            )
+        agent_registry_messaging.validate_command_message(
+            record=self._matches[match_id],
+            match_id=match_id,
+            message=message,
+            player_id=player_id,
+        )
 
     def _validate_command_treaty(
         self,
@@ -1257,54 +753,11 @@ class InMemoryMatchRegistry:
         treaty: AgentCommandTreaty,
         player_id: str,
     ) -> None:
-        record = self._matches[match_id]
-        if treaty.counterparty_id not in record.state.players:
-            raise MatchAccessError(
-                code="player_not_found",
-                message=(f"Player '{treaty.counterparty_id}' was not found in match '{match_id}'."),
-            )
-        if player_id == treaty.counterparty_id:
-            raise MatchAccessError(
-                code="self_targeted_treaty",
-                message="Treaty actions require two different players.",
-            )
-
-    def _to_treaty_record(self, treaty: MatchTreaty) -> TreatyRecord:
-        return TreatyRecord(
-            treaty_id=treaty.treaty_id,
-            player_a_id=treaty.player_a_id,
-            player_b_id=treaty.player_b_id,
-            treaty_type=treaty.treaty_type,
-            status=treaty.status,
-            proposed_by=treaty.proposed_by,
-            proposed_tick=treaty.proposed_tick,
-            signed_tick=treaty.signed_tick,
-            withdrawn_by=treaty.withdrawn_by,
-            withdrawn_tick=treaty.withdrawn_tick,
-        )
-
-    def _to_alliance_record(self, alliance: MatchAlliance) -> AllianceRecord:
-        return AllianceRecord(
-            alliance_id=alliance.alliance_id,
-            name=alliance.name,
-            leader_id=alliance.leader_id,
-            formed_tick=alliance.formed_tick,
-            members=[
-                AllianceMemberRecord(
-                    player_id=member.player_id,
-                    joined_tick=member.joined_tick,
-                )
-                for member in sorted(alliance.members, key=lambda member: member.player_id)
-            ],
-        )
-
-    def _to_group_chat_record(self, group_chat: MatchGroupChat) -> GroupChatRecord:
-        return GroupChatRecord(
-            group_chat_id=group_chat.group_chat_id,
-            name=group_chat.name,
-            member_ids=list(group_chat.member_ids),
-            created_by=group_chat.created_by,
-            created_tick=group_chat.created_tick,
+        agent_registry_diplomacy.validate_command_treaty(
+            record=self._matches[match_id],
+            match_id=match_id,
+            treaty=treaty,
+            player_id=player_id,
         )
 
     def _require_group_chat_member(
@@ -1314,84 +767,14 @@ class InMemoryMatchRegistry:
         group_chat_id: str,
         player_id: str,
     ) -> MatchGroupChat:
-        record = self._matches[match_id]
-        group_chat = next(
-            (
-                group_chat
-                for group_chat in record.group_chats
-                if group_chat.group_chat_id == group_chat_id
-            ),
-            None,
+        return agent_registry_messaging.require_group_chat_member(
+            record=self._matches[match_id],
+            group_chat_id=group_chat_id,
+            player_id=player_id,
         )
-        if group_chat is None or player_id not in group_chat.member_ids:
-            raise GroupChatAccessError(
-                code="group_chat_not_visible",
-                message=f"Group chat '{group_chat_id}' is not visible to player '{player_id}'.",
-            )
-        return group_chat
 
     def _derive_alliances_from_state(self, state: MatchState) -> list[MatchAlliance]:
-        memberships: dict[str, list[str]] = {}
-        for player_id, player_state in state.players.items():
-            if player_state.alliance_id is None:
-                continue
-            memberships.setdefault(player_state.alliance_id, []).append(player_id)
-
-        alliances: list[MatchAlliance] = []
-        for alliance_id in sorted(memberships):
-            member_ids = sorted(memberships[alliance_id])
-            leader_id = member_ids[0]
-            alliances.append(
-                MatchAlliance(
-                    alliance_id=alliance_id,
-                    name=alliance_id,
-                    leader_id=leader_id,
-                    formed_tick=state.tick,
-                    members=[
-                        MatchAllianceMember(player_id=member_id, joined_tick=state.tick)
-                        for member_id in member_ids
-                    ],
-                )
-            )
-        return alliances
+        return agent_registry_diplomacy.derive_alliances_from_state(state)
 
     def _sync_victory_state(self, state: MatchState) -> None:
-        coalition_city_counts: dict[str, int] = {}
-        for city_state in state.cities.values():
-            if city_state.owner is None:
-                continue
-
-            player_state = state.players.get(city_state.owner)
-            if player_state is None:
-                continue
-
-            coalition_id = player_state.alliance_id or city_state.owner
-            coalition_city_counts[coalition_id] = coalition_city_counts.get(coalition_id, 0) + 1
-
-        if coalition_city_counts:
-            cities_held = max(coalition_city_counts.values())
-            leaders = [
-                coalition_id
-                for coalition_id, city_count in coalition_city_counts.items()
-                if city_count == cities_held
-            ]
-            leading_alliance = leaders[0] if len(leaders) == 1 else None
-        else:
-            cities_held = 0
-            leading_alliance = None
-
-        previous_leader = state.victory.leading_alliance
-        if leading_alliance is None or cities_held < state.victory.threshold:
-            countdown_ticks_remaining = None
-        elif previous_leader is None:
-            countdown_ticks_remaining = state.victory.threshold
-        elif previous_leader != leading_alliance:
-            countdown_ticks_remaining = None
-        elif state.victory.countdown_ticks_remaining is None:
-            countdown_ticks_remaining = state.victory.threshold
-        else:
-            countdown_ticks_remaining = state.victory.countdown_ticks_remaining
-
-        state.victory.leading_alliance = leading_alliance
-        state.victory.cities_held = cities_held
-        state.victory.countdown_ticks_remaining = countdown_ticks_remaining
+        agent_registry_diplomacy.sync_victory_state(state)

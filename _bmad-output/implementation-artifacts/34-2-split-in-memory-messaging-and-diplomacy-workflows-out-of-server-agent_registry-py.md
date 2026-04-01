@@ -1,6 +1,6 @@
 # Story: 34.2 Split in-memory messaging and diplomacy workflows out of `server/agent_registry.py`
 
-Status: backlog
+Status: done
 
 ## Story
 
@@ -18,12 +18,12 @@ So that future live gameplay and API changes do not require one monolithic in-me
 
 ## Tasks / Subtasks
 
-- [ ] Pin current collaboration workflow behavior with focused regression tests where coverage is missing. (AC: 1, 4)
-- [ ] Extract message + group-chat workflow helpers into a dedicated module with explicit dependencies on match records/state. (AC: 1, 2, 5)
-- [ ] Extract treaty + alliance transition helpers into a dedicated module with stable error/record behavior. (AC: 1, 2, 5)
-- [ ] Rewire `InMemoryMatchRegistry` to delegate to the extracted helpers while keeping its public method surface stable. (AC: 1, 3, 5)
-- [ ] Run focused verification, simplification review, and the repo quality gate. (AC: 4, 5)
-- [ ] Update sprint tracking and completion notes after merge. (AC: 4)
+- [x] Pin current collaboration workflow behavior with focused regression tests where coverage is missing. (AC: 1, 4)
+- [x] Extract message + group-chat workflow helpers into a dedicated module with explicit dependencies on match records/state. (AC: 1, 2, 5)
+- [x] Extract treaty + alliance transition helpers into a dedicated module with stable error/record behavior. (AC: 1, 2, 5)
+- [x] Rewire `InMemoryMatchRegistry` to delegate to the extracted helpers while keeping its public method surface stable. (AC: 1, 3, 5)
+- [x] Run focused verification, simplification review, and the repo quality gate. (AC: 4, 5)
+- [x] Update sprint tracking and completion notes after merge. (AC: 4)
 
 ## Dev Notes
 
@@ -31,3 +31,25 @@ So that future live gameplay and API changes do not require one monolithic in-me
 - Treat this as a refactor-only story. Do not broaden into route changes, DB-backed messaging rewrites, websocket protocol changes, or game-rule changes.
 - Prefer explicit helper/service seams that operate on existing `MatchRecord` / `MatchState` structures over introducing inheritance, generic repositories, or cross-file circular imports.
 - Keep validation and transition semantics pinned from the public registry/API behavior, not from implementation details.
+
+## Completion Notes
+
+- Extracted collaboration record/error types into `server/agent_registry_types.py` so focused workflow modules can share the shipped in-memory shapes without changing the `server.agent_registry` import surface.
+- Extracted message and group-chat workflows into `server/agent_registry_messaging.py`, including public visibility, briefing buckets, command-message validation, and membership enforcement.
+- Extracted treaty, alliance, and victory-sync workflows into `server/agent_registry_diplomacy.py`, preserving transition semantics, world-message side effects, and alliance derivation behavior.
+- Reduced `server/agent_registry.py` from 1397 lines to 760 lines while keeping `InMemoryMatchRegistry` as the stable public facade for callers.
+
+## Debug Log References
+
+- `uv run pytest -o addopts='' tests/test_agent_registry.py`
+- `uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'message or group_chat or treaty or alliance or briefing'`
+- `make format`
+- `source .venv/bin/activate && make quality`
+
+## File List
+
+- `server/agent_registry.py`
+- `server/agent_registry_types.py`
+- `server/agent_registry_messaging.py`
+- `server/agent_registry_diplomacy.py`
+- `tests/test_agent_registry.py`
