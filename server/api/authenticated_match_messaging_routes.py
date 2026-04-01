@@ -1,10 +1,9 @@
-from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body
 
-from server.agent_registry import GroupChatAccessError, InMemoryMatchRegistry, MatchRecord
+from server.agent_registry import GroupChatAccessError, InMemoryMatchRegistry
 from server.models.api import (
     AuthenticatedAgentContext,
     GroupChatCreateAcceptanceResponse,
@@ -19,19 +18,12 @@ from server.models.api import (
 )
 
 from .app_services import AppServices
-from .errors import API_ERROR_RESPONSE_SCHEMA, ApiError
-
-MatchRecordResolver = Callable[..., MatchRecord]
-BroadcastCurrentMatch = Callable[[str], Awaitable[None]]
-
-
-def _authenticated_route_responses(
-    *status_codes: HTTPStatus,
-) -> dict[int | str, dict[str, Any]]:
-    return {
-        int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
-        **{int(status_code): API_ERROR_RESPONSE_SCHEMA for status_code in status_codes},
-    }
+from .authenticated_match_route_helpers import (
+    BroadcastCurrentMatch,
+    MatchRecordResolver,
+    authenticated_route_responses,
+)
+from .errors import ApiError
 
 
 def build_authenticated_match_messaging_router(
@@ -50,7 +42,7 @@ def build_authenticated_match_messaging_router(
     @router.get(
         "/matches/{match_id}/messages",
         response_model=MatchMessageInboxResponse,
-        responses=_authenticated_route_responses(
+        responses=authenticated_route_responses(
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
         ),
@@ -78,7 +70,7 @@ def build_authenticated_match_messaging_router(
     @router.get(
         "/matches/{match_id}/group-chats",
         response_model=GroupChatListResponse,
-        responses=_authenticated_route_responses(HTTPStatus.NOT_FOUND),
+        responses=authenticated_route_responses(HTTPStatus.NOT_FOUND),
     )
     async def get_match_group_chats(
         match_id: str,
@@ -104,7 +96,7 @@ def build_authenticated_match_messaging_router(
         "/matches/{match_id}/group-chats",
         response_model=GroupChatCreateAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses=_authenticated_route_responses(
+        responses=authenticated_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -163,7 +155,7 @@ def build_authenticated_match_messaging_router(
     @router.get(
         "/matches/{match_id}/group-chats/{group_chat_id}/messages",
         response_model=GroupChatMessageListResponse,
-        responses=_authenticated_route_responses(
+        responses=authenticated_route_responses(
             HTTPStatus.FORBIDDEN,
             HTTPStatus.NOT_FOUND,
         ),
@@ -205,7 +197,7 @@ def build_authenticated_match_messaging_router(
         "/matches/{match_id}/group-chats/{group_chat_id}/messages",
         response_model=GroupChatMessageAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses=_authenticated_route_responses(
+        responses=authenticated_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.FORBIDDEN,
             HTTPStatus.NOT_FOUND,
@@ -270,7 +262,7 @@ def build_authenticated_match_messaging_router(
         "/matches/{match_id}/messages",
         response_model=MessageAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses=_authenticated_route_responses(
+        responses=authenticated_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,

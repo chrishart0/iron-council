@@ -1,4 +1,3 @@
-from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 from typing import Annotated, Any
 
@@ -9,7 +8,6 @@ from server.agent_registry import (
     GroupChatAccessError,
     InMemoryMatchRegistry,
     MatchAccessError,
-    MatchRecord,
     TreatyTransitionError,
 )
 from server.models.api import (
@@ -19,19 +17,12 @@ from server.models.api import (
 )
 
 from .app_services import AppServices
-from .errors import API_ERROR_RESPONSE_SCHEMA, ApiError
-
-MatchRecordResolver = Callable[..., MatchRecord]
-BroadcastCurrentMatch = Callable[[str], Awaitable[None]]
-
-
-def _authenticated_route_responses(
-    *status_codes: HTTPStatus,
-) -> dict[int | str, dict[str, Any]]:
-    return {
-        int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
-        **{int(status_code): API_ERROR_RESPONSE_SCHEMA for status_code in status_codes},
-    }
+from .authenticated_match_route_helpers import (
+    BroadcastCurrentMatch,
+    MatchRecordResolver,
+    authenticated_route_responses,
+)
+from .errors import ApiError
 
 
 def build_authenticated_match_command_router(
@@ -49,7 +40,7 @@ def build_authenticated_match_command_router(
         "/matches/{match_id}/command",
         response_model=AgentCommandEnvelopeResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses=_authenticated_route_responses(
+        responses=authenticated_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -59,7 +50,7 @@ def build_authenticated_match_command_router(
         "/matches/{match_id}/commands",
         response_model=AgentCommandEnvelopeResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses=_authenticated_route_responses(
+        responses=authenticated_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,

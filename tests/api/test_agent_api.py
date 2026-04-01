@@ -4245,6 +4245,18 @@ async def test_openapi_declares_secured_match_route_contracts(app_client: AsyncC
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
     assert "/api/v1/matches/{match_id}/commands" not in paths
+    assert paths["/api/v1/matches/{match_id}/treaties"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/TreatyListResponse"}
+    assert paths["/api/v1/matches/{match_id}/treaties"]["post"]["responses"]["202"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/TreatyActionAcceptanceResponse"}
+    assert paths["/api/v1/matches/{match_id}/alliances"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/AllianceListResponse"}
+    assert paths["/api/v1/matches/{match_id}/alliances"]["post"]["responses"]["202"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/AllianceActionAcceptanceResponse"}
     assert paths["/api/v1/matches/{match_id}/messages"]["post"]["responses"]["401"]["content"][
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/ApiErrorResponse"}
