@@ -18,8 +18,8 @@ from server.agent_registry import (
     MatchAllianceMember,
     MatchJoinError,
     MatchRecord,
-    build_seeded_agent_api_key,
     build_seeded_agent_profiles,
+    build_seeded_profiles_by_key_hash,
 )
 from server.auth import hash_api_key
 from server.db.models import Alliance, ApiKey, Match, Player, TickLog
@@ -1059,10 +1059,7 @@ def _load_agent_profiles_by_match(
 ) -> dict[str, list[AgentProfileResponse]]:
     players_by_match: dict[str, list[Player]] = defaultdict(list)
     api_keys_by_id = {str(api_key.id): api_key for api_key in api_key_rows}
-    seeded_profiles_by_key_hash = {
-        hash_api_key(build_seeded_agent_api_key(profile.agent_id)): profile
-        for profile in build_seeded_agent_profiles()
-    }
+    seeded_profiles_by_key_hash = build_seeded_profiles_by_key_hash()
     for player in player_rows:
         players_by_match[str(player.match_id)].append(player)
 
@@ -1135,10 +1132,7 @@ def _load_authenticated_agent_keys_by_match(
 ) -> dict[str, list[AuthenticatedAgentKeyRecord]]:
     players_by_match: dict[str, list[Player]] = defaultdict(list)
     api_keys_by_id = {str(api_key.id): api_key for api_key in api_key_rows}
-    seeded_profiles_by_key_hash = {
-        hash_api_key(build_seeded_agent_api_key(profile.agent_id)): profile
-        for profile in build_seeded_agent_profiles()
-    }
+    seeded_profiles_by_key_hash = build_seeded_profiles_by_key_hash()
     for player in player_rows:
         players_by_match[str(player.match_id)].append(player)
 
@@ -1183,10 +1177,7 @@ def _load_joined_agents_by_match(
 ) -> dict[str, dict[str, str]]:
     players_by_match: dict[str, list[Player]] = defaultdict(list)
     api_keys_by_id = {str(api_key.id): api_key for api_key in api_key_rows}
-    seeded_profiles_by_key_hash = {
-        hash_api_key(build_seeded_agent_api_key(profile.agent_id)): profile
-        for profile in build_seeded_agent_profiles()
-    }
+    seeded_profiles_by_key_hash = build_seeded_profiles_by_key_hash()
     for player in player_rows:
         players_by_match[str(player.match_id)].append(player)
 
@@ -1438,7 +1429,7 @@ def _resolve_authenticated_agent_from_db_key_hash(
     if persisted_players and existing_agent_player is None:
         return None
 
-    seeded_profile = _build_seeded_profiles_by_key_hash().get(api_key.key_hash)
+    seeded_profile = build_seeded_profiles_by_key_hash().get(api_key.key_hash)
     if seeded_profile is not None:
         return _ResolvedAuthenticatedDbAgent(
             context=AuthenticatedAgentContext(
@@ -1467,13 +1458,6 @@ def _resolve_authenticated_agent_from_db_key_hash(
         elo_rating=int(api_key.elo_rating),
         key_hash=api_key.key_hash,
     )
-
-
-def _build_seeded_profiles_by_key_hash() -> dict[str, AgentProfileResponse]:
-    return {
-        hash_api_key(build_seeded_agent_api_key(profile.agent_id)): profile
-        for profile in build_seeded_agent_profiles()
-    }
 
 
 def _build_non_seeded_agent_id(api_key_id: str) -> str:

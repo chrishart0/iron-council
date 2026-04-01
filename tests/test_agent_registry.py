@@ -7,6 +7,7 @@ from server.agent_registry import (
     MatchJoinError,
     MatchRecord,
     build_seeded_agent_api_key,
+    build_seeded_agent_profiles,
     build_seeded_match_records,
 )
 from server.models.api import AllianceActionRequest
@@ -227,6 +228,18 @@ def test_join_assigns_first_open_slot_and_is_idempotent_for_seeded_agent() -> No
         "agent_id": "agent-player-3",
         "player_id": "player-2",
     }
+
+
+def test_seeded_helpers_remain_available_from_agent_registry_compatibility_exports() -> None:
+    from server import registry_seed_data
+
+    assert build_seeded_agent_api_key is registry_seed_data.build_seeded_agent_api_key
+    assert build_seeded_agent_profiles is registry_seed_data.build_seeded_agent_profiles
+    assert build_seeded_match_records is registry_seed_data.build_seeded_match_records
+
+
+def test_build_seeded_agent_api_key_preserves_public_seed_format() -> None:
+    assert build_seeded_agent_api_key("agent-player-2") == "seed-api-key-for-agent-player-2"
 
 
 def test_require_joined_player_id_returns_existing_mapping_after_join() -> None:
