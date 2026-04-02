@@ -197,4 +197,4 @@ development_status:
   epic-39: active
   39-1-extract-public-browse-and-detail-route-handlers-out-of-server-api-public_routes-py: done
   39-2-extract-public-aggregate-summary-routes-out-of-server-api-public_routes-py: done
-  39-3-extract-public-history-and-replay-routes-out-of-server-api-public_routes-py: drafted
+  39-3-extract-public-history-and-replay-routes-out-of-server-api-public_routes-py: done

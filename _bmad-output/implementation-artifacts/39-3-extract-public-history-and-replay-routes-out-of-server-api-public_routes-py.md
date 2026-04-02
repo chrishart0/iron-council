@@ -1,6 +1,6 @@
 # Story: 39.3 Extract public history and replay routes out of `server/api/public_routes.py`
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -18,11 +18,11 @@ So that `server/api/public_routes.py` can finish Epic 39 as a thin composition l
 
 ## Tasks / Subtasks
 
-- [ ] Audit the remaining persisted history/replay route seams in `server/api/public_routes.py` and identify the tightest extraction that preserves current behavior. (AC: 1, 5)
-- [ ] Extract the public history/replay route handlers into a focused compatibility-safe route module or helper surface. (AC: 1, 2, 3, 5)
-- [ ] Keep `server.api.public_routes` imports and router wiring stable for current callers. (AC: 1, 2)
-- [ ] Add or tighten focused regressions around not-found/error mapping, OpenAPI contract, and real-process history/replay behavior if needed. (AC: 2, 4)
-- [ ] Run focused verification plus the strongest practical repo-managed checks. (AC: 4, 5)
+- [x] Audit the remaining persisted history/replay route seams in `server/api/public_routes.py` and identify the tightest extraction that preserves current behavior. (AC: 1, 5)
+- [x] Extract the public history/replay route handlers into a focused compatibility-safe route module or helper surface. (AC: 1, 2, 3, 5)
+- [x] Keep `server.api.public_routes` imports and router wiring stable for current callers. (AC: 1, 2)
+- [x] Add or tighten focused regressions around not-found/error mapping, OpenAPI contract, and real-process history/replay behavior if needed. (AC: 2, 4)
+- [x] Run focused verification plus the strongest practical repo-managed checks. (AC: 4, 5)
 
 ## Dev Notes
 
@@ -36,15 +36,26 @@ So that `server/api/public_routes.py` can finish Epic 39 as a thin composition l
 ### Debug Log
 
 - 2026-04-02: Drafted after Story 39.2 extracted public aggregate summary routes and left persisted history/replay handlers as the remaining concentrated responsibility in `server/api/public_routes.py`.
+- 2026-04-02: Added the seam regression for `server.api.public_history_routes`, confirmed RED with `ModuleNotFoundError`, then extracted the persisted history/replay routes into `server/api/public_history_routes.py`.
+- 2026-04-02: Rewired `server/api/public_routes.py` into a thinner composition layer over summary, match, and history router builders while preserving the existing DB-backed error translations and OpenAPI declarations.
+- 2026-04-02: Focused verification passed for the extracted seam, history/replay API contract, real-process smoke flow, and the full repo-managed `make quality` gate after syncing the local dev environment with `make install`.
 
 ### Completion Notes
 
-- Pending.
+- Extracted `/api/v1/matches/{match_id}/history` and `/api/v1/matches/{match_id}/history/{tick}` into `server/api/public_history_routes.py` behind a plain `build_public_history_router(*, history_database_url)` helper that mirrors the existing public route-family extraction pattern.
+- Preserved the shipped contract and behavior: route paths, response models, OpenAPI schema references, DB-backed-only availability, and the structured `match_not_found`, `tick_not_found`, and `match_history_unavailable` error translations are unchanged.
+- Kept `server/api/public_routes.py` as the thin public composition layer for root/health metadata plus summary, match, and history router inclusion only.
+- Verification: `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'extracted_route_seams or match_history_routes or openapi_declares_public_read_contracts'` (RED before extraction, then GREEN); `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/e2e/test_api_smoke.py -k match_history_and_replay_smoke_flow_runs_through_real_process`; `source .venv/bin/activate && make install`; `source .venv/bin/activate && make quality`.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/39-3-extract-public-history-and-replay-routes-out-of-server-api-public_routes-py.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `server/api/public_history_routes.py`
+- `server/api/public_routes.py`
+- `tests/api/test_agent_api.py`
 
 ### Change Log
 
 - 2026-04-02: Drafted Story 39.3 to continue decomposing `server/api/public_routes.py` by extracting persisted history/replay routes while preserving the shipped public-read contract.
+- 2026-04-02: Completed Story 39.3 by extracting the public history/replay routes into `server/api/public_history_routes.py`.
