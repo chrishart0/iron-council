@@ -1807,3 +1807,23 @@ So that registry reloads and session-scoped match reloads can evolve without one
 **When** focused hydration/registry regressions and the strongest practical repo-managed verification run
 **Then** no HTTP/OpenAPI contract, auth semantics, DB schema, websocket behavior, runtime-loop behavior, or gameplay rules change and the resulting structure is simpler than the starting point.
 
+### Story 37.2: Extract agent and identity hydration loaders out of `server/db/hydration.py`
+
+As a server maintainer,
+I want the agent-profile, authenticated-key, joined-agent, joined-human, and public-competitor hydration loaders grouped behind a focused seam,
+So that `server/db/hydration.py` can evolve without one file continuing to own both top-level reload orchestration and every persisted identity reconstruction detail.
+
+**Acceptance Criteria:**
+
+**Given** `server/db/hydration.py` still owns the clustered agent/identity/public-competitor loaders used during DB-backed reloads
+**When** Story 37.2 ships
+**Then** those loaders live behind a focused compatibility-safe module or helper surface while `server.db.hydration` and `server.db.registry` keep their stable caller behavior.
+
+**And Given** seeded/non-seeded agent identity reconstruction, authenticated key loading, joined-player mapping, human join visibility, and public competitor kind metadata already work at the registry and route boundary
+**When** the refactor ships
+**Then** those behaviors remain unchanged and covered by focused hydration/registry regressions.
+
+**And Given** the epic is still a boring refactor effort
+**When** the implementation is reviewed
+**Then** `server/db/hydration.py` ends up with fewer mixed responsibilities, explicit orchestration stays visible, and no new framework-style abstraction is introduced.
+

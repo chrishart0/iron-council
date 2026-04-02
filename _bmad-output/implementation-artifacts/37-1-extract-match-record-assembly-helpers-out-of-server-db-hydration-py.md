@@ -1,6 +1,6 @@
 # Story: 37.1 Extract match-record assembly helpers out of `server/db/hydration.py`
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -36,15 +36,24 @@ So that registry reloads and session-scoped match reloads can evolve without one
 ### Debug Log
 
 - 2026-04-02: Drafted as the next follow-on slice after completing Epic 36.
+- 2026-04-02: Verified focused hydration regressions with `uv run pytest -o addopts='' tests/test_db_registry.py -k 'load_match_record_from_session or load_match_registry_from_database or hydration or registry_facade_re_exports_stable_module_surfaces'`.
+- 2026-04-02: Verified adjacent API and e2e seams with `uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'current_agent_profile or join_match or bundled_agent_briefing'` and `uv run pytest --no-cov tests/e2e/test_api_smoke.py -k 'reloaded_registry or create_match_lobby'`.
+- 2026-04-02: Re-ran `source .venv/bin/activate && make quality` after controller-side simplification updates.
 
 ### Completion Notes
 
-- Pending.
+- Extracted private `_compose_loaded_match_record(...)` and `_derive_joinable_player_ids(...)` helpers in `server/db/hydration.py` so both registry reload and session-scoped reload now share the same `MatchRecord` assembly path while keeping row loading explicit in each caller.
+- Added a focused regression test that proves `load_match_record_from_session(...)` preserves the same hydrated lobby membership, joinability, public competitor, seeded agent profile, and authenticated agent-key behavior expected for session-scoped DB reloads.
+- Verified the final refactor with focused hydration/API/e2e checks plus the full repo-managed quality gate (`make quality`).
 
 ### File List
 
+- `server/db/hydration.py`
+- `tests/test_db_registry.py`
 - `_bmad-output/implementation-artifacts/37-1-extract-match-record-assembly-helpers-out-of-server-db-hydration-py.md`
+- `docs/plans/2026-04-02-story-37-1-match-record-assembly-extraction.md`
 
 ### Change Log
 
 - 2026-04-02: Drafted Story 37.1 to continue DB surface decomposition with hydration-focused refactoring.
+- 2026-04-02: Completed Story 37.1 by centralizing repeated `MatchRecord` assembly inside `server/db/hydration.py`, tightening hydration regression coverage, and revalidating the repo quality gate.
