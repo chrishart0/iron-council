@@ -134,7 +134,7 @@ def settle_completed_match_if_needed(*, session: Session, match: Match) -> None:
 
 
 def load_settlement_aggregates_by_identity(
-    settlement_rows: list[PlayerMatchSettlement],
+    settlement_rows: Sequence[PlayerMatchSettlement],
 ) -> dict[str, SettlementAggregate]:
     rows_by_identity: dict[str, list[PlayerMatchSettlement]] = defaultdict(list)
     for settlement in settlement_rows:
