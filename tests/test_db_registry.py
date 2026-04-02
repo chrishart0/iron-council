@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -9,6 +11,7 @@ from typing import cast
 import pytest
 import server.db.registry as db_registry_module
 from server.agent_registry import (
+    AdvancedMatchTick,
     InMemoryMatchRegistry,
     build_seeded_agent_api_key,
     build_seeded_agent_profiles,
@@ -57,6 +60,25 @@ from tests.support import (
     insert_seeded_agent_player,
     insert_seeded_human_player,
 )
+
+
+async def _record_terminal_tick_broadcast(
+    *,
+    registry: InMemoryMatchRegistry,
+    broadcasted_ticks: list[tuple[str, int, MatchStatus]],
+    advanced_tick: AdvancedMatchTick,
+) -> None:
+    match = registry.get_match(advanced_tick.match_id)
+    assert match is not None
+    broadcasted_ticks.append((advanced_tick.match_id, advanced_tick.resolved_tick, match.status))
+
+
+async def _collect_broadcasted_tick(
+    *,
+    broadcasted_ticks: list[AdvancedMatchTick],
+    advanced_tick: AdvancedMatchTick,
+) -> None:
+    broadcasted_ticks.append(advanced_tick)
 
 
 def test_load_match_registry_from_database_preserves_persisted_alliance_metadata(
@@ -1057,6 +1079,85 @@ async def test_match_runtime_ensure_match_running_deduplicates_existing_task() -
     await runtime.stop()
 
 
+@pytest.mark.asyncio
+async def test_match_runtime_marks_terminal_tick_completed_broadcasts_once_and_stops() -> None:
+    registry = InMemoryMatchRegistry()
+    active_match = build_seeded_match_records()[0]
+    active_match.tick_interval_seconds = 0
+    active_match.state.victory.threshold = 2
+    active_match.state.victory.countdown_ticks_remaining = 1
+    registry.seed_match(active_match)
+
+    persisted_ticks: list[AdvancedMatchTick] = []
+    broadcasted_ticks: list[tuple[str, int, MatchStatus]] = []
+    runtime = MatchRuntime(
+        registry,
+        tick_persistence=lambda advanced_tick: persisted_ticks.append(advanced_tick),
+        tick_broadcast=lambda advanced_tick: _record_terminal_tick_broadcast(
+            registry=registry,
+            broadcasted_ticks=broadcasted_ticks,
+            advanced_tick=advanced_tick,
+        ),
+    )
+
+    await runtime.ensure_match_running(active_match.match_id)
+    await asyncio.wait_for(runtime._tasks[active_match.match_id], timeout=1)
+
+    completed_match = registry.get_match(active_match.match_id)
+    assert completed_match is not None
+    assert completed_match.status == MatchStatus.COMPLETED
+    assert completed_match.state.tick == 143
+    assert completed_match.state.victory.countdown_ticks_remaining == 0
+    assert [tick.resolved_tick for tick in persisted_ticks] == [143]
+    assert broadcasted_ticks == [("match-alpha", 143, MatchStatus.COMPLETED)]
+    assert runtime._tasks[active_match.match_id].done()
+
+    await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_match_runtime_restores_match_snapshot_when_terminal_tick_persistence_fails() -> None:
+    registry = InMemoryMatchRegistry()
+    active_match = build_seeded_match_records()[0]
+    active_match.tick_interval_seconds = 0
+    active_match.state.victory.threshold = 2
+    active_match.state.victory.countdown_ticks_remaining = 1
+    registry.seed_match(active_match)
+    before_snapshot = registry.snapshot_match(active_match.match_id)
+
+    persisted_ticks: list[AdvancedMatchTick] = []
+    broadcasted_ticks: list[AdvancedMatchTick] = []
+
+    def fail_terminal_persistence(advanced_tick: AdvancedMatchTick) -> None:
+        persisted_ticks.append(advanced_tick)
+        raise RuntimeError("boom")
+
+    runtime = MatchRuntime(
+        registry,
+        tick_persistence=fail_terminal_persistence,
+        tick_broadcast=lambda advanced_tick: _collect_broadcasted_tick(
+            broadcasted_ticks=broadcasted_ticks,
+            advanced_tick=advanced_tick,
+        ),
+    )
+
+    await runtime.ensure_match_running(active_match.match_id)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await asyncio.wait_for(runtime._tasks[active_match.match_id], timeout=1)
+
+    restored_match = registry.get_match(active_match.match_id)
+    assert restored_match is not None
+    assert restored_match.status == before_snapshot.status
+    assert restored_match.state.model_dump(mode="json") == before_snapshot.state.model_dump(
+        mode="json"
+    )
+    assert [tick.resolved_tick for tick in persisted_ticks] == [143]
+    assert broadcasted_ticks == []
+
+    await runtime.stop()
+
+
 def test_create_match_lobby_rejects_invalid_domain_config_without_partial_persistence(
     tmp_path: Path,
 ) -> None:
@@ -1444,6 +1545,301 @@ def test_persist_advanced_match_tick_updates_match_and_appends_tick_log_transact
         army.owner == "player-2" and army.location == "manchester" and army.troops == 5
         for army in reloaded_match.state.armies
     )
+
+
+def test_persist_advanced_match_tick_marks_terminal_victory_completed_transactionally(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-persist-terminal-tick.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    registry = load_match_registry_from_database(database_url)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object | None = None) -> FrozenDateTime:
+            assert tz == UTC
+            return cls(2026, 4, 2, 12, 34, 56, tzinfo=UTC)
+
+    monkeypatch.setattr(db_tick_persistence_module, "datetime", FrozenDateTime)
+
+    terminal_match = registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert terminal_match is not None
+    terminal_match.state.victory.threshold = 2
+    terminal_match.state.victory.countdown_ticks_remaining = 1
+
+    advanced_tick = registry.advance_match_tick("00000000-0000-0000-0000-000000000101")
+
+    persist_advanced_match_tick(database_url=database_url, advanced_tick=advanced_tick)
+
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        persisted_match = connection.execute(
+            text(
+                """
+                SELECT current_tick, status, state, winner_alliance, updated_at
+                FROM matches
+                WHERE id = :match_id
+                """
+            ),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        ).one()
+        persisted_tick_log = connection.execute(
+            text(
+                """
+                SELECT tick, state_snapshot
+                FROM tick_log
+                WHERE match_id = :match_id
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        ).one()
+
+    assert persisted_match.current_tick == 143
+    assert persisted_match.status == MatchStatus.COMPLETED.value
+    assert persisted_match.winner_alliance == "00000000-0000-0000-0000-000000000401"
+    assert str(persisted_match.updated_at).startswith("2026-04-02 12:34:56")
+    assert json.loads(persisted_match.state)["victory"] == {
+        "leading_alliance": "alliance-red",
+        "cities_held": 3,
+        "threshold": 2,
+        "countdown_ticks_remaining": 0,
+    }
+    assert persisted_tick_log.tick == 143
+    assert json.loads(persisted_tick_log.state_snapshot)["victory"] == {
+        "leading_alliance": "alliance-red",
+        "cities_held": 3,
+        "threshold": 2,
+        "countdown_ticks_remaining": 0,
+    }
+
+    reloaded_registry = load_match_registry_from_database(database_url)
+    reloaded_match = reloaded_registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert reloaded_match is not None
+    assert reloaded_match.status == MatchStatus.COMPLETED
+    assert reloaded_match.state.tick == 143
+
+
+def test_terminal_persist_syncs_stale_alliance_rows(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-terminal-winner-resolution.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    registry = load_match_registry_from_database(database_url)
+
+    terminal_match = registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert terminal_match is not None
+    terminal_match.state.victory.threshold = 2
+    terminal_match.state.victory.countdown_ticks_remaining = 1
+    terminal_match.alliances[0].name = "Final Western Accord"
+    advanced_tick = registry.advance_match_tick("00000000-0000-0000-0000-000000000101")
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE alliances
+                SET dissolved_tick = :dissolved_tick
+                WHERE id = :alliance_id
+                """
+            ),
+            {
+                "alliance_id": "00000000-0000-0000-0000-000000000401",
+                "dissolved_tick": 143,
+            },
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE players
+                SET alliance_id = NULL, alliance_joined_tick = NULL
+                WHERE match_id = :match_id
+                """
+            ),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        )
+
+    persist_advanced_match_tick(database_url=database_url, advanced_tick=advanced_tick)
+
+    with engine.connect() as connection:
+        persisted_match = connection.execute(
+            text(
+                """
+                SELECT current_tick, status, winner_alliance
+                FROM matches
+                WHERE id = :match_id
+                """
+            ),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        ).one()
+        persisted_alliance = connection.execute(
+            text(
+                """
+                SELECT id, name, leader_id, formed_tick, dissolved_tick
+                FROM alliances
+                WHERE match_id = :match_id
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        ).one()
+        persisted_players = connection.execute(
+            text(
+                """
+                SELECT id, alliance_id, alliance_joined_tick
+                FROM players
+                WHERE match_id = :match_id
+                ORDER BY id
+                """
+            ),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        ).all()
+
+    assert persisted_match.current_tick == 143
+    assert persisted_match.status == MatchStatus.COMPLETED.value
+    assert persisted_match.winner_alliance == persisted_alliance.id
+    assert persisted_alliance.name == "Final Western Accord"
+    assert persisted_alliance.formed_tick == 120
+    assert persisted_alliance.dissolved_tick is None
+    assert [player.alliance_id for player in persisted_players] == [
+        persisted_alliance.id,
+        persisted_alliance.id,
+        None,
+    ]
+    assert [player.alliance_joined_tick for player in persisted_players] == [120, 120, None]
+
+
+def test_persist_advanced_match_tick_keeps_solo_terminal_winner_coherent_across_public_reads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-persist-terminal-solo-tick.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    registry = load_match_registry_from_database(database_url)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object | None = None) -> FrozenDateTime:
+            assert tz == UTC
+            return cls(2026, 4, 2, 12, 34, 56, tzinfo=UTC)
+
+    monkeypatch.setattr(db_tick_persistence_module, "datetime", FrozenDateTime)
+
+    terminal_match = registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert terminal_match is not None
+    terminal_match.alliances = []
+    terminal_match.state.cities["manchester"].owner = "player-1"
+    terminal_match.state.cities["birmingham"].owner = "player-1"
+    terminal_match.state.players["player-1"].cities_owned = ["london", "manchester", "birmingham"]
+    terminal_match.state.players["player-1"].alliance_id = None
+    terminal_match.state.players["player-2"].cities_owned = []
+    terminal_match.state.players["player-2"].alliance_id = None
+    terminal_match.state.players["player-3"].cities_owned = []
+    terminal_match.state.victory.leading_alliance = "player-1"
+    terminal_match.state.victory.threshold = 3
+    terminal_match.state.victory.countdown_ticks_remaining = 1
+
+    advanced_tick = registry.advance_match_tick("00000000-0000-0000-0000-000000000101")
+
+    persist_advanced_match_tick(database_url=database_url, advanced_tick=advanced_tick)
+
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        persisted_match = connection.execute(
+            text(
+                """
+                SELECT current_tick, status, state, winner_alliance
+                FROM matches
+                WHERE id = :match_id
+                """
+            ),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        ).one()
+
+    assert persisted_match.current_tick == 143
+    assert persisted_match.status == MatchStatus.COMPLETED.value
+    assert persisted_match.winner_alliance == build_persisted_player_id(
+        match_id="00000000-0000-0000-0000-000000000101",
+        public_player_id="player-1",
+    )
+    assert json.loads(persisted_match.state)["victory"] == {
+        "leading_alliance": "player-1",
+        "cities_held": 3,
+        "threshold": 3,
+        "countdown_ticks_remaining": 0,
+    }
+
+    browse = get_public_match_summaries(database_url=database_url)
+    leaderboard = get_public_leaderboard(database_url=database_url)
+    summaries = get_completed_match_summaries(database_url=database_url)
+    history = get_match_history(
+        database_url=database_url,
+        match_id="00000000-0000-0000-0000-000000000101",
+    )
+
+    assert [match.match_id for match in browse.matches] == ["00000000-0000-0000-0000-000000000102"]
+    assert leaderboard.model_dump(mode="json") == {
+        "leaderboard": [
+            {
+                "rank": 1,
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "elo": 1210,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 1,
+                "losses": 0,
+                "draws": 0,
+            },
+            {
+                "rank": 2,
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "elo": 1190,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 1,
+                "draws": 0,
+            },
+            {
+                "rank": 3,
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "elo": 1175,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 1,
+                "draws": 0,
+            },
+        ]
+    }
+    assert summaries.model_dump(mode="json") == {
+        "matches": [
+            {
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "map": "britain",
+                "final_tick": 143,
+                "tick_interval_seconds": 30,
+                "player_count": 3,
+                "completed_at": "2026-04-02T12:34:56Z",
+                "winning_alliance_name": None,
+                "winning_player_display_names": ["Arthur"],
+            }
+        ]
+    }
+    assert history.model_dump(mode="json") == {
+        "match_id": "00000000-0000-0000-0000-000000000101",
+        "status": "completed",
+        "current_tick": 143,
+        "tick_interval_seconds": 30,
+        "history": [{"tick": 142}, {"tick": 143}],
+    }
 
 
 def test_get_match_history_returns_deterministic_tick_entries_with_match_metadata(

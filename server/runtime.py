@@ -3,7 +3,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
-from server.agent_registry import AdvancedMatchTick, InMemoryMatchRegistry
+from server.agent_registry import (
+    AdvancedMatchTick,
+    InMemoryMatchRegistry,
+    is_terminal_victory_tick,
+)
 from server.models.domain import MatchStatus
 
 
@@ -62,6 +66,7 @@ class MatchRuntime:
                     else None
                 )
                 advanced_tick = self._registry.advance_match_tick(match_id)
+                is_terminal = is_terminal_victory_tick(advanced_tick)
                 if self._tick_persistence is not None:
                     try:
                         self._tick_persistence(advanced_tick)
@@ -69,7 +74,13 @@ class MatchRuntime:
                         if match_snapshot is not None:
                             self._registry.restore_match(match_id, match_snapshot)
                         raise
+                if is_terminal:
+                    completed_match = self._registry.get_match(match_id)
+                    if completed_match is not None:
+                        completed_match.status = MatchStatus.COMPLETED
                 if self._tick_broadcast is not None:
                     await self._tick_broadcast(advanced_tick)
+                if is_terminal:
+                    return
         except asyncio.CancelledError:
             raise

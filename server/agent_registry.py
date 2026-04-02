@@ -70,6 +70,8 @@ __all__ = [
     "MatchTreaty",
     "TreatyTransitionError",
     "AdvancedMatchTick",
+    "get_terminal_winner_alliance",
+    "is_terminal_victory_tick",
     "build_seeded_agent_api_key",
     "build_seeded_agent_profiles",
     "build_seeded_authenticated_agent_keys",
@@ -85,6 +87,20 @@ class AdvancedMatchTick:
     next_state: MatchState
     accepted_orders: OrderBatch
     events: list[TickPhaseEvent]
+    alliances: list[MatchAlliance]
+
+
+def get_terminal_winner_alliance(advanced_tick: AdvancedMatchTick) -> str | None:
+    victory_state = advanced_tick.next_state.victory
+    if victory_state.leading_alliance is None:
+        return None
+    if victory_state.countdown_ticks_remaining != 0:
+        return None
+    return victory_state.leading_alliance
+
+
+def is_terminal_victory_tick(advanced_tick: AdvancedMatchTick) -> bool:
+    return get_terminal_winner_alliance(advanced_tick) is not None
 
 
 class InMemoryMatchRegistry:
@@ -292,6 +308,7 @@ class InMemoryMatchRegistry:
             next_state=advanced_tick.next_state,
             accepted_orders=advanced_tick.accepted_orders,
             events=advanced_tick.events,
+            alliances=[deepcopy(alliance) for alliance in self._matches[match_id].alliances],
         )
 
     def apply_command_envelope(

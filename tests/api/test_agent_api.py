@@ -21,7 +21,8 @@ from server.agent_registry import (
 )
 from server.api import AppServices, build_authenticated_match_router, register_error_handlers
 from server.auth import hash_api_key
-from server.db.registry import load_match_registry_from_database
+from server.db import tick_persistence as db_tick_persistence_module
+from server.db.registry import load_match_registry_from_database, persist_advanced_match_tick
 from server.db.testing import provision_seeded_database
 from server.main import create_app
 from server.models.api import (
@@ -696,6 +697,83 @@ async def test_match_history_routes_read_persisted_tick_log_even_when_registry_s
     assert replay_response.status_code == HTTPStatus.OK
     assert replay_response.json()["tick"] == 142
     assert replay_response.json()["state_snapshot"] != {"tick": 999}
+
+
+@pytest.mark.asyncio
+async def test_completed_terminal_tick_is_excluded_from_public_matches_and_served_via_history_reads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-terminal-completion.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object | None = None) -> FrozenDateTime:
+            assert tz == UTC
+            return cls(2026, 4, 2, 12, 34, 56, tzinfo=UTC)
+
+    monkeypatch.setattr(db_tick_persistence_module, "datetime", FrozenDateTime)
+
+    registry = load_match_registry_from_database(database_url)
+    terminal_match = registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert terminal_match is not None
+    terminal_match.state.victory.threshold = 2
+    terminal_match.state.victory.countdown_ticks_remaining = 1
+    terminal_tick = registry.advance_match_tick("00000000-0000-0000-0000-000000000101")
+    persist_advanced_match_tick(database_url=database_url, advanced_tick=terminal_tick)
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        matches_response = await client.get("/api/v1/matches")
+        completed_response = await client.get("/api/v1/matches/completed")
+        history_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/history"
+        )
+        replay_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/history/143"
+        )
+
+    assert matches_response.status_code == HTTPStatus.OK
+    assert [match["match_id"] for match in matches_response.json()["matches"]] == [
+        "00000000-0000-0000-0000-000000000102"
+    ]
+
+    assert completed_response.status_code == HTTPStatus.OK
+    assert completed_response.json()["matches"][0] == {
+        "match_id": "00000000-0000-0000-0000-000000000101",
+        "map": "britain",
+        "final_tick": 143,
+        "tick_interval_seconds": 30,
+        "player_count": 3,
+        "completed_at": "2026-04-02T12:34:56Z",
+        "winning_alliance_name": "Western Accord",
+        "winning_player_display_names": ["Arthur", "Morgana"],
+    }
+
+    assert history_response.status_code == HTTPStatus.OK
+    assert history_response.json() == {
+        "match_id": "00000000-0000-0000-0000-000000000101",
+        "status": "completed",
+        "current_tick": 143,
+        "tick_interval_seconds": 30,
+        "history": [{"tick": 142}, {"tick": 143}],
+    }
+    assert replay_response.status_code == HTTPStatus.OK
+    assert replay_response.json()["match_id"] == "00000000-0000-0000-0000-000000000101"
+    assert replay_response.json()["tick"] == 143
+    assert replay_response.json()["state_snapshot"]["victory"] == {
+        "leading_alliance": "alliance-red",
+        "cities_held": 3,
+        "threshold": 2,
+        "countdown_ticks_remaining": 0,
+    }
 
 
 @pytest.mark.asyncio
