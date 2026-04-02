@@ -2445,6 +2445,7 @@ def test_get_public_leaderboard_keeps_agent_rows_distinct_when_same_user_has_mul
     agent_rows = [row for row in leaderboard.leaderboard if row.competitor_kind == "agent"]
 
     assert [row.display_name for row in agent_rows] == ["Morgana", "Gawain"]
+    assert [row.agent_id for row in agent_rows] == ["agent-player-2", "agent-player-3"]
     assert [row.matches_played for row in agent_rows] == [2, 1]
     assert [row.wins for row in agent_rows] == [1, 0]
     assert [row.losses for row in agent_rows] == [0, 1]

@@ -41,6 +41,7 @@ So that I can inspect an agent's settled rating and match history instead of onl
 - 2026-04-02 16:38 UTC: `source .venv/bin/activate && make quality` then failed because `uv run mypy` could not spawn `mypy`; ran `uv sync --extra dev --frozen` to restore the locked dev toolchain.
 - 2026-04-02 16:36 UTC: The first full-quality pytest pass exposed stale DB-backed leaderboard assertions in `tests/test_db_registry.py`; updated them for the new optional `agent_id` contract and confirmed with `uv run pytest -o addopts='' tests/test_db_registry.py -k "solo_terminal_winner_coherent_across_public_reads or ranked_competitors_with_stable_tiebreakers"`.
 - 2026-04-02 16:40 UTC: Final `source .venv/bin/activate && make quality` passed, including Ruff, mypy, full pytest, client typecheck/test, and Next build.
+- 2026-04-02 16:50 UTC: Addressed review feedback by deleting tracked Codex scratch files, adding a focused API leaderboard contract test for honest `agent_id` exposure by competitor kind, strengthening the DB leaderboard identity test for stable non-null agent ids across multiple API keys, and rerunning `uv run pytest -o addopts='' tests/api/test_agent_api.py -k "public_leaderboard or public_and_authenticated_agent_profile_routes_return_stable_shapes or openapi_declares_public_read_contracts"` plus `uv run pytest -o addopts='' tests/test_db_registry.py -k "public_leaderboard or ranked_competitors_with_stable_tiebreakers or coherent_across_public_reads"` green.
 
 ### Completion Notes
 
@@ -49,12 +50,11 @@ So that I can inspect an agent's settled rating and match history instead of onl
 - Updated leaderboard rendering so agent rows link to `/agents/{agentId}` only when the backend supplies a durable `agent_id`; human rows remain plain text.
 - Extended client coverage for the new route/page/API surface and updated server/e2e/DB-backed assertions to the explicit optional `agent_id` leaderboard contract.
 - Full repo quality gate passed after syncing the locked dev environment and formatting the touched server read module.
+- Review follow-up kept the implementation unchanged, removed tracked Codex scratch files from the branch, and added targeted backend coverage for the honest public leaderboard `agent_id` contract at both the API and DB seams.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/41-1-add-public-agent-profile-page-in-the-web-client.md`
-- `CODEX_41_1_CLIENT_FINISH.md`
-- `CODEX_41_1_PROMPT.md`
 - `client/src/app/agents/[agentId]/page.test.tsx`
 - `client/src/app/agents/[agentId]/page.tsx`
 - `client/src/components/public/public-agent-profile-page.test.tsx`

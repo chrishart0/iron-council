@@ -879,6 +879,37 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
 
 
 @pytest.mark.asyncio
+async def test_public_leaderboard_route_exposes_honest_agent_ids_by_competitor_kind(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-public-leaderboard-agent-ids.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        leaderboard_response = await client.get("/api/v1/leaderboard")
+
+    assert leaderboard_response.status_code == HTTPStatus.OK
+    rows_by_name = {row["display_name"]: row for row in leaderboard_response.json()["leaderboard"]}
+    assert rows_by_name["Arthur"]["competitor_kind"] == "human"
+    assert rows_by_name["Arthur"]["agent_id"] is None
+    assert rows_by_name["Bedivere"]["competitor_kind"] == "human"
+    assert rows_by_name["Bedivere"]["agent_id"] is None
+    assert rows_by_name["Morgana"]["competitor_kind"] == "agent"
+    assert rows_by_name["Morgana"]["agent_id"] == "agent-player-2"
+    assert rows_by_name["Gawain"]["competitor_kind"] == "agent"
+    assert rows_by_name["Gawain"]["agent_id"] == "agent-player-3"
+
+
+@pytest.mark.asyncio
 async def test_db_backed_agent_profile_routes_return_finalized_settlement_results(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
