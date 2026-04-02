@@ -1,6 +1,6 @@
 # Story: 36.2 Extract DB-backed identity and player lookup compatibility helpers out of `server/db/registry.py`
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -19,11 +19,11 @@ So that auth/access helper evolution does not require the DB registry facade to 
 
 ## Tasks / Subtasks
 
-- [ ] Pin current DB-backed identity/player lookup behavior with focused regressions. (AC: 2, 3, 5)
-- [ ] Extract identity/player lookup compatibility helpers into a focused module. (AC: 1, 2, 3, 6)
-- [ ] Rewire `server/db/registry.py` as a thinner compatibility facade without contract drift. (AC: 1, 6)
-- [ ] Run focused verification, simplification review, and the repo quality gate. (AC: 4, 5, 6)
-- [ ] Update sprint tracking and completion notes after merge. (AC: 5)
+- [x] Pin current DB-backed identity/player lookup behavior with focused regressions. (AC: 2, 3, 5)
+- [x] Extract identity/player lookup compatibility helpers into a focused module. (AC: 1, 2, 3, 6)
+- [x] Rewire `server/db/registry.py` as a thinner compatibility facade without contract drift. (AC: 1, 6)
+- [x] Run focused verification, simplification review, and the repo quality gate. (AC: 4, 5, 6)
+- [x] Update sprint tracking and completion notes after merge. (AC: 5)
 
 ## Dev Notes
 
@@ -36,15 +36,30 @@ So that auth/access helper evolution does not require the DB registry facade to 
 ### Debug Log
 
 - 2026-04-02: Drafted as the next Epic 36 slice after Story 36.1.
+- `source .venv/bin/activate && uv run pytest -o addopts='' tests/test_db_registry.py -k 'resolve_authenticated_agent_context_from_db or resolve_human_player_id_from_db'`
+- `source .venv/bin/activate && uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'invalid_api_key or invalid_player_auth or join_match or current_agent_profile or bundled_agent_briefing'`
+- `source .venv/bin/activate && make quality`
+- Spec-compliance review: PASS
+- Code-quality/simplification review: APPROVED
 
 ### Completion Notes
 
-- Pending.
+- Extracted the DB URL convenience wrappers and grouped the public identity/player-lookup compatibility surface in `server/db/identity_registry.py` while preserving the stable `server.db.registry` import contract for callers.
+- Kept `server/db/registry.py` thinner by delegating public DB-backed auth/player lookup helpers through the focused compatibility module while leaving private underscore aliases available from the facade for existing internal callers/tests.
+- Added a focused regression test proving the registry public identity/player-id compatibility exports delegate to the new module, then passed focused DB/API checks and the full repo quality gate.
+- Drafted Story 36.3 as the next follow-on slice to trim `server/db/registry.py` further into a clearly boring compatibility facade.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/36-2-extract-db-backed-identity-and-player-lookup-compatibility-helpers-out-of-server-db-registry-py.md`
+- `_bmad-output/implementation-artifacts/36-3-trim-server-db-registry-py-to-a-thin-compatibility-facade-over-hydration-read-identity-and-write-modules.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `docs/plans/2026-04-02-story-36-2-db-identity-compatibility-extraction.md`
+- `server/db/identity_registry.py`
+- `server/db/registry.py`
+- `tests/test_db_registry.py`
 
 ### Change Log
 
 - 2026-04-02: Drafted Story 36.2 as the next pragmatic follow-on to Story 36.1.
+- 2026-04-02: Completed the DB identity/player-lookup compatibility extraction, passed focused regressions plus the full quality gate, and queued Story 36.3 as the next Epic 36 slice.
