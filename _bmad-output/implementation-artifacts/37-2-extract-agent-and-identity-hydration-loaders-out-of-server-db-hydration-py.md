@@ -1,6 +1,6 @@
 # Story: 37.2 Extract agent and identity hydration loaders out of `server/db/hydration.py`
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -36,15 +36,22 @@ So that `server/db/hydration.py` can evolve without one file continuing to own b
 ### Debug Log
 
 - 2026-04-02: Drafted as the next Epic 37 slice after Story 37.1 completed.
+- 2026-04-02: Implemented the focused identity-loader extraction in `/tmp/iron-37-2` and verified targeted hydration regressions plus repo-managed lint/type/full-test checks before integration.
 
 ### Completion Notes
 
-- Pending.
+- Extracted `load_agent_profiles_by_match`, `load_authenticated_agent_keys_by_match`, `load_joined_agents_by_match`, `load_joined_humans_by_match`, and `load_public_competitor_kinds_by_match` into the new focused module `server/db/identity_hydration.py` while keeping `server/db/hydration.py` as the explicit top-level reload orchestrator.
+- Preserved the stable compatibility surface by re-exporting the moved loader functions from `server.db.hydration`, which keeps `server.db.registry` behavior unchanged for callers.
+- Added a focused regression that locks the new compatibility seam between `server.db.hydration` and `server.db.identity_hydration`, then re-verified the full repo-managed test suite after the refactor landed on `master`.
 
 ### File List
 
+- `server/db/hydration.py`
+- `server/db/identity_hydration.py`
+- `tests/test_db_registry.py`
 - `_bmad-output/implementation-artifacts/37-2-extract-agent-and-identity-hydration-loaders-out-of-server-db-hydration-py.md`
 
 ### Change Log
 
 - 2026-04-02: Drafted Story 37.2 to continue Epic 37 by extracting the clustered persisted identity hydration loaders out of `server/db/hydration.py`.
+- 2026-04-02: Completed Story 37.2 by moving the persisted identity hydration loaders into `server/db/identity_hydration.py`, preserving stable hydration/registry imports, adding a compatibility regression, and re-running focused plus full repo-managed verification.

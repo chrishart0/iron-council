@@ -1827,3 +1827,27 @@ So that `server/db/hydration.py` can evolve without one file continuing to own b
 **When** the implementation is reviewed
 **Then** `server/db/hydration.py` ends up with fewer mixed responsibilities, explicit orchestration stays visible, and no new framework-style abstraction is introduced.
 
+## Epic 38: DB Public Read Surface Decomposition
+
+Reduce concentration in `server/db/public_reads.py` by extracting focused browse/detail/history helper seams while preserving the current public API payloads, canonical player-id mapping, completed-match browse semantics, and stable caller contracts. Treat this as a refactor epic only: prefer plain functions, explicit data flow, and compatibility-safe module seams over introducing service objects or framework layers.
+
+### Story 38.1: Extract public browse and roster assembly helpers out of `server/db/public_reads.py`
+
+As a server maintainer,
+I want the public match browse/detail metadata and roster assembly logic grouped behind focused helpers,
+So that `server/db/public_reads.py` can keep the top-level query orchestration visible without one file continuing to own every public browse/detail payload-building detail.
+
+**Acceptance Criteria:**
+
+**Given** `server/db/public_reads.py` currently assembles `MatchSummary`, `PublicMatchDetailResponse`, and roster rows inline for public browse/detail reads
+**When** Story 38.1 ships
+**Then** those payload-building responsibilities live behind a focused compatibility-safe helper surface while `server.db.public_reads` and `server.db.registry` keep their stable caller behavior.
+
+**And Given** canonical player-id mapping, compact roster ordering, open-slot calculations, and public lobby/detail visibility already work at the registry and route boundary
+**When** the refactor ships
+**Then** those behaviors remain unchanged and covered by focused DB public-read/registry regressions.
+
+**And Given** the epic is still a boring refactor effort
+**When** the implementation is reviewed
+**Then** `server/db/public_reads.py` ends up with fewer mixed responsibilities, explicit top-level read orchestration stays visible, and no new framework-style abstraction is introduced.
+
