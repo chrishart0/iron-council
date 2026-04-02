@@ -1,6 +1,6 @@
 # Story: 36.1 Extract DB-backed lobby lifecycle and tick persistence out of `server/db/registry.py`
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -40,16 +40,33 @@ So that lobby creation/join/start behavior and persisted tick writes can evolve 
 ### Debug Log
 
 - 2026-04-02: Drafted Story 36.1 and implementation plan for DB-backed lobby/tick workflow extraction.
+- `source .venv/bin/activate && uv run pytest -o addopts='' tests/test_db_registry.py -k 'create_match_lobby or join_match or start_match_lobby or persist_advanced_match_tick'`
+- `source .venv/bin/activate && uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'create_match_lobby or start_match_lobby or join_match or openapi_declares_secured_access_route_contracts'`
+- `source .venv/bin/activate && uv run pytest -o addopts='' tests/e2e/test_api_smoke.py -k 'create_match_lobby or join_match or start_match_lobby'`
+- `uv sync --all-extras --dev`
+- `source .venv/bin/activate && make quality`
+- Spec-compliance review: PASS
+- Code-quality/simplification review: APPROVED
 
 ### Completion Notes
 
-- Pending.
+- Extracted DB-backed tick persistence into `server/db/tick_persistence.py` and lobby create/join/start workflows into `server/db/lobby_registry.py` while preserving the stable `server.db.registry` import surface for callers.
+- Reduced `server/db/registry.py` to a thinner compatibility facade over hydration, identity, public-read, lobby-write, and tick-write seams without changing route/service behavior.
+- Added focused DB-registry regression coverage for join idempotency/reload durability and for public match detail visibility after lobby start, then passed focused DB/API/e2e checks plus the full repo quality gate.
+- Drafted Story 36.2 and advanced sprint tracking so Epic 36 can continue with the identity/player-lookup compatibility surface next.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/36-1-extract-db-backed-lobby-lifecycle-and-tick-persistence-out-of-server-db-registry-py.md`
+- `_bmad-output/implementation-artifacts/36-2-extract-db-backed-identity-and-player-lookup-compatibility-helpers-out-of-server-db-registry-py.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `docs/plans/2026-04-02-story-36-1-db-lobby-registry-extraction.md`
+- `server/db/lobby_registry.py`
+- `server/db/registry.py`
+- `server/db/tick_persistence.py`
+- `tests/test_db_registry.py`
 
 ### Change Log
 
 - 2026-04-02: Drafted Story 36.1 as the next pragmatic refactor slice after Epic 35 route decomposition completion.
+- 2026-04-02: Completed the DB-backed lobby/tick workflow extraction, passed focused regressions plus the full quality gate, and queued Story 36.2 as the next Epic 36 slice.
