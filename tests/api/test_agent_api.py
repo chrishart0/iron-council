@@ -4327,14 +4327,16 @@ async def test_orders_only_command_envelope_does_not_broadcast_match_refresh(
     assert broadcasted_match_ids == []
 
 
-def test_server_api_modules_expose_extracted_phase_one_seams() -> None:
+def test_server_api_modules_expose_extracted_route_seams() -> None:
     errors = importlib.import_module("server.api.errors")
     public_routes = importlib.import_module("server.api.public_routes")
+    public_summary_routes = importlib.import_module("server.api.public_summary_routes")
     realtime_routes = importlib.import_module("server.api.realtime_routes")
 
     assert hasattr(errors, "ApiError")
     assert hasattr(errors, "register_error_handlers")
     assert hasattr(public_routes, "build_public_api_router")
+    assert hasattr(public_summary_routes, "build_public_summary_router")
     assert hasattr(realtime_routes, "register_realtime_routes")
 
 
