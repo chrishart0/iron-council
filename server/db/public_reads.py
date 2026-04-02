@@ -9,6 +9,8 @@ from server.db.models import Alliance, Match, Player, TickLog
 from server.db.player_ids import build_persisted_player_mapping
 from server.db.public_read_assembly import (
     build_completed_match_summary_list,
+    build_match_history_response,
+    build_match_replay_tick_response,
     build_public_leaderboard,
     build_public_match_detail,
     build_public_match_summary,
@@ -16,7 +18,6 @@ from server.db.public_read_assembly import (
 )
 from server.models.api import (
     CompletedMatchSummaryListResponse,
-    MatchHistoryEntry,
     MatchHistoryResponse,
     MatchListResponse,
     MatchReplayTickResponse,
@@ -56,13 +57,7 @@ def get_match_history(*, database_url: str, match_id: str) -> MatchHistoryRespon
             .all()
         )
 
-    return MatchHistoryResponse(
-        match_id=str(match.id),
-        status=MatchStatus(match.status),
-        current_tick=int(match.current_tick),
-        tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
-        history=[MatchHistoryEntry(tick=int(tick)) for tick in ticks],
-    )
+    return build_match_history_response(match=match, ticks=ticks)
 
 
 def get_match_replay_tick(
@@ -82,13 +77,7 @@ def get_match_replay_tick(
         if tick_row is None:
             raise TickHistoryNotFoundError((match_id, tick))
 
-    return MatchReplayTickResponse(
-        match_id=str(match.id),
-        tick=int(tick_row.tick),
-        state_snapshot=tick_row.state_snapshot,
-        orders=tick_row.orders,
-        events=tick_row.events,
-    )
+    return build_match_replay_tick_response(match=match, tick_row=tick_row)
 
 
 def get_public_leaderboard(*, database_url: str) -> PublicLeaderboardResponse:

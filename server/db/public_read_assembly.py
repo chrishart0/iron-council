@@ -6,11 +6,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from server.db.models import Alliance, Match, Player
+from server.db.models import Alliance, Match, Player, TickLog
 from server.models.api import (
     CompletedMatchSummary,
     CompletedMatchSummaryListResponse,
     LeaderboardEntry,
+    MatchHistoryEntry,
+    MatchHistoryResponse,
+    MatchReplayTickResponse,
     MatchSummary,
     PublicLeaderboardResponse,
     PublicMatchDetailResponse,
@@ -66,6 +69,30 @@ def build_public_match_detail(
             players=players,
             persisted_player_mapping=persisted_player_mapping,
         ),
+    )
+
+
+def build_match_history_response(*, match: Match, ticks: Sequence[int]) -> MatchHistoryResponse:
+    return MatchHistoryResponse(
+        match_id=str(match.id),
+        status=MatchStatus(match.status),
+        current_tick=int(match.current_tick),
+        tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
+        history=[MatchHistoryEntry(tick=int(tick)) for tick in ticks],
+    )
+
+
+def build_match_replay_tick_response(
+    *,
+    match: Match,
+    tick_row: TickLog,
+) -> MatchReplayTickResponse:
+    return MatchReplayTickResponse(
+        match_id=str(match.id),
+        tick=int(tick_row.tick),
+        state_snapshot=tick_row.state_snapshot,
+        orders=tick_row.orders,
+        events=tick_row.events,
     )
 
 
@@ -258,6 +285,8 @@ def to_utc(value: datetime) -> datetime:
 
 
 __all__ = [
+    "build_match_history_response",
+    "build_match_replay_tick_response",
     "build_completed_match_summary_list",
     "build_public_leaderboard",
     "build_public_match_detail",
