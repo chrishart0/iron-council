@@ -1673,6 +1673,36 @@ def test_get_completed_match_summaries_returns_compact_browse_rows_only_for_comp
     }
 
 
+def test_get_completed_match_summaries_keeps_winner_player_names_when_alliance_row_is_missing(
+    tmp_path: Path,
+) -> None:
+    database_url = (
+        f"sqlite+pysqlite:///{tmp_path / 'registry-completed-matches-missing-alliance.db'}"
+    )
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM alliances WHERE id = :alliance_id"),
+            {"alliance_id": "00000000-0000-0000-0000-000000000801"},
+        )
+
+    summaries = get_completed_match_summaries(database_url=database_url)
+
+    assert summaries.model_dump(mode="json")["matches"][1] == {
+        "match_id": "00000000-0000-0000-0000-000000000201",
+        "map": "britain",
+        "final_tick": 155,
+        "tick_interval_seconds": 30,
+        "player_count": 3,
+        "completed_at": "2026-03-29T08:30:00Z",
+        "winning_alliance_name": None,
+        "winning_player_display_names": ["Arthur", "Morgana"],
+    }
+
+
 def test_get_public_match_browse_summaries_returns_compact_rows_for_only_non_completed_matches(
     tmp_path: Path,
 ) -> None:

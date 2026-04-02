@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
-from typing import Literal
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -10,16 +8,14 @@ from sqlalchemy.orm import Session
 from server.db.models import Alliance, Match, Player, TickLog
 from server.db.player_ids import build_persisted_player_mapping
 from server.db.public_read_assembly import (
+    build_completed_match_summary_list,
+    build_public_leaderboard,
     build_public_match_detail,
     build_public_match_summary,
-    leaderboard_competitor_identity,
     public_match_browse_sort_key,
-    to_utc,
 )
 from server.models.api import (
-    CompletedMatchSummary,
     CompletedMatchSummaryListResponse,
-    LeaderboardEntry,
     MatchHistoryEntry,
     MatchHistoryResponse,
     MatchListResponse,
@@ -41,19 +37,6 @@ class TickHistoryNotFoundError(KeyError):
 
 class PublicMatchDetailNotFoundError(KeyError):
     pass
-
-
-@dataclass
-class LeaderboardAggregate:
-    competitor_key: str
-    display_name: str
-    competitor_kind: Literal["human", "agent"]
-    elo: int
-    provisional: bool
-    matches_played: int = 0
-    wins: int = 0
-    losses: int = 0
-    draws: int = 0
 
 
 def get_match_history(*, database_url: str, match_id: str) -> MatchHistoryResponse:
@@ -126,66 +109,9 @@ def get_public_leaderboard(*, database_url: str) -> PublicLeaderboardResponse:
             .order_by(Player.match_id, Player.id)
         ).all()
 
-    players_by_match: dict[str, list[Player]] = defaultdict(list)
-    for player in players:
-        players_by_match[str(player.match_id)].append(player)
-
-    ranked_matches = sorted(
-        completed_matches,
-        key=lambda match: (-to_utc(match.updated_at).timestamp(), str(match.id)),
-    )
-    aggregates: dict[str, LeaderboardAggregate] = {}
-    for match in ranked_matches:
-        winner_alliance_id = (
-            str(match.winner_alliance) if match.winner_alliance is not None else None
-        )
-        for player in players_by_match.get(str(match.id), []):
-            competitor_kind: Literal["human", "agent"] = "agent" if player.is_agent else "human"
-            competitor_identity = leaderboard_competitor_identity(player)
-            aggregate = aggregates.get(competitor_identity)
-            if aggregate is None:
-                aggregate = LeaderboardAggregate(
-                    competitor_key=competitor_identity,
-                    display_name=player.display_name,
-                    competitor_kind=competitor_kind,
-                    elo=int(player.elo_rating),
-                    provisional=True,
-                )
-                aggregates[competitor_identity] = aggregate
-
-            aggregate.matches_played += 1
-            player_alliance_id = str(player.alliance_id) if player.alliance_id is not None else None
-            if winner_alliance_id is None:
-                aggregate.draws += 1
-            elif player_alliance_id == winner_alliance_id:
-                aggregate.wins += 1
-            else:
-                aggregate.losses += 1
-
-    ordered_aggregates = sorted(
-        aggregates.values(),
-        key=lambda aggregate: (
-            -aggregate.elo,
-            aggregate.display_name.casefold(),
-            aggregate.competitor_kind,
-            aggregate.competitor_key,
-        ),
-    )
-    return PublicLeaderboardResponse(
-        leaderboard=[
-            LeaderboardEntry(
-                rank=index,
-                display_name=aggregate.display_name,
-                competitor_kind=aggregate.competitor_kind,
-                elo=aggregate.elo,
-                provisional=aggregate.provisional,
-                matches_played=aggregate.matches_played,
-                wins=aggregate.wins,
-                losses=aggregate.losses,
-                draws=aggregate.draws,
-            )
-            for index, aggregate in enumerate(ordered_aggregates, start=1)
-        ]
+    return build_public_leaderboard(
+        completed_matches=completed_matches,
+        players=players,
     )
 
 
@@ -273,59 +199,11 @@ def get_completed_match_summaries(*, database_url: str) -> CompletedMatchSummary
             .order_by(Alliance.match_id, Alliance.id)
         ).all()
 
-    players_by_match: dict[str, list[Player]] = defaultdict(list)
-    players_by_match_and_alliance: dict[tuple[str, str], list[Player]] = defaultdict(list)
-    for player in players:
-        match_id = str(player.match_id)
-        players_by_match[match_id].append(player)
-        if player.alliance_id is not None:
-            players_by_match_and_alliance[(match_id, str(player.alliance_id))].append(player)
-
-    alliances_by_match_and_id = {
-        (str(alliance.match_id), str(alliance.id)): alliance for alliance in alliances
-    }
-    summaries = [
-        CompletedMatchSummary(
-            match_id=str(match.id),
-            map=str(match.config.get("map", "")),
-            final_tick=int(match.current_tick),
-            tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
-            player_count=len(players_by_match.get(str(match.id), [])),
-            completed_at=to_utc(match.updated_at),
-            winning_alliance_name=winning_alliance_name(
-                match=match,
-                alliances_by_match_and_id=alliances_by_match_and_id,
-            ),
-            winning_player_display_names=winning_player_display_names(
-                match=match,
-                players_by_match_and_alliance=players_by_match_and_alliance,
-            ),
-        )
-        for match in completed_matches
-    ]
-    return CompletedMatchSummaryListResponse(matches=summaries)
-
-
-def winning_alliance_name(
-    *,
-    match: Match,
-    alliances_by_match_and_id: dict[tuple[str, str], Alliance],
-) -> str | None:
-    if match.winner_alliance is None:
-        return None
-    alliance = alliances_by_match_and_id.get((str(match.id), str(match.winner_alliance)))
-    return alliance.name if alliance is not None else None
-
-
-def winning_player_display_names(
-    *,
-    match: Match,
-    players_by_match_and_alliance: dict[tuple[str, str], list[Player]],
-) -> list[str]:
-    if match.winner_alliance is None:
-        return []
-    winners = players_by_match_and_alliance.get((str(match.id), str(match.winner_alliance)), [])
-    return sorted(player.display_name for player in winners)
+    return build_completed_match_summary_list(
+        completed_matches=completed_matches,
+        players=players,
+        alliances=alliances,
+    )
 
 
 __all__ = [
