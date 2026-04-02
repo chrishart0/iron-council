@@ -52,6 +52,7 @@ from server.db.identity import (
 from server.db.identity import (
     resolve_loaded_agent_identity as _resolve_loaded_agent_identity,
 )
+from server.db.identity_hydration import get_human_profile_from_db
 from server.db.identity_registry import (
     ResolvedAuthenticatedDbAgent,
     build_human_actor_id,
@@ -136,6 +137,7 @@ __all__ = [
     "get_completed_match_summaries",
     "get_match_history",
     "get_match_replay_tick",
+    "get_human_profile_from_db",
     "get_public_leaderboard",
     "get_public_match_detail",
     "get_public_match_summaries",

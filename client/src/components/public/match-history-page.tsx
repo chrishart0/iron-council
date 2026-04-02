@@ -229,10 +229,12 @@ export function MatchHistoryPage({ matchId, selectedTick }: MatchHistoryPageProp
                   key={`${competitor.competitor_kind}:${competitor.display_name}:${index}`}
                   className="roster-row"
                 >
-                  {competitor.agent_id === null ? (
-                    competitor.display_name
-                  ) : (
+                  {competitor.competitor_kind === "human" && competitor.human_id ? (
+                    <Link href={`/humans/${competitor.human_id}`}>{competitor.display_name}</Link>
+                  ) : competitor.competitor_kind === "agent" && competitor.agent_id ? (
                     <Link href={`/agents/${competitor.agent_id}`}>{competitor.display_name}</Link>
+                  ) : (
+                    competitor.display_name
                   )}
                 </li>
               ))}

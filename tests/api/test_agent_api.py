@@ -591,16 +591,19 @@ async def test_match_history_routes_return_persisted_entries_and_replay_snapshot
                 "display_name": "Arthur",
                 "competitor_kind": "human",
                 "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
             },
             {
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-3",
+                "human_id": None,
             },
             {
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-2",
+                "human_id": None,
             },
         ],
         "history": [{"tick": 142}],
@@ -715,16 +718,19 @@ async def test_match_history_routes_read_persisted_tick_log_even_when_registry_s
             "display_name": "Arthur",
             "competitor_kind": "human",
             "agent_id": None,
+            "human_id": "human:00000000-0000-0000-0000-000000000301",
         },
         {
             "display_name": "Gawain",
             "competitor_kind": "agent",
             "agent_id": "agent-player-3",
+            "human_id": None,
         },
         {
             "display_name": "Morgana",
             "competitor_kind": "agent",
             "agent_id": "agent-player-2",
+            "human_id": None,
         },
     ]
     assert history_response.json()["history"] == [{"tick": 142}]
@@ -794,11 +800,13 @@ async def test_completed_terminal_tick_is_excluded_from_public_matches_and_serve
                 "display_name": "Arthur",
                 "competitor_kind": "human",
                 "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
             },
             {
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-2",
+                "human_id": None,
             },
         ],
     }
@@ -814,16 +822,19 @@ async def test_completed_terminal_tick_is_excluded_from_public_matches_and_serve
                 "display_name": "Arthur",
                 "competitor_kind": "human",
                 "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
             },
             {
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-3",
+                "human_id": None,
             },
             {
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-2",
+                "human_id": None,
             },
         ],
         "history": [{"tick": 142}, {"tick": 143}],
@@ -869,6 +880,7 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "display_name": "Arthur",
                 "competitor_kind": "human",
                 "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
                 "elo": 1234,
                 "provisional": False,
                 "matches_played": 1,
@@ -881,6 +893,7 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-2",
+                "human_id": None,
                 "elo": 1211,
                 "provisional": False,
                 "matches_played": 2,
@@ -893,6 +906,7 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "display_name": "Bedivere",
                 "competitor_kind": "human",
                 "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000304",
                 "elo": 1190,
                 "provisional": False,
                 "matches_played": 1,
@@ -905,6 +919,7 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-3",
+                "human_id": None,
                 "elo": 1163,
                 "provisional": False,
                 "matches_played": 1,
@@ -942,11 +957,13 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                         "display_name": "Arthur",
                         "competitor_kind": "human",
                         "agent_id": None,
+                        "human_id": "human:00000000-0000-0000-0000-000000000301",
                     },
                     {
                         "display_name": "Morgana",
                         "competitor_kind": "agent",
                         "agent_id": "agent-player-2",
+                        "human_id": None,
                     },
                 ],
             },
@@ -977,12 +994,110 @@ async def test_public_leaderboard_route_exposes_honest_agent_ids_by_competitor_k
     rows_by_name = {row["display_name"]: row for row in leaderboard_response.json()["leaderboard"]}
     assert rows_by_name["Arthur"]["competitor_kind"] == "human"
     assert rows_by_name["Arthur"]["agent_id"] is None
+    assert rows_by_name["Arthur"]["human_id"] == "human:00000000-0000-0000-0000-000000000301"
     assert rows_by_name["Bedivere"]["competitor_kind"] == "human"
     assert rows_by_name["Bedivere"]["agent_id"] is None
+    assert rows_by_name["Bedivere"]["human_id"] == "human:00000000-0000-0000-0000-000000000304"
     assert rows_by_name["Morgana"]["competitor_kind"] == "agent"
     assert rows_by_name["Morgana"]["agent_id"] == "agent-player-2"
+    assert rows_by_name["Morgana"]["human_id"] is None
     assert rows_by_name["Gawain"]["competitor_kind"] == "agent"
     assert rows_by_name["Gawain"]["agent_id"] == "agent-player-3"
+    assert rows_by_name["Gawain"]["human_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_db_backed_human_profile_route_returns_stable_public_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-human-profile.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/api/v1/humans/human:00000000-0000-0000-0000-000000000301/profile"
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        "human_id": "human:00000000-0000-0000-0000-000000000301",
+        "display_name": "Arthur",
+        "rating": {"elo": 1234, "provisional": False},
+        "history": {"matches_played": 1, "wins": 1, "losses": 0, "draws": 0},
+    }
+
+
+@pytest.mark.asyncio
+async def test_human_profile_route_returns_structured_unavailable_error_without_db_backing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", raising=False)
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/api/v1/humans/human:00000000-0000-0000-0000-000000000301/profile"
+        )
+
+    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert response.json() == {
+        "error": {
+            "code": "human_profile_unavailable",
+            "message": "Public human profiles are only available in DB-backed mode.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_human_profile_route_returns_deterministic_not_found_for_unknown_or_invalid_ids(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-human-profile-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        unknown_response = await client.get(
+            "/api/v1/humans/human:00000000-0000-0000-0000-000000009999/profile"
+        )
+        invalid_response = await client.get("/api/v1/humans/Arthur/profile")
+
+    assert unknown_response.status_code == HTTPStatus.NOT_FOUND
+    assert unknown_response.json() == {
+        "error": {
+            "code": "human_not_found",
+            "message": "Human 'human:00000000-0000-0000-0000-000000009999' was not found.",
+        }
+    }
+    assert invalid_response.status_code == HTTPStatus.NOT_FOUND
+    assert invalid_response.json() == {
+        "error": {
+            "code": "human_not_found",
+            "message": "Human 'Arthur' was not found.",
+        }
+    }
 
 
 @pytest.mark.asyncio
@@ -4594,6 +4709,25 @@ async def test_openapi_declares_public_read_contracts(app_client: AsyncClient) -
     assert leaderboard_entry_schema["properties"]["agent_id"] == {
         "anyOf": [{"type": "string"}, {"type": "null"}],
         "title": "Agent Id",
+    }
+    assert leaderboard_entry_schema["properties"]["human_id"] == {
+        "anyOf": [{"type": "string"}, {"type": "null"}],
+        "title": "Human Id",
+    }
+    assert paths["/api/v1/humans/{human_id}/profile"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/HumanProfileResponse"}
+    assert paths["/api/v1/humans/{human_id}/profile"]["get"]["responses"]["404"] == {
+        "description": "Not Found",
+        "content": {
+            "application/json": {"schema": {"$ref": "#/components/schemas/ApiErrorResponse"}}
+        },
+    }
+    assert paths["/api/v1/humans/{human_id}/profile"]["get"]["responses"]["503"] == {
+        "description": "Service Unavailable",
+        "content": {
+            "application/json": {"schema": {"$ref": "#/components/schemas/ApiErrorResponse"}}
+        },
     }
     assert paths["/api/v1/matches/completed"]["get"]["responses"]["200"]["content"][
         "application/json"

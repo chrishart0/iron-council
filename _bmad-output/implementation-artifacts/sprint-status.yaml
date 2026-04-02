@@ -1,9 +1,9 @@
-generated: 2026-04-02 18:08 UTC
+generated: 2026-04-02 20:50 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 41-3-add-read-only-public-player-human-profile-scaffolding-once-a-stable-public-identity-contract-exists
+next_story: null
 
 development_status:
   public-readiness-epic: done
@@ -205,7 +205,8 @@ development_status:
   40-3-consume-finalized-ratings-and-non-provisional-outcomes-in-leaderboard-profile-reads: done
   40-4-add-completion-to-leaderboard-end-to-end-regression-coverage: done
 
-  epic-41: in-progress
+  epic-41: done
   41-1-add-public-agent-profile-page-in-the-web-client: done
   41-2-link-completed-match-and-replay-browse-surfaces-to-durable-public-competitor-identities: done
-  41-3-add-read-only-public-player-human-profile-scaffolding-once-a-stable-public-identity-contract-exists: backlog
+  41-3-add-read-only-public-player-human-profile-scaffolding-once-a-stable-public-identity-contract-exists: done
+  epic-41-retrospective: optional

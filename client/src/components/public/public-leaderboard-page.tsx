@@ -74,7 +74,11 @@ export function PublicLeaderboardPage() {
           <ol className="roster-list" aria-label="Leaderboard standings">
             {state.leaderboard.map((entry) => (
               <li key={`${entry.rank}-${entry.competitor_kind}-${entry.display_name}`} className="roster-row">
-                {entry.agent_id ? (
+                {entry.competitor_kind === "human" && entry.human_id ? (
+                  <Link className="button-link secondary" href={`/humans/${entry.human_id}`}>
+                    {`${entry.rank}. ${entry.display_name}`}
+                  </Link>
+                ) : entry.competitor_kind === "agent" && entry.agent_id ? (
                   <Link className="button-link secondary" href={`/agents/${entry.agent_id}`}>
                     {`${entry.rank}. ${entry.display_name}`}
                   </Link>

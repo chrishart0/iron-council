@@ -11,11 +11,16 @@ from server.agent_registry import (
     AuthenticatedAgentKeyRecord,
     build_seeded_profiles_by_key_hash,
 )
-from server.db.identity import resolve_loaded_agent_identity
+from server.db.identity import parse_human_actor_id, resolve_loaded_agent_identity
 from server.db.models import ApiKey, Match, Player, PlayerMatchSettlement
-from server.db.player_ids import build_persisted_player_mapping
+from server.db.player_ids import build_human_actor_id, build_persisted_player_mapping
 from server.db.rating_settlement import SettlementAggregate, load_settlement_aggregates_by_identity
-from server.models.api import AgentProfileHistory, AgentProfileRating, AgentProfileResponse
+from server.models.api import (
+    AgentProfileHistory,
+    AgentProfileRating,
+    AgentProfileResponse,
+    HumanProfileResponse,
+)
 from server.models.state import MatchState
 
 
@@ -91,6 +96,56 @@ def get_agent_profile_from_db(*, database_url: str, agent_id: str) -> AgentProfi
         settlement_rows=settlement_rows,
     )
     return profiles_by_agent_id.get(agent_id)
+
+
+def get_human_profile_from_db(*, database_url: str, human_id: str) -> HumanProfileResponse | None:
+    user_id = parse_human_actor_id(human_id)
+    if user_id is None:
+        return None
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        settlement_rows = session.scalars(
+            select(PlayerMatchSettlement)
+            .where(
+                PlayerMatchSettlement.is_agent.is_(False),
+                PlayerMatchSettlement.user_id == user_id,
+            )
+            .order_by(PlayerMatchSettlement.settled_at, PlayerMatchSettlement.player_id)
+        ).all()
+        player_rows = session.scalars(
+            select(Player)
+            .where(Player.is_agent.is_(False), Player.user_id == user_id)
+            .order_by(Player.match_id, Player.id)
+        ).all()
+
+    settlement_aggregate = load_settlement_aggregates_by_identity(settlement_rows).get(human_id)
+    if settlement_aggregate is not None:
+        return HumanProfileResponse(
+            human_id=human_id,
+            display_name=settlement_aggregate.display_name,
+            rating=AgentProfileRating(
+                elo=settlement_aggregate.elo,
+                provisional=settlement_aggregate.provisional,
+            ),
+            history=AgentProfileHistory(
+                matches_played=settlement_aggregate.matches_played,
+                wins=settlement_aggregate.wins,
+                losses=settlement_aggregate.losses,
+                draws=settlement_aggregate.draws,
+            ),
+        )
+
+    player = next(iter(player_rows), None)
+    if player is None:
+        return None
+
+    return HumanProfileResponse(
+        human_id=build_human_actor_id(str(player.user_id)),
+        display_name=player.display_name,
+        rating=AgentProfileRating(elo=int(player.elo_rating), provisional=True),
+        history=AgentProfileHistory(matches_played=0, wins=0, losses=0, draws=0),
+    )
 
 
 def load_authenticated_agent_keys_by_match(
@@ -312,6 +367,7 @@ def _player_competitor_identity(player: Player) -> str:
 
 __all__ = [
     "get_agent_profile_from_db",
+    "get_human_profile_from_db",
     "load_agent_profiles_by_match",
     "load_authenticated_agent_keys_by_match",
     "load_joined_agents_by_match",

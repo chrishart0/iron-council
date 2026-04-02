@@ -36,6 +36,7 @@ from server.db.registry import (
     TickHistoryNotFoundError,
     create_match_lobby,
     get_completed_match_summaries,
+    get_human_profile_from_db,
     get_match_history,
     get_match_replay_tick,
     get_public_leaderboard,
@@ -2055,6 +2056,7 @@ def test_persist_advanced_match_tick_keeps_solo_terminal_winner_coherent_across_
                 "display_name": "Arthur",
                 "competitor_kind": "human",
                 "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
                 "elo": 1234,
                 "provisional": False,
                 "matches_played": 1,
@@ -2067,6 +2069,7 @@ def test_persist_advanced_match_tick_keeps_solo_terminal_winner_coherent_across_
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-2",
+                "human_id": None,
                 "elo": 1178,
                 "provisional": False,
                 "matches_played": 1,
@@ -2079,6 +2082,7 @@ def test_persist_advanced_match_tick_keeps_solo_terminal_winner_coherent_across_
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-3",
+                "human_id": None,
                 "elo": 1163,
                 "provisional": False,
                 "matches_played": 1,
@@ -2104,6 +2108,7 @@ def test_persist_advanced_match_tick_keeps_solo_terminal_winner_coherent_across_
                         "display_name": "Arthur",
                         "competitor_kind": "human",
                         "agent_id": None,
+                        "human_id": "human:00000000-0000-0000-0000-000000000301",
                     }
                 ],
             }
@@ -2119,16 +2124,19 @@ def test_persist_advanced_match_tick_keeps_solo_terminal_winner_coherent_across_
                 "display_name": "Arthur",
                 "competitor_kind": "human",
                 "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
             },
             {
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-3",
+                "human_id": None,
             },
             {
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-2",
+                "human_id": None,
             },
         ],
         "history": [{"tick": 142}, {"tick": 143}],
@@ -2322,16 +2330,19 @@ def test_get_match_history_returns_deterministic_tick_entries_with_match_metadat
                 "display_name": "Arthur",
                 "competitor_kind": "human",
                 "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
             },
             {
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-3",
+                "human_id": None,
             },
             {
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-2",
+                "human_id": None,
             },
         ],
         "history": [
@@ -2405,6 +2416,7 @@ def test_get_public_leaderboard_returns_ranked_competitors_with_stable_tiebreake
                 "display_name": "Arthur",
                 "competitor_kind": "human",
                 "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
                 "elo": 1234,
                 "provisional": False,
                 "matches_played": 1,
@@ -2417,6 +2429,7 @@ def test_get_public_leaderboard_returns_ranked_competitors_with_stable_tiebreake
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-2",
+                "human_id": None,
                 "elo": 1211,
                 "provisional": False,
                 "matches_played": 2,
@@ -2429,6 +2442,7 @@ def test_get_public_leaderboard_returns_ranked_competitors_with_stable_tiebreake
                 "display_name": "Bedivere",
                 "competitor_kind": "human",
                 "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000304",
                 "elo": 1190,
                 "provisional": False,
                 "matches_played": 1,
@@ -2441,6 +2455,7 @@ def test_get_public_leaderboard_returns_ranked_competitors_with_stable_tiebreake
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-3",
+                "human_id": None,
                 "elo": 1163,
                 "provisional": False,
                 "matches_played": 1,
@@ -2529,11 +2544,13 @@ def test_get_completed_match_summaries_returns_compact_browse_rows_only_for_comp
                         "display_name": "Arthur",
                         "competitor_kind": "human",
                         "agent_id": None,
+                        "human_id": "human:00000000-0000-0000-0000-000000000301",
                     },
                     {
                         "display_name": "Morgana",
                         "competitor_kind": "agent",
                         "agent_id": "agent-player-2",
+                        "human_id": None,
                     },
                 ],
             },
@@ -2573,14 +2590,52 @@ def test_get_completed_match_summaries_keeps_winner_player_names_when_alliance_r
                 "display_name": "Arthur",
                 "competitor_kind": "human",
                 "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
             },
             {
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
                 "agent_id": "agent-player-2",
+                "human_id": None,
             },
         ],
     }
+
+
+def test_get_human_profile_from_db_returns_settled_public_profile_without_agent_only_fields(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-human-profile.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+
+    profile = get_human_profile_from_db(
+        database_url=database_url,
+        human_id="human:00000000-0000-0000-0000-000000000301",
+    )
+
+    assert profile is not None
+    assert profile.model_dump(mode="json") == {
+        "human_id": "human:00000000-0000-0000-0000-000000000301",
+        "display_name": "Arthur",
+        "rating": {"elo": 1234, "provisional": False},
+        "history": {"matches_played": 1, "wins": 1, "losses": 0, "draws": 0},
+    }
+
+
+def test_get_human_profile_from_db_returns_none_for_unknown_or_invalid_ids(tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-human-profile-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+
+    assert (
+        get_human_profile_from_db(
+            database_url=database_url,
+            human_id="human:00000000-0000-0000-0000-000000009999",
+        )
+        is None
+    )
+    assert get_human_profile_from_db(database_url=database_url, human_id="Arthur") is None
 
 
 def test_get_public_match_browse_summaries_returns_compact_rows_for_only_non_completed_matches(

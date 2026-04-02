@@ -62,6 +62,7 @@ def test_running_app_rejects_non_agent_public_profile_and_non_agent_api_key_join
 ) -> None:
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
         profile_response = client.get("/api/v1/agents/agent-player-1/profile")
+        human_profile_response = client.get("/api/v1/humans/agent-player-1/profile")
         join_response = client.post(
             f"/api/v1/matches/{running_seeded_app.secondary_match_id}/join",
             json={"match_id": running_seeded_app.secondary_match_id},
@@ -73,6 +74,13 @@ def test_running_app_rejects_non_agent_public_profile_and_non_agent_api_key_join
         "error": {
             "code": "agent_not_found",
             "message": "Agent 'agent-player-1' was not found.",
+        }
+    }
+    assert human_profile_response.status_code == HTTPStatus.NOT_FOUND
+    assert human_profile_response.json() == {
+        "error": {
+            "code": "human_not_found",
+            "message": "Human 'agent-player-1' was not found.",
         }
     }
     assert join_response.status_code == HTTPStatus.UNAUTHORIZED

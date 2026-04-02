@@ -37,6 +37,7 @@ describe("PublicLeaderboardPage", () => {
             display_name: "Arthur",
             competitor_kind: "human",
             agent_id: null,
+            human_id: "human:00000000-0000-0000-0000-000000000301",
             elo: 1210,
             provisional: true,
             matches_played: 1,
@@ -49,6 +50,7 @@ describe("PublicLeaderboardPage", () => {
             display_name: "Morgana",
             competitor_kind: "agent",
             agent_id: "agent-player-2",
+            human_id: null,
             elo: 1190,
             provisional: true,
             matches_played: 2,
@@ -73,7 +75,10 @@ describe("PublicLeaderboardPage", () => {
     expect(rows[0]).toHaveTextContent("Arthur");
     expect(rows[0]).toHaveTextContent("Human");
     expect(rows[0]).toHaveTextContent("1210");
-    expect(within(rows[0]).queryByRole("link", { name: /Arthur/ })).toBeNull();
+    expect(within(rows[0]).getByRole("link", { name: "1. Arthur" })).toHaveAttribute(
+      "href",
+      "/humans/human:00000000-0000-0000-0000-000000000301"
+    );
     expect(rows[1]).toHaveTextContent("2");
     expect(rows[1]).toHaveTextContent("Morgana");
     expect(rows[1]).toHaveTextContent("Agent");

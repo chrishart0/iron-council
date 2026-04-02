@@ -25,12 +25,14 @@ describe("MatchHistoryPage", () => {
             {
               display_name: "Arthur",
               competitor_kind: "human",
-              agent_id: null
+              agent_id: null,
+              human_id: "human:00000000-0000-0000-0000-000000000301"
             },
             {
               display_name: "Morgana",
               competitor_kind: "agent",
-              agent_id: "agent-player-2"
+              agent_id: "agent-player-2",
+              human_id: null
             }
           ],
           history: [{ tick: 140 }, { tick: 155 }]
@@ -99,12 +101,14 @@ describe("MatchHistoryPage", () => {
     expect(screen.getByText("Tick interval seconds: 30")).toBeVisible();
     expect(screen.getByText("Recorded ticks: 2")).toBeVisible();
     const competitorRoster = screen.getByRole("list", { name: "Competitor roster" });
-    expect(within(competitorRoster).getByText("Arthur")).toBeVisible();
+    expect(within(competitorRoster).getByRole("link", { name: "Arthur" })).toHaveAttribute(
+      "href",
+      "/humans/human:00000000-0000-0000-0000-000000000301"
+    );
     expect(within(competitorRoster).getByRole("link", { name: "Morgana" })).toHaveAttribute(
       "href",
       "/agents/agent-player-2"
     );
-    expect(within(competitorRoster).queryByRole("link", { name: "Arthur" })).not.toBeInTheDocument();
 
     const tickLinks = within(screen.getByRole("list", { name: "Persisted ticks" })).getAllByRole("link");
     expect(tickLinks).toHaveLength(2);
@@ -130,12 +134,14 @@ describe("MatchHistoryPage", () => {
             {
               display_name: "Arthur",
               competitor_kind: "human",
-              agent_id: null
+              agent_id: null,
+              human_id: "human:00000000-0000-0000-0000-000000000301"
             },
             {
               display_name: "Morgana",
               competitor_kind: "agent",
-              agent_id: "agent-player-2"
+              agent_id: "agent-player-2",
+              human_id: null
             }
           ],
           history: [{ tick: 140 }, { tick: 155 }]
@@ -220,12 +226,14 @@ describe("MatchHistoryPage", () => {
             {
               display_name: "Arthur",
               competitor_kind: "human",
-              agent_id: null
+              agent_id: null,
+              human_id: "human:00000000-0000-0000-0000-000000000301"
             },
             {
               display_name: "Morgana",
               competitor_kind: "agent",
-              agent_id: "agent-player-2"
+              agent_id: "agent-player-2",
+              human_id: null
             }
           ],
           history: [{ tick: 140 }, { tick: 155 }]
@@ -356,7 +364,8 @@ describe("MatchHistoryPage", () => {
             {
               display_name: "Arthur",
               competitor_kind: "human",
-              agent_id: null
+              agent_id: null,
+              human_id: "human:00000000-0000-0000-0000-000000000301"
             }
           ],
           history: [{ tick: 140 }, { tick: 155 }]

@@ -32,6 +32,7 @@ class LeaderboardAggregate:
     display_name: str
     competitor_kind: Literal["human", "agent"]
     agent_id: str | None
+    human_id: str | None
     elo: int
     provisional: bool
     matches_played: int = 0
@@ -140,6 +141,7 @@ def build_public_competitor_summaries(
                 api_keys_by_id=api_keys_by_id,
                 seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
             ),
+            human_id=public_competitor_human_id(player=player),
         )
         for player in sorted(players, key=public_match_roster_sort_key)
     ]
@@ -160,6 +162,12 @@ def public_competitor_agent_id(
         api_key=api_key,
         seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
     ).agent_id
+
+
+def public_competitor_human_id(*, player: Player) -> str | None:
+    if player.is_agent:
+        return None
+    return f"human:{player.user_id}"
 
 
 def public_match_browse_sort_key(match: Match) -> tuple[int, float, int, str]:
@@ -236,6 +244,7 @@ def build_public_leaderboard(
                         api_keys_by_id=api_keys_by_id,
                         seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
                     ),
+                    human_id=leaderboard_human_id(player=player),
                     elo=int(settlement.elo_after)
                     if settlement is not None
                     else int(player.elo_rating),
@@ -281,6 +290,7 @@ def build_public_leaderboard(
                 display_name=aggregate.display_name,
                 competitor_kind=aggregate.competitor_kind,
                 agent_id=aggregate.agent_id,
+                human_id=aggregate.human_id,
                 elo=aggregate.elo,
                 provisional=aggregate.provisional,
                 matches_played=aggregate.matches_played,
@@ -308,6 +318,12 @@ def leaderboard_agent_id(
         api_key=api_key,
         seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
     ).agent_id
+
+
+def leaderboard_human_id(*, player: Player) -> str | None:
+    if player.is_agent:
+        return None
+    return f"human:{player.user_id}"
 
 
 def build_completed_match_summary_list(

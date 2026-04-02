@@ -36,6 +36,7 @@ import type {
   PublicMatchHistoryResponse,
   PublicLeaderboardResponse,
   PublicAgentProfileResponse,
+  PublicHumanProfileResponse,
   PublicMatchDetailResponse,
   PublicMatchRosterRow,
   ReplayFieldRecord,
@@ -62,6 +63,7 @@ const PUBLIC_MATCHES_ERROR_MESSAGE = "Unable to load public matches right now.";
 const PUBLIC_MATCH_DETAIL_ERROR_MESSAGE = "Unable to load this public match right now.";
 const PUBLIC_LEADERBOARD_ERROR_MESSAGE = "Unable to load the public leaderboard right now.";
 const PUBLIC_AGENT_PROFILE_ERROR_MESSAGE = "Unable to load this agent profile right now.";
+const PUBLIC_HUMAN_PROFILE_ERROR_MESSAGE = "Unable to load this human profile right now.";
 const COMPLETED_MATCHES_ERROR_MESSAGE = "Unable to load completed matches right now.";
 const PUBLIC_MATCH_DETAIL_NOT_FOUND_MESSAGE =
   "This match is unavailable. It may not exist or may already be completed.";
@@ -70,6 +72,8 @@ const PUBLIC_MATCH_HISTORY_NOT_FOUND_MESSAGE =
   "This completed match history is unavailable. It may not exist.";
 const PUBLIC_AGENT_PROFILE_NOT_FOUND_MESSAGE =
   "This agent profile is unavailable. It may not exist.";
+const PUBLIC_HUMAN_PROFILE_NOT_FOUND_MESSAGE =
+  "This human profile is unavailable. It may not exist.";
 const MATCH_REPLAY_TICK_ERROR_MESSAGE = "Unable to load this replay tick right now.";
 const MATCH_REPLAY_TICK_NOT_FOUND_MESSAGE =
   "This replay tick is unavailable for the selected match.";
@@ -117,6 +121,16 @@ export class PublicAgentProfileError extends Error {
   ) {
     super(message);
     this.name = "PublicAgentProfileError";
+  }
+}
+
+export class PublicHumanProfileError extends Error {
+  constructor(
+    message = PUBLIC_HUMAN_PROFILE_ERROR_MESSAGE,
+    readonly kind: "not_found" | "unavailable" = "unavailable"
+  ) {
+    super(message);
+    this.name = "PublicHumanProfileError";
   }
 }
 
@@ -313,6 +327,40 @@ export async function fetchPublicAgentProfile(
 
   if (!isPublicAgentProfileResponse(payload)) {
     throw new PublicAgentProfileError(PUBLIC_AGENT_PROFILE_ERROR_MESSAGE, "unavailable");
+  }
+
+  return payload;
+}
+
+export async function fetchPublicHumanProfile(
+  humanId: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<PublicHumanProfileResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/humans/${encodeURIComponent(humanId)}/profile`,
+    {
+      cache: "no-store",
+      headers: {
+        accept: "application/json"
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+
+    if (response.status === 404 && hasApiErrorCode(payload, "human_not_found")) {
+      throw new PublicHumanProfileError(PUBLIC_HUMAN_PROFILE_NOT_FOUND_MESSAGE, "not_found");
+    }
+
+    throw new PublicHumanProfileError(PUBLIC_HUMAN_PROFILE_ERROR_MESSAGE, "unavailable");
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!isPublicHumanProfileResponse(payload)) {
+    throw new PublicHumanProfileError(PUBLIC_HUMAN_PROFILE_ERROR_MESSAGE, "unavailable");
   }
 
   return payload;
@@ -1012,6 +1060,16 @@ function isPublicAgentProfileResponse(payload: unknown): payload is PublicAgentP
   );
 }
 
+function isPublicHumanProfileResponse(payload: unknown): payload is PublicHumanProfileResponse {
+  return (
+    isRecord(payload) &&
+    typeof payload.human_id === "string" &&
+    typeof payload.display_name === "string" &&
+    isAgentProfileRating(payload.rating) &&
+    isAgentProfileHistory(payload.history)
+  );
+}
+
 function isCompletedMatchSummaryListResponse(
   payload: unknown
 ): payload is CompletedMatchSummaryListResponse {
@@ -1090,10 +1148,10 @@ function isLeaderboardEntry(payload: unknown): payload is LeaderboardEntry {
   }
 
   if (payload.competitor_kind === "human") {
-    return payload.agent_id === null;
+    return payload.agent_id === null && typeof payload.human_id === "string";
   }
 
-  return typeof payload.agent_id === "string" || payload.agent_id === null;
+  return typeof payload.agent_id === "string" && payload.human_id === null;
 }
 
 function isAgentProfileRating(payload: unknown): payload is AgentProfileRating {
@@ -1135,6 +1193,7 @@ function isPublicCompetitorSummary(payload: unknown): payload is {
   display_name: string;
   competitor_kind: "human" | "agent";
   agent_id: string | null;
+  human_id: string | null;
 } {
   if (!isRecord(payload)) {
     return false;
@@ -1149,10 +1208,10 @@ function isPublicCompetitorSummary(payload: unknown): payload is {
   }
 
   if (payload.competitor_kind === "human") {
-    return payload.agent_id === null;
+    return payload.agent_id === null && typeof payload.human_id === "string";
   }
 
-  return typeof payload.agent_id === "string" || payload.agent_id === null;
+  return typeof payload.agent_id === "string" && payload.human_id === null;
 }
 
 function isPublicMatchDetailResponse(payload: unknown): payload is PublicMatchDetailResponse {

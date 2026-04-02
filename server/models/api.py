@@ -62,6 +62,16 @@ class PublicCompetitorSummary(StrictModel):
     display_name: str
     competitor_kind: CompetitorKind
     agent_id: str | None = None
+    human_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_identity_fields(self) -> PublicCompetitorSummary:
+        if self.competitor_kind == "human":
+            if self.agent_id is not None or self.human_id is None:
+                raise ValueError("Human competitors must expose only human_id.")
+        elif self.human_id is not None:
+            raise ValueError("Agent competitors must not expose human_id.")
+        return self
 
 
 class PublicMatchRosterRow(StrictModel):
@@ -79,12 +89,22 @@ class LeaderboardEntry(StrictModel):
     display_name: str
     competitor_kind: CompetitorKind
     agent_id: str | None = None
+    human_id: str | None = None
     elo: int = Field(ge=0)
     provisional: bool
     matches_played: int = Field(ge=0)
     wins: int = Field(ge=0)
     losses: int = Field(ge=0)
     draws: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_identity_fields(self) -> LeaderboardEntry:
+        if self.competitor_kind == "human":
+            if self.agent_id is not None or self.human_id is None:
+                raise ValueError("Human leaderboard rows must expose only human_id.")
+        elif self.human_id is not None:
+            raise ValueError("Agent leaderboard rows must not expose human_id.")
+        return self
 
 
 class PublicLeaderboardResponse(StrictModel):
@@ -164,6 +184,13 @@ class AgentProfileResponse(StrictModel):
     agent_id: str
     display_name: str
     is_seeded: bool
+    rating: AgentProfileRating
+    history: AgentProfileHistory
+
+
+class HumanProfileResponse(StrictModel):
+    human_id: str
+    display_name: str
     rating: AgentProfileRating
     history: AgentProfileHistory
 

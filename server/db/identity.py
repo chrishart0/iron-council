@@ -176,6 +176,14 @@ def build_user_backed_agent_id(user_id: str) -> str:
     return f"agent-user-{user_id}"
 
 
+def parse_human_actor_id(human_id: str) -> str | None:
+    prefix = "human:"
+    if not human_id.startswith(prefix):
+        return None
+    user_id = human_id.removeprefix(prefix)
+    return user_id or None
+
+
 __all__ = [
     "LoadedAgentIdentity",
     "ResolvedAuthenticatedDbAgent",
@@ -183,6 +191,7 @@ __all__ = [
     "build_non_seeded_agent_id",
     "build_non_seeded_display_name",
     "build_user_backed_agent_id",
+    "parse_human_actor_id",
     "resolve_authenticated_agent_context_from_db",
     "resolve_authenticated_agent_from_db_key_hash",
     "resolve_human_display_name",

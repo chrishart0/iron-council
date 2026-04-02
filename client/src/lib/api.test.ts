@@ -8,6 +8,7 @@ import {
   DiplomacySubmissionError,
   fetchCompletedMatches,
   fetchPublicAgentProfile,
+  fetchPublicHumanProfile,
   fetchMatchReplayTick,
   fetchPublicMatchHistory,
   fetchPublicLeaderboard,
@@ -22,6 +23,7 @@ import {
   parseWebSocketApiErrorEnvelope,
   parseSpectatorMatchEnvelope,
   PublicAgentProfileError,
+  PublicHumanProfileError,
   PublicLeaderboardError,
   PublicMatchHistoryError,
   PublicMatchDetailError,
@@ -268,12 +270,14 @@ describe("fetchCompletedMatches", () => {
               {
                 display_name: "Arthur",
                 competitor_kind: "human",
-                agent_id: null
+                agent_id: null,
+                human_id: "human:00000000-0000-0000-0000-000000000301"
               },
               {
                 display_name: "Morgana",
                 competitor_kind: "agent",
-                agent_id: "agent-player-2"
+                agent_id: "agent-player-2",
+                human_id: null
               }
             ]
           }
@@ -296,12 +300,14 @@ describe("fetchCompletedMatches", () => {
             {
               display_name: "Arthur",
               competitor_kind: "human",
-              agent_id: null
+              agent_id: null,
+              human_id: "human:00000000-0000-0000-0000-000000000301"
             },
             {
               display_name: "Morgana",
               competitor_kind: "agent",
-              agent_id: "agent-player-2"
+              agent_id: "agent-player-2",
+              human_id: null
             }
           ]
         }
@@ -327,7 +333,40 @@ describe("fetchCompletedMatches", () => {
               {
                 display_name: "Arthur",
                 competitor_kind: "human",
-                agent_id: "invented-human-id"
+                agent_id: "invented-human-id",
+                human_id: null
+              }
+            ]
+          }
+        ]
+      })
+    });
+
+    await expect(fetchCompletedMatches(fetchImpl as unknown as typeof fetch)).rejects.toEqual(
+      new CompletedMatchesError("Unable to load completed matches right now.")
+    );
+  });
+
+  it("rejects winner competitor summaries that omit a human_id for human rows", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        matches: [
+          {
+            match_id: "match-complete",
+            map: "britain",
+            final_tick: 155,
+            tick_interval_seconds: 30,
+            player_count: 3,
+            completed_at: "2026-03-29T08:30:00Z",
+            winning_alliance_name: "Iron Crown",
+            winning_player_display_names: ["Arthur"],
+            winning_competitors: [
+              {
+                display_name: "Arthur",
+                competitor_kind: "human",
+                agent_id: null,
+                human_id: null
               }
             ]
           }
@@ -354,12 +393,14 @@ describe("fetchPublicMatchHistory", () => {
           {
             display_name: "Arthur",
             competitor_kind: "human",
-            agent_id: null
+            agent_id: null,
+            human_id: "human:00000000-0000-0000-0000-000000000301"
           },
           {
             display_name: "Morgana",
             competitor_kind: "agent",
-            agent_id: "agent-player-2"
+            agent_id: "agent-player-2",
+            human_id: null
           }
         ],
         history: [{ tick: 140 }, { tick: 155 }]
@@ -377,12 +418,14 @@ describe("fetchPublicMatchHistory", () => {
         {
           display_name: "Arthur",
           competitor_kind: "human",
-          agent_id: null
+          agent_id: null,
+          human_id: "human:00000000-0000-0000-0000-000000000301"
         },
         {
           display_name: "Morgana",
           competitor_kind: "agent",
-          agent_id: "agent-player-2"
+          agent_id: "agent-player-2",
+          human_id: null
         }
       ],
       history: [{ tick: 140 }, { tick: 155 }]
@@ -401,7 +444,8 @@ describe("fetchPublicMatchHistory", () => {
           {
             display_name: "Arthur",
             competitor_kind: "human",
-            agent_id: "invented-human-id"
+            agent_id: "invented-human-id",
+            human_id: null
           }
         ],
         history: [{ tick: 155 }]
@@ -427,6 +471,7 @@ describe("fetchPublicLeaderboard", () => {
             display_name: "Arthur",
             competitor_kind: "human",
             agent_id: null,
+            human_id: "human:00000000-0000-0000-0000-000000000301",
             elo: 1210,
             provisional: true,
             matches_played: 1,
@@ -445,6 +490,7 @@ describe("fetchPublicLeaderboard", () => {
           display_name: "Arthur",
           competitor_kind: "human",
           agent_id: null,
+          human_id: "human:00000000-0000-0000-0000-000000000301",
           elo: 1210,
           provisional: true,
           matches_played: 1,
@@ -502,6 +548,7 @@ describe("fetchPublicLeaderboard", () => {
             display_name: "Arthur",
             competitor_kind: "human",
             agent_id: "agent-player-1",
+            human_id: null,
             elo: 1210,
             provisional: true,
             matches_played: 1,
@@ -608,6 +655,89 @@ describe("fetchPublicAgentProfile", () => {
   });
 });
 
+describe("fetchPublicHumanProfile", () => {
+  it("returns the shipped public human profile payload", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        human_id: "human:00000000-0000-0000-0000-000000000301",
+        display_name: "Arthur",
+        rating: {
+          elo: 1234,
+          provisional: false
+        },
+        history: {
+          matches_played: 1,
+          wins: 1,
+          losses: 0,
+          draws: 0
+        }
+      })
+    });
+
+    await expect(
+      fetchPublicHumanProfile(
+        "human:00000000-0000-0000-0000-000000000301",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).resolves.toEqual({
+      human_id: "human:00000000-0000-0000-0000-000000000301",
+      display_name: "Arthur",
+      rating: {
+        elo: 1234,
+        provisional: false
+      },
+      history: {
+        matches_played: 1,
+        wins: 1,
+        losses: 0,
+        draws: 0
+      }
+    });
+  });
+
+  it("raises a deterministic not-found error when the public API returns human_not_found", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({
+        error: {
+          code: "human_not_found",
+          message: "Human 'missing' was not found."
+        }
+      })
+    });
+
+    await expect(
+      fetchPublicHumanProfile("missing", fetchImpl as unknown as typeof fetch)
+    ).rejects.toEqual(
+      new PublicHumanProfileError(
+        "This human profile is unavailable. It may not exist.",
+        "not_found"
+      )
+    );
+  });
+
+  it("raises a deterministic unavailable error when the payload shape is invalid", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        human_id: "human:00000000-0000-0000-0000-000000000301",
+        display_name: "Arthur"
+      })
+    });
+
+    await expect(
+      fetchPublicHumanProfile(
+        "human:00000000-0000-0000-0000-000000000301",
+        fetchImpl as unknown as typeof fetch
+      )
+    ).rejects.toEqual(
+      new PublicHumanProfileError("Unable to load this human profile right now.", "unavailable")
+    );
+  });
+});
+
 describe("fetchPublicMatchHistory", () => {
   it("returns the deterministic persisted tick list from the shipped history endpoint", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
@@ -621,12 +751,14 @@ describe("fetchPublicMatchHistory", () => {
           {
             display_name: "Arthur",
             competitor_kind: "human",
-            agent_id: null
+            agent_id: null,
+            human_id: "human:00000000-0000-0000-0000-000000000301"
           },
           {
             display_name: "Morgana",
             competitor_kind: "agent",
-            agent_id: "agent-player-2"
+            agent_id: "agent-player-2",
+            human_id: null
           }
         ],
         history: [{ tick: 140 }, { tick: 155 }]
@@ -644,12 +776,14 @@ describe("fetchPublicMatchHistory", () => {
         {
           display_name: "Arthur",
           competitor_kind: "human",
-          agent_id: null
+          agent_id: null,
+          human_id: "human:00000000-0000-0000-0000-000000000301"
         },
         {
           display_name: "Morgana",
           competitor_kind: "agent",
-          agent_id: "agent-player-2"
+          agent_id: "agent-player-2",
+          human_id: null
         }
       ],
       history: [{ tick: 140 }, { tick: 155 }]
@@ -918,12 +1052,14 @@ describe("fetchCompletedMatches", () => {
               {
                 display_name: "Arthur",
                 competitor_kind: "human",
-                agent_id: null
+                agent_id: null,
+                human_id: "human:00000000-0000-0000-0000-000000000301"
               },
               {
                 display_name: "Morgana",
                 competitor_kind: "agent",
-                agent_id: "agent-player-2"
+                agent_id: "agent-player-2",
+                human_id: null
               }
             ]
           }
@@ -946,12 +1082,14 @@ describe("fetchCompletedMatches", () => {
             {
               display_name: "Arthur",
               competitor_kind: "human",
-              agent_id: null
+              agent_id: null,
+              human_id: "human:00000000-0000-0000-0000-000000000301"
             },
             {
               display_name: "Morgana",
               competitor_kind: "agent",
-              agent_id: "agent-player-2"
+              agent_id: "agent-player-2",
+              human_id: null
             }
           ]
         }

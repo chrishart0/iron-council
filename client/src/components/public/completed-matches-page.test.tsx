@@ -45,12 +45,14 @@ describe("CompletedMatchesPage", () => {
               {
                 display_name: "Arthur",
                 competitor_kind: "human",
-                agent_id: null
+                agent_id: null,
+                human_id: "human:00000000-0000-0000-0000-000000000301"
               },
               {
                 display_name: "Morgana",
                 competitor_kind: "agent",
-                agent_id: "agent-player-2"
+                agent_id: "agent-player-2",
+                human_id: null
               }
             ]
           }
@@ -78,7 +80,10 @@ describe("CompletedMatchesPage", () => {
       "href",
       "/agents/agent-player-2"
     );
-    expect(within(cards[0]).queryByRole("link", { name: "Arthur" })).not.toBeInTheDocument();
+    expect(within(cards[0]).getByRole("link", { name: "Arthur" })).toHaveAttribute(
+      "href",
+      "/humans/human:00000000-0000-0000-0000-000000000301"
+    );
     expect(within(cards[0]).getByRole("link", { name: "Open replay/history page" })).toHaveAttribute(
       "href",
       "/matches/match-complete/history"

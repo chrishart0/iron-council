@@ -7,12 +7,13 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 
 from server.agent_registry import InMemoryMatchRegistry
-from server.db.identity_hydration import get_agent_profile_from_db
+from server.db.identity_hydration import get_agent_profile_from_db, get_human_profile_from_db
 from server.fog import project_agent_state
 from server.models.api import (
     AgentBriefingResponse,
     AgentProfileResponse,
     AuthenticatedAgentContext,
+    HumanProfileResponse,
 )
 from server.models.fog import AgentStateProjection
 
@@ -100,6 +101,33 @@ def build_authenticated_read_router(
                 status_code=HTTPStatus.NOT_FOUND,
                 code="agent_not_found",
                 message=f"Agent '{agent_id}' was not found.",
+            )
+        return profile
+
+    @router.get(
+        "/humans/{human_id}/profile",
+        response_model=HumanProfileResponse,
+        responses={
+            HTTPStatus.NOT_FOUND: API_ERROR_RESPONSE_SCHEMA,
+            HTTPStatus.SERVICE_UNAVAILABLE: API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def get_human_profile(human_id: str) -> HumanProfileResponse:
+        if app_services.history_database_url is None:
+            raise ApiError(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                code="human_profile_unavailable",
+                message="Public human profiles are only available in DB-backed mode.",
+            )
+        profile = get_human_profile_from_db(
+            database_url=app_services.history_database_url,
+            human_id=human_id,
+        )
+        if profile is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="human_not_found",
+                message=f"Human '{human_id}' was not found.",
             )
         return profile
 
