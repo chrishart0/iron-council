@@ -2,180 +2,202 @@
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
 
-**Goal:** Add a public web-client agent profile page and wire leaderboard agent rows to it using a durable backend `agent_id` contract.
+**Goal:** Ship a read-only public `/agents/{agentId}` web route backed by the existing `/api/v1/agents/{agent_id}/profile` API, and wire leaderboard agent rows to it without inventing human profile destinations.
 
-**Architecture:** Keep the story contract-first and boring. Extend the public leaderboard read model with an optional `agent_id` only for agent competitors, add client validators/types for both leaderboard and public agent profiles, then build a read-only `/agents/[agentId]` page that consumes the existing shipped profile route with deterministic loading and unavailable states.
+**Architecture:** Extend the existing public leaderboard contract with an explicit optional `agent_id`, keep the server as the source of truth for whether a row is linkable, then add a small client fetcher + typed validator + read-only page component for public agent profiles. Verification should cover the API contract, client boundary, page behavior, and the repo-managed quality gate.
 
-**Tech Stack:** Python 3.12, FastAPI, Pydantic, TypeScript, Next.js App Router, React, Vitest, pytest, uv, npm.
+**Tech Stack:** FastAPI/Pydantic server, Next.js 16 client, TypeScript, Vitest, pytest, uv, make.
 
 ---
 
-### Task 1: Extend the public leaderboard contract with durable agent ids
+### Task 1: Extend the public leaderboard contract with an explicit durable agent id
 
-**Objective:** Let the web client link agent rows to real profile routes without inventing identity heuristics.
+**Objective:** Make the leaderboard response tell the client which rows can honestly link to an agent profile.
 
 **Files:**
 - Modify: `server/models/api.py`
 - Modify: `server/db/public_read_assembly.py`
-- Modify: `tests/api/test_agent_api.py`
-- Modify: `tests/e2e/test_api_smoke.py`
+- Modify: `server/db/public_reads.py`
+- Test: `tests/api/test_agent_api.py`
+- Test: `tests/e2e/test_api_smoke.py`
+- Test: `tests/test_db_registry.py`
 
-**Step 1: Write failing API assertions**
+**Step 1: Write failing server/API tests**
 
-Update the existing leaderboard API tests to expect an `agent_id` field on agent rows and `null` on human rows.
+Add assertions that:
+- agent leaderboard rows include `agent_id`
+- human leaderboard rows include `agent_id: null`
+- DB-backed smoke/regression fixtures preserve the contract
 
-**Step 2: Run test to verify failure**
+**Step 2: Run focused tests to verify failure**
 
 Run:
-
 ```bash
-source .venv/bin/activate && uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'public_leaderboard_and_completed_match_routes_return_compact_db_backed_reads or completion_to_leaderboard_smoke_flow_runs_through_real_process'
+uv run pytest -o addopts='' tests/api/test_agent_api.py -k "public_leaderboard or openapi_declares_public_read_contracts"
 ```
+Expected: FAIL because `agent_id` is missing from the current response model/assembly.
 
-Expected: FAIL because the current response model does not expose `agent_id`.
+**Step 3: Write the minimal implementation**
 
-**Step 3: Write minimal implementation**
+Update `LeaderboardEntry` to include `agent_id: str | None`, then compute it in `build_public_leaderboard()` only for honest agent identities.
 
-Add an optional `agent_id` field to `LeaderboardEntry` and populate it only for agent competitors from the persisted identity that already backs settlement/profile reads.
+**Step 4: Run focused server verification**
 
-**Step 4: Run test to verify pass**
-
-Re-run the same command and expect PASS.
+Run:
+```bash
+uv run pytest -o addopts='' tests/api/test_agent_api.py -k "public_leaderboard or agent_profile_routes_return_finalized_settlement_results or openapi_declares_public_read_contracts"
+uv run pytest -o addopts='' tests/test_db_registry.py -k "solo_terminal_winner_coherent_across_public_reads or ranked_competitors_with_stable_tiebreakers"
+uv run pytest -o addopts='' tests/e2e/test_api_smoke.py -k "public_leaderboard_and_completed_match_smoke_flow_runs_through_real_process or completion_to_leaderboard_smoke_flow_runs_through_real_process"
+```
+Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add server/models/api.py server/db/public_read_assembly.py tests/api/test_agent_api.py tests/e2e/test_api_smoke.py
-git commit -m "feat: expose leaderboard agent profile ids"
+git add server/models/api.py server/db/public_read_assembly.py server/db/public_reads.py tests/api/test_agent_api.py tests/test_db_registry.py tests/e2e/test_api_smoke.py
+git commit -m "feat: add durable agent ids to public leaderboard rows"
 ```
 
-### Task 2: Add client API/types for public agent profiles
+### Task 2: Add typed client support for public agent profiles
 
-**Objective:** Teach the client to validate and load the shipped public profile route.
+**Objective:** Create the client-side contract and fetch helper for the existing public agent profile API.
 
 **Files:**
 - Modify: `client/src/lib/types.ts`
 - Modify: `client/src/lib/api.ts`
-- Modify: `client/src/lib/api.test.ts`
+- Test: `client/src/lib/api.test.ts`
 
 **Step 1: Write failing client API tests**
 
-Add behavior-first tests for:
-- successful `fetchPublicAgentProfile(agentId)` parsing
-- 404 -> deterministic not-found error kind/message
-- invalid payload -> unavailable error
-- leaderboard validator accepting `agent_id` only when `competitor_kind === 'agent'`
+Add tests for:
+- successful `fetchPublicAgentProfile("agent-player-2")`
+- deterministic not-found state mapping
+- invalid payload rejection
+- leaderboard validator requiring explicit `agent_id` shape
 
-**Step 2: Run test to verify failure**
+**Step 2: Run focused client tests to verify failure**
 
 Run:
-
 ```bash
 cd client && npm test -- --run src/lib/api.test.ts
 ```
+Expected: FAIL because the fetch helper/types/validators do not exist yet.
 
-Expected: FAIL because the helper/types/validators do not exist yet.
+**Step 3: Write the minimal implementation**
 
-**Step 3: Write minimal implementation**
+Add:
+- `PublicAgentProfileResponse`
+- `PublicAgentProfileError`
+- `fetchPublicAgentProfile()`
+- a runtime validator that keeps `agent_id` explicit and type-safe
 
-Add typed profile shapes, a `PublicAgentProfileError`, a `fetchPublicAgentProfile` helper, and runtime validators that keep the contract explicit.
+**Step 4: Run focused client verification**
 
-**Step 4: Run test to verify pass**
-
-Re-run the same command and expect PASS.
+Run:
+```bash
+cd client && npm test -- --run src/lib/api.test.ts
+```
+Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
 git add client/src/lib/types.ts client/src/lib/api.ts client/src/lib/api.test.ts
-git commit -m "feat: add public agent profile client api"
+git commit -m "feat: add client public agent profile API support"
 ```
 
-### Task 3: Build the read-only `/agents/[agentId]` page and leaderboard links
+### Task 3: Ship the read-only `/agents/[agentId]` page and leaderboard links
 
-**Objective:** Surface the public profile in the web client and connect leaderboard agent rows to it.
+**Objective:** Render the public profile UI and link only agent leaderboard rows that have durable ids.
 
 **Files:**
 - Create: `client/src/app/agents/[agentId]/page.tsx`
+- Create: `client/src/app/agents/[agentId]/page.test.tsx`
 - Create: `client/src/components/public/public-agent-profile-page.tsx`
 - Create: `client/src/components/public/public-agent-profile-page.test.tsx`
 - Modify: `client/src/components/public/public-leaderboard-page.tsx`
 - Modify: `client/src/components/public/public-leaderboard-page.test.tsx`
 
-**Step 1: Write failing component tests**
+**Step 1: Write failing page/component tests**
 
 Add tests that prove:
-- the new page shows loading, ready, and unavailable/not-found states
-- the ready state renders display name, seeded status, rating, and history
-- leaderboard agent rows link to `/agents/{agentId}`
-- human rows stay non-clickable text
+- `/agents/[agentId]` renders loading → ready → unavailable states
+- ready state shows display name, seeded status, rating, and history from the API response
+- invalid/unknown ids show deterministic unavailable copy
+- agent leaderboard rows link to `/agents/{agentId}`
+- human rows remain plain text without profile links
 
-**Step 2: Run test to verify failure**
+**Step 2: Run focused page/component tests to verify failure**
 
 Run:
-
 ```bash
-cd client && npm test -- --run src/components/public/public-agent-profile-page.test.tsx src/components/public/public-leaderboard-page.test.tsx
+cd client && npm test -- --run src/components/public/public-leaderboard-page.test.tsx src/components/public/public-agent-profile-page.test.tsx src/app/agents/[agentId]/page.test.tsx
 ```
+Expected: FAIL because the page/component/link wiring does not exist yet.
 
-Expected: FAIL because the page/components/links do not exist yet.
+**Step 3: Write the minimal implementation**
 
-**Step 3: Write minimal implementation**
+Implement a boring read-only UI with stable navigation and no new write paths.
 
-Follow existing public-page patterns (`match-history-page`, `completed-matches-page`, `public-leaderboard-page`) for session hydration, deterministic errors, and stable navigation.
+**Step 4: Run focused page/component verification**
 
-**Step 4: Run test to verify pass**
-
-Re-run the same command and expect PASS.
+Run:
+```bash
+cd client && npm test -- --run src/components/public/public-leaderboard-page.test.tsx src/components/public/public-agent-profile-page.test.tsx src/app/agents/[agentId]/page.test.tsx
+```
+Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add client/src/app/agents/[agentId]/page.tsx client/src/components/public/public-agent-profile-page.tsx client/src/components/public/public-agent-profile-page.test.tsx client/src/components/public/public-leaderboard-page.tsx client/src/components/public/public-leaderboard-page.test.tsx
+git add client/src/app/agents/[agentId]/page.tsx client/src/app/agents/[agentId]/page.test.tsx client/src/components/public/public-agent-profile-page.tsx client/src/components/public/public-agent-profile-page.test.tsx client/src/components/public/public-leaderboard-page.tsx client/src/components/public/public-leaderboard-page.test.tsx
 git commit -m "feat: add public agent profile page"
 ```
 
-### Task 4: Run full story verification, review, and BMAD closeout
+### Task 4: Run review-quality verification, BMAD closeout, and shippable cleanup
 
-**Objective:** Prove the story from the public boundary, simplify if needed, and leave the BMAD artifacts honest.
+**Objective:** Prove the story is integrated, simple, and reflected in BMAD tracking.
 
 **Files:**
 - Modify: `_bmad-output/implementation-artifacts/41-1-add-public-agent-profile-page-in-the-web-client.md`
 - Modify: `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- Review: touched server/client/tests files
 
-**Step 1: Run focused verification**
+**Step 1: Remove worker junk and keep only intended repo files**
 
-Run:
+Delete any prompt scratchpads or Codex-only notes before merge if they are not part of the product story.
 
-```bash
-source .venv/bin/activate && uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'public_leaderboard_and_completed_match_routes_return_compact_db_backed_reads or public_and_authenticated_agent_profile_reads_expose_finalized_settlement_results or openapi_declares_public_read_contracts'
-source .venv/bin/activate && uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/e2e/test_api_smoke.py -k 'public_leaderboard_and_completed_match_smoke_flow_runs_through_real_process or completion_to_leaderboard_smoke_flow_runs_through_real_process'
-cd client && npm test -- --run src/lib/api.test.ts src/components/public/public-agent-profile-page.test.tsx src/components/public/public-leaderboard-page.test.tsx src/app/page.test.tsx
-```
-
-Expected: PASS.
-
-**Step 2: Run repo-managed quality gate**
+**Step 2: Run strongest practical repo-managed verification**
 
 Run:
-
 ```bash
 source .venv/bin/activate && make quality
 ```
-
+If the worktree is missing tools, bootstrap first:
+```bash
+uv sync --extra dev --frozen
+make client-install
+source .venv/bin/activate && make quality
+```
 Expected: PASS.
 
-**Step 3: Simplify and review**
+**Step 3: Perform review passes**
 
-Check for over-complexity, unnecessary abstractions, or any client/server contract drift. Keep the solution KISS and aligned with the repo's existing public-page patterns.
+Check:
+- spec compliance with Story 41.1 acceptance criteria
+- code quality and test quality
+- no overbuilt profile abstraction
+- human rows remain non-clickable
 
 **Step 4: Update BMAD artifacts**
 
-Mark Story 41.1 done, record the exact verification commands, and advance `next_story` to `41-2-link-completed-match-and-replay-browse-surfaces-to-durable-public-competitor-identities`.
+Mark Story 41.1 done, update debug log with real commands/outcomes, and advance `next_story`.
 
-**Step 5: Commit**
+**Step 5: Commit and push**
 
 ```bash
-git add _bmad-output/implementation-artifacts/41-1-add-public-agent-profile-page-in-the-web-client.md _bmad-output/implementation-artifacts/sprint-status.yaml server/models/api.py server/db/public_read_assembly.py tests/api/test_agent_api.py tests/e2e/test_api_smoke.py client/src/lib/types.ts client/src/lib/api.ts client/src/lib/api.test.ts client/src/app/agents/[agentId]/page.tsx client/src/components/public/public-agent-profile-page.tsx client/src/components/public/public-agent-profile-page.test.tsx client/src/components/public/public-leaderboard-page.tsx client/src/components/public/public-leaderboard-page.test.tsx
+git add docs/plans/2026-04-02-story-41-1-public-agent-profile-page.md _bmad-output/implementation-artifacts/41-1-add-public-agent-profile-page-in-the-web-client.md _bmad-output/implementation-artifacts/sprint-status.yaml
+git add client/src server tests
 git commit -m "feat: add public agent profile page"
+git push origin master
 ```
