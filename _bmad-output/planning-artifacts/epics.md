@@ -1891,3 +1891,39 @@ So that `server/db/public_reads.py` can finish Epic 38 as a thin orchestration s
 **When** the implementation is reviewed
 **Then** `server/db/public_reads.py` is left as a simple orchestration module, no framework-style abstraction is introduced, and Epic 38 can close in a clearly simpler state than the pre-refactor baseline.
 
+## Epic 39: Public Route Surface Decomposition
+
+Reduce concentration in `server/api/public_routes.py` by extracting cohesive public browse/detail and persisted-history route handlers into focused modules while preserving the shipped HTTP/OpenAPI contracts, DB-backed versus in-memory fallback semantics, error mapping, and lightweight public metadata endpoints. Treat this as a refactor epic only: prefer plain route-builder functions and explicit dependency injection over new frameworks or service layers.
+
+### Story 39.1: Extract public browse and detail route handlers out of `server/api/public_routes.py`
+
+As a server maintainer,
+I want the public match browse/detail route handlers and their in-memory/DB-backed payload branching grouped behind a focused route module,
+So that `server/api/public_routes.py` can stop mixing root/health metadata endpoints with the main public match browse/detail surface.
+
+**Acceptance Criteria:**
+
+**Given** `server/api/public_routes.py` currently mixes root/health endpoints with `/api/v1/matches` and `/api/v1/matches/{match_id}` public browse/detail handlers
+**When** Story 39.1 ships
+**Then** the browse/detail route construction lives behind a focused compatibility-safe module or helper surface while the existing public route paths, response models, and caller wiring remain unchanged.
+
+**And Given** public browse/detail currently support both DB-backed reads and in-memory fallback behavior with stable roster ordering, open-slot counts, completed-match exclusion, and match-not-found mapping
+**When** the refactor ships
+**Then** those semantics remain unchanged at the API, OpenAPI, and smoke-test boundary.
+
+**And Given** this is a boring route decomposition effort
+**When** the implementation is reviewed
+**Then** explicit dependency injection and error mapping remain visible, no framework-style abstraction is introduced, and the resulting structure is simpler than the post-Epic-38 baseline.
+
+### Story 39.2: Extract persisted public history, replay, leaderboard, and completed-match route handlers out of `server/api/public_routes.py`
+
+As a server maintainer,
+I want the DB-backed history/replay/leaderboard/completed-match handlers and their service-unavailable guards grouped behind a focused route module,
+So that public read-model expansion does not require one mixed public router file to own both metadata endpoints and every persisted public route.
+
+### Story 39.3: Trim `server/api/public_routes.py` to a thin compatibility route-composition layer
+
+As a server maintainer,
+I want `server/api/public_routes.py` reduced to a clearly boring metadata and composition surface,
+So that future public-route changes can extend focused route modules without recreating a monolithic public router.
+

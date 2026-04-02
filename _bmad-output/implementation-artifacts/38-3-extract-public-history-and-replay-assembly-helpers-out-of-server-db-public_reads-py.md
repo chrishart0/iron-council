@@ -1,6 +1,6 @@
 # Story: 38.3 Extract public history and replay assembly helpers out of `server/db/public_reads.py`
 
-Status: drafted
+Status: completed
 
 ## Story
 
@@ -18,11 +18,11 @@ So that `server/db/public_reads.py` can finish Epic 38 as a thin orchestration s
 
 ## Tasks / Subtasks
 
-- [ ] Audit the remaining history/replay assembly seams in `server/db/public_reads.py` and identify the tightest extraction that preserves current behavior. (AC: 1, 5)
-- [ ] Extract focused helper(s) or a compatibility-safe helper module surface for history/replay response construction. (AC: 1, 2, 3, 5)
-- [ ] Keep `server.db.public_reads` and `server.db.registry` import behavior stable for current callers. (AC: 1, 2)
-- [ ] Add or tighten focused regression coverage around history ordering, replay payload fidelity, and not-found behavior. (AC: 2, 4)
-- [ ] Run focused verification plus the strongest practical repo-managed checks. (AC: 4, 5)
+- [x] Audit the remaining history/replay assembly seams in `server/db/public_reads.py` and identify the tightest extraction that preserves current behavior. (AC: 1, 5)
+- [x] Extract focused helper(s) or a compatibility-safe helper module surface for history/replay response construction. (AC: 1, 2, 3, 5)
+- [x] Keep `server.db.public_reads` and `server.db.registry` import behavior stable for current callers. (AC: 1, 2)
+- [x] Add or tighten focused regression coverage around history ordering, replay payload fidelity, and not-found behavior. (AC: 2, 4)
+- [x] Run focused verification plus the strongest practical repo-managed checks. (AC: 4, 5)
 
 ## Dev Notes
 
@@ -36,15 +36,33 @@ So that `server/db/public_reads.py` can finish Epic 38 as a thin orchestration s
 ### Debug Log
 
 - 2026-04-02: Drafted as the next Epic 38 slice after completing Story 38.2.
+- 2026-04-02: Confirmed the existing history/replay regression seam in `tests/test_db_registry.py` before refactoring so the extraction stayed contract-first instead of helper-first.
+- 2026-04-02: Extracted `MatchHistoryResponse` and `MatchReplayTickResponse` assembly into plain helper functions in `server/db/public_read_assembly.py`, leaving `server/db/public_reads.py` responsible only for SQL query orchestration and not-found branching.
+- 2026-04-02: Verified the touched seam in `master` with:
+  - `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_db_registry.py -k 'match_history or replay_tick or public_leaderboard or completed_match_summaries'`
+  - `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/api/test_agent_api.py -k 'history or replay'`
+  - `uv run pytest --override-ini addopts='' tests/e2e/test_api_smoke.py -k 'history or replay'`
+  - `make quality`
+- 2026-04-02: Completed explicit post-implementation review passes: spec compliance PASS and code quality APPROVED with no blocking issues.
 
 ### Completion Notes
 
-- Pending.
+- Extracted the remaining history/replay response construction out of `server/db/public_reads.py` into focused plain-function helpers in `server/db/public_read_assembly.py`.
+- Preserved registry and route contracts exactly: history tick ordering, status/current-tick metadata, replay `state_snapshot` / `orders` / `events` payloads, and match/tick not-found semantics all remained unchanged at the public boundary.
+- Left `server/db/public_reads.py` as a thin, explicit orchestration module over the public DB read queries with no service object or framework abstraction added.
+- Re-ran the strongest practical repo-managed verification in `master`; the full quality gate passed after integration.
+- Epic 38 is now complete and ready to close.
 
 ### File List
 
+- `server/db/public_read_assembly.py`
+- `server/db/public_reads.py`
 - `_bmad-output/implementation-artifacts/38-3-extract-public-history-and-replay-assembly-helpers-out-of-server-db-public_reads-py.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/planning-artifacts/epics.md`
+- `_bmad-output/implementation-artifacts/39-1-extract-public-browse-and-detail-route-handlers-out-of-server-api-public_routes-py.md`
 
 ### Change Log
 
 - 2026-04-02: Drafted Story 38.3 to finish decomposing `server/db/public_reads.py` by extracting history/replay response assembly helpers.
+- 2026-04-02: Completed Story 38.3 by moving history/replay response assembly into `server/db/public_read_assembly.py`, re-verifying focused registry/API/e2e seams plus `make quality`, and closing Epic 38.
