@@ -16,7 +16,11 @@ from server.agent_registry import (
     build_seeded_profiles_by_key_hash,
 )
 from server.auth import hash_api_key
+from server.db import hydration as db_hydration_module
 from server.db import identity_registry as db_identity_registry_module
+from server.db import lobby_registry as db_lobby_registry_module
+from server.db import public_reads as db_public_reads_module
+from server.db import tick_persistence as db_tick_persistence_module
 from server.db.models import Player
 from server.db.registry import (
     MatchHistoryNotFoundError,
@@ -1917,6 +1921,64 @@ def test_registry_identity_compatibility_exports_delegate_to_identity_registry_m
     assert (
         db_registry_module.ResolvedAuthenticatedDbAgent
         is db_identity_registry_module.ResolvedAuthenticatedDbAgent
+    )
+
+
+def test_registry_facade_re_exports_stable_module_surfaces() -> None:
+    assert (
+        db_registry_module.load_match_registry_from_database
+        is db_hydration_module.load_match_registry_from_database
+    )
+    assert (
+        db_registry_module.load_match_record_from_session
+        is db_hydration_module.load_match_record_from_session
+    )
+    assert (
+        db_registry_module.load_agent_profiles_by_match
+        is db_hydration_module.load_agent_profiles_by_match
+    )
+    assert (
+        db_registry_module.load_authenticated_agent_keys_by_match
+        is db_hydration_module.load_authenticated_agent_keys_by_match
+    )
+    assert (
+        db_registry_module.load_joined_agents_by_match
+        is db_hydration_module.load_joined_agents_by_match
+    )
+    assert (
+        db_registry_module.load_joined_humans_by_match
+        is db_hydration_module.load_joined_humans_by_match
+    )
+    assert (
+        db_registry_module.load_persisted_alliances_by_match
+        is db_hydration_module.load_persisted_alliances_by_match
+    )
+    assert (
+        db_registry_module.load_public_competitor_kinds_by_match
+        is db_hydration_module.load_public_competitor_kinds_by_match
+    )
+    assert (
+        db_registry_module.get_public_leaderboard is db_public_reads_module.get_public_leaderboard
+    )
+    assert (
+        db_registry_module.get_public_match_summaries
+        is db_public_reads_module.get_public_match_summaries
+    )
+    assert (
+        db_registry_module.get_public_match_detail is db_public_reads_module.get_public_match_detail
+    )
+    assert (
+        db_registry_module.get_completed_match_summaries
+        is db_public_reads_module.get_completed_match_summaries
+    )
+    assert db_registry_module.get_match_history is db_public_reads_module.get_match_history
+    assert db_registry_module.get_match_replay_tick is db_public_reads_module.get_match_replay_tick
+    assert db_registry_module.create_match_lobby is db_lobby_registry_module.create_match_lobby
+    assert db_registry_module.join_match is db_lobby_registry_module.join_match
+    assert db_registry_module.start_match_lobby is db_lobby_registry_module.start_match_lobby
+    assert (
+        db_registry_module.persist_advanced_match_tick
+        is db_tick_persistence_module.persist_advanced_match_tick
     )
 
 
