@@ -47,6 +47,20 @@ def get_match_history(*, database_url: str, match_id: str) -> MatchHistoryRespon
         if match is None:
             raise MatchHistoryNotFoundError(match_id)
 
+        players = session.scalars(
+            select(Player)
+            .where(Player.match_id == match_id)
+            .order_by(Player.display_name, Player.is_agent, Player.id)
+        ).all()
+        api_key_ids = [player.api_key_id for player in players if player.api_key_id is not None]
+        api_key_rows = (
+            session.scalars(
+                select(ApiKey).where(ApiKey.id.in_(api_key_ids)).order_by(ApiKey.id)
+            ).all()
+            if api_key_ids
+            else []
+        )
+
         ticks = (
             session.execute(
                 select(TickLog.tick)
@@ -57,7 +71,12 @@ def get_match_history(*, database_url: str, match_id: str) -> MatchHistoryRespon
             .all()
         )
 
-    return build_match_history_response(match=match, ticks=ticks)
+    return build_match_history_response(
+        match=match,
+        ticks=ticks,
+        players=players,
+        api_key_rows=api_key_rows,
+    )
 
 
 def get_match_replay_tick(
@@ -197,6 +216,14 @@ def get_completed_match_summaries(*, database_url: str) -> CompletedMatchSummary
             .where(Player.match_id.in_(match_ids))
             .order_by(Player.match_id, Player.display_name, Player.id)
         ).all()
+        api_key_ids = [player.api_key_id for player in players if player.api_key_id is not None]
+        api_key_rows = (
+            session.scalars(
+                select(ApiKey).where(ApiKey.id.in_(api_key_ids)).order_by(ApiKey.id)
+            ).all()
+            if api_key_ids
+            else []
+        )
         alliances = session.scalars(
             select(Alliance)
             .where(Alliance.match_id.in_(match_ids))
@@ -206,6 +233,7 @@ def get_completed_match_summaries(*, database_url: str) -> CompletedMatchSummary
     return build_completed_match_summary_list(
         completed_matches=completed_matches,
         players=players,
+        api_key_rows=api_key_rows,
         alliances=alliances,
     )
 

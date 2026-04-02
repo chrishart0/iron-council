@@ -249,6 +249,173 @@ describe("fetchPublicMatchDetail", () => {
   });
 });
 
+describe("fetchCompletedMatches", () => {
+  it("accepts additive winner competitor summaries while preserving legacy winner display names", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        matches: [
+          {
+            match_id: "match-complete",
+            map: "britain",
+            final_tick: 155,
+            tick_interval_seconds: 30,
+            player_count: 3,
+            completed_at: "2026-03-29T08:30:00Z",
+            winning_alliance_name: "Iron Crown",
+            winning_player_display_names: ["Arthur", "Morgana"],
+            winning_competitors: [
+              {
+                display_name: "Arthur",
+                competitor_kind: "human",
+                agent_id: null
+              },
+              {
+                display_name: "Morgana",
+                competitor_kind: "agent",
+                agent_id: "agent-player-2"
+              }
+            ]
+          }
+        ]
+      })
+    });
+
+    await expect(fetchCompletedMatches(fetchImpl as unknown as typeof fetch)).resolves.toEqual({
+      matches: [
+        {
+          match_id: "match-complete",
+          map: "britain",
+          final_tick: 155,
+          tick_interval_seconds: 30,
+          player_count: 3,
+          completed_at: "2026-03-29T08:30:00Z",
+          winning_alliance_name: "Iron Crown",
+          winning_player_display_names: ["Arthur", "Morgana"],
+          winning_competitors: [
+            {
+              display_name: "Arthur",
+              competitor_kind: "human",
+              agent_id: null
+            },
+            {
+              display_name: "Morgana",
+              competitor_kind: "agent",
+              agent_id: "agent-player-2"
+            }
+          ]
+        }
+      ]
+    });
+  });
+
+  it("rejects winner competitor summaries that invent human agent ids", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        matches: [
+          {
+            match_id: "match-complete",
+            map: "britain",
+            final_tick: 155,
+            tick_interval_seconds: 30,
+            player_count: 3,
+            completed_at: "2026-03-29T08:30:00Z",
+            winning_alliance_name: "Iron Crown",
+            winning_player_display_names: ["Arthur"],
+            winning_competitors: [
+              {
+                display_name: "Arthur",
+                competitor_kind: "human",
+                agent_id: "invented-human-id"
+              }
+            ]
+          }
+        ]
+      })
+    });
+
+    await expect(fetchCompletedMatches(fetchImpl as unknown as typeof fetch)).rejects.toEqual(
+      new CompletedMatchesError("Unable to load completed matches right now.")
+    );
+  });
+});
+
+describe("fetchPublicMatchHistory", () => {
+  it("accepts read-only competitor roster metadata with honest agent ids", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        match_id: "match-complete",
+        status: "completed",
+        current_tick: 155,
+        tick_interval_seconds: 30,
+        competitors: [
+          {
+            display_name: "Arthur",
+            competitor_kind: "human",
+            agent_id: null
+          },
+          {
+            display_name: "Morgana",
+            competitor_kind: "agent",
+            agent_id: "agent-player-2"
+          }
+        ],
+        history: [{ tick: 140 }, { tick: 155 }]
+      })
+    });
+
+    await expect(
+      fetchPublicMatchHistory("match-complete", fetchImpl as unknown as typeof fetch)
+    ).resolves.toEqual({
+      match_id: "match-complete",
+      status: "completed",
+      current_tick: 155,
+      tick_interval_seconds: 30,
+      competitors: [
+        {
+          display_name: "Arthur",
+          competitor_kind: "human",
+          agent_id: null
+        },
+        {
+          display_name: "Morgana",
+          competitor_kind: "agent",
+          agent_id: "agent-player-2"
+        }
+      ],
+      history: [{ tick: 140 }, { tick: 155 }]
+    });
+  });
+
+  it("rejects history competitor rows that claim a human agent id", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        match_id: "match-complete",
+        status: "completed",
+        current_tick: 155,
+        tick_interval_seconds: 30,
+        competitors: [
+          {
+            display_name: "Arthur",
+            competitor_kind: "human",
+            agent_id: "invented-human-id"
+          }
+        ],
+        history: [{ tick: 155 }]
+      })
+    });
+
+    await expect(
+      fetchPublicMatchHistory("match-complete", fetchImpl as unknown as typeof fetch)
+    ).rejects.toEqual(
+      new PublicMatchHistoryError("Unable to load match history right now.", "unavailable")
+    );
+  });
+});
+
 describe("fetchPublicLeaderboard", () => {
   it("returns the public leaderboard payload from the shipped leaderboard endpoint", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
@@ -450,6 +617,18 @@ describe("fetchPublicMatchHistory", () => {
         status: "completed",
         current_tick: 155,
         tick_interval_seconds: 30,
+        competitors: [
+          {
+            display_name: "Arthur",
+            competitor_kind: "human",
+            agent_id: null
+          },
+          {
+            display_name: "Morgana",
+            competitor_kind: "agent",
+            agent_id: "agent-player-2"
+          }
+        ],
         history: [{ tick: 140 }, { tick: 155 }]
       })
     });
@@ -461,6 +640,18 @@ describe("fetchPublicMatchHistory", () => {
       status: "completed",
       current_tick: 155,
       tick_interval_seconds: 30,
+      competitors: [
+        {
+          display_name: "Arthur",
+          competitor_kind: "human",
+          agent_id: null
+        },
+        {
+          display_name: "Morgana",
+          competitor_kind: "agent",
+          agent_id: "agent-player-2"
+        }
+      ],
       history: [{ tick: 140 }, { tick: 155 }]
     });
 
@@ -483,6 +674,7 @@ describe("fetchPublicMatchHistory", () => {
         status: "completed",
         current_tick: 155,
         tick_interval_seconds: 30,
+        competitors: [],
         history: [{ tick: 140 }, { tick: 155 }]
       })
     });
@@ -721,7 +913,19 @@ describe("fetchCompletedMatches", () => {
             player_count: 3,
             completed_at: "2026-03-29T08:30:00Z",
             winning_alliance_name: "Iron Crown",
-            winning_player_display_names: ["Arthur", "Morgana"]
+            winning_player_display_names: ["Arthur", "Morgana"],
+            winning_competitors: [
+              {
+                display_name: "Arthur",
+                competitor_kind: "human",
+                agent_id: null
+              },
+              {
+                display_name: "Morgana",
+                competitor_kind: "agent",
+                agent_id: "agent-player-2"
+              }
+            ]
           }
         ]
       })
@@ -737,7 +941,19 @@ describe("fetchCompletedMatches", () => {
           player_count: 3,
           completed_at: "2026-03-29T08:30:00Z",
           winning_alliance_name: "Iron Crown",
-          winning_player_display_names: ["Arthur", "Morgana"]
+          winning_player_display_names: ["Arthur", "Morgana"],
+          winning_competitors: [
+            {
+              display_name: "Arthur",
+              competitor_kind: "human",
+              agent_id: null
+            },
+            {
+              display_name: "Morgana",
+              competitor_kind: "agent",
+              agent_id: "agent-player-2"
+            }
+          ]
         }
       ]
     });

@@ -586,6 +586,23 @@ async def test_match_history_routes_return_persisted_entries_and_replay_snapshot
         "status": "active",
         "current_tick": 142,
         "tick_interval_seconds": 30,
+        "competitors": [
+            {
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+            },
+            {
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+            },
+            {
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+            },
+        ],
         "history": [{"tick": 142}],
     }
     assert replay_response.status_code == HTTPStatus.OK
@@ -693,6 +710,23 @@ async def test_match_history_routes_read_persisted_tick_log_even_when_registry_s
 
     assert history_response.status_code == HTTPStatus.OK
     assert history_response.json()["current_tick"] == 142
+    assert history_response.json()["competitors"] == [
+        {
+            "display_name": "Arthur",
+            "competitor_kind": "human",
+            "agent_id": None,
+        },
+        {
+            "display_name": "Gawain",
+            "competitor_kind": "agent",
+            "agent_id": "agent-player-3",
+        },
+        {
+            "display_name": "Morgana",
+            "competitor_kind": "agent",
+            "agent_id": "agent-player-2",
+        },
+    ]
     assert history_response.json()["history"] == [{"tick": 142}]
     assert replay_response.status_code == HTTPStatus.OK
     assert replay_response.json()["tick"] == 142
@@ -755,6 +789,18 @@ async def test_completed_terminal_tick_is_excluded_from_public_matches_and_serve
         "completed_at": "2026-04-02T12:34:56Z",
         "winning_alliance_name": "Western Accord",
         "winning_player_display_names": ["Arthur", "Morgana"],
+        "winning_competitors": [
+            {
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+            },
+            {
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+            },
+        ],
     }
 
     assert history_response.status_code == HTTPStatus.OK
@@ -763,6 +809,23 @@ async def test_completed_terminal_tick_is_excluded_from_public_matches_and_serve
         "status": "completed",
         "current_tick": 143,
         "tick_interval_seconds": 30,
+        "competitors": [
+            {
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+            },
+            {
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+            },
+            {
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+            },
+        ],
         "history": [{"tick": 142}, {"tick": 143}],
     }
     assert replay_response.status_code == HTTPStatus.OK
@@ -863,6 +926,7 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "completed_at": "2026-03-29T12:15:00Z",
                 "winning_alliance_name": None,
                 "winning_player_display_names": [],
+                "winning_competitors": [],
             },
             {
                 "match_id": "00000000-0000-0000-0000-000000000201",
@@ -873,6 +937,18 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "completed_at": "2026-03-29T08:30:00Z",
                 "winning_alliance_name": "Iron Crown",
                 "winning_player_display_names": ["Arthur", "Morgana"],
+                "winning_competitors": [
+                    {
+                        "display_name": "Arthur",
+                        "competitor_kind": "human",
+                        "agent_id": None,
+                    },
+                    {
+                        "display_name": "Morgana",
+                        "competitor_kind": "agent",
+                        "agent_id": "agent-player-2",
+                    },
+                ],
             },
         ]
     }

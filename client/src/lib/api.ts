@@ -342,7 +342,12 @@ export async function fetchCompletedMatches(
     throw new CompletedMatchesError();
   }
 
-  return payload;
+  return {
+    matches: payload.matches.map((match) => ({
+      ...match,
+      winning_competitors: Array.isArray(match.winning_competitors) ? match.winning_competitors : []
+    }))
+  };
 }
 
 export async function fetchPublicMatchHistory(
@@ -376,7 +381,10 @@ export async function fetchPublicMatchHistory(
     throw new PublicMatchHistoryError(PUBLIC_MATCH_HISTORY_ERROR_MESSAGE, "unavailable");
   }
 
-  return payload;
+  return {
+    ...payload,
+    competitors: Array.isArray(payload.competitors) ? payload.competitors : []
+  };
 }
 
 export async function fetchMatchReplayTick(
@@ -1021,6 +1029,8 @@ function isPublicMatchHistoryResponse(payload: unknown): payload is PublicMatchH
     typeof payload.status === "string" &&
     typeof payload.current_tick === "number" &&
     typeof payload.tick_interval_seconds === "number" &&
+    (payload.competitors === undefined ||
+      (Array.isArray(payload.competitors) && payload.competitors.every(isPublicCompetitorSummary))) &&
     Array.isArray(payload.history) &&
     payload.history.every(isMatchHistoryEntry)
   );
@@ -1114,8 +1124,35 @@ function isCompletedMatchSummary(payload: unknown): payload is CompletedMatchSum
     typeof payload.completed_at === "string" &&
     (typeof payload.winning_alliance_name === "string" || payload.winning_alliance_name === null) &&
     Array.isArray(payload.winning_player_display_names) &&
-    payload.winning_player_display_names.every((entry) => typeof entry === "string")
+    payload.winning_player_display_names.every((entry) => typeof entry === "string") &&
+    (payload.winning_competitors === undefined ||
+      (Array.isArray(payload.winning_competitors) &&
+        payload.winning_competitors.every(isPublicCompetitorSummary)))
   );
+}
+
+function isPublicCompetitorSummary(payload: unknown): payload is {
+  display_name: string;
+  competitor_kind: "human" | "agent";
+  agent_id: string | null;
+} {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  const hasValidSharedFields =
+    typeof payload.display_name === "string" &&
+    (payload.competitor_kind === "human" || payload.competitor_kind === "agent");
+
+  if (!hasValidSharedFields) {
+    return false;
+  }
+
+  if (payload.competitor_kind === "human") {
+    return payload.agent_id === null;
+  }
+
+  return typeof payload.agent_id === "string" || payload.agent_id === null;
 }
 
 function isPublicMatchDetailResponse(payload: unknown): payload is PublicMatchDetailResponse {

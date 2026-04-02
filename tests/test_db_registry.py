@@ -2099,6 +2099,13 @@ def test_persist_advanced_match_tick_keeps_solo_terminal_winner_coherent_across_
                 "completed_at": "2026-04-02T12:34:56Z",
                 "winning_alliance_name": None,
                 "winning_player_display_names": ["Arthur"],
+                "winning_competitors": [
+                    {
+                        "display_name": "Arthur",
+                        "competitor_kind": "human",
+                        "agent_id": None,
+                    }
+                ],
             }
         ]
     }
@@ -2107,6 +2114,23 @@ def test_persist_advanced_match_tick_keeps_solo_terminal_winner_coherent_across_
         "status": "completed",
         "current_tick": 143,
         "tick_interval_seconds": 30,
+        "competitors": [
+            {
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+            },
+            {
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+            },
+            {
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+            },
+        ],
         "history": [{"tick": 142}, {"tick": 143}],
     }
 
@@ -2293,6 +2317,23 @@ def test_get_match_history_returns_deterministic_tick_entries_with_match_metadat
         "status": "active",
         "current_tick": 142,
         "tick_interval_seconds": 30,
+        "competitors": [
+            {
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+            },
+            {
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+            },
+            {
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+            },
+        ],
         "history": [
             {"tick": 141},
             {"tick": 142},
@@ -2472,6 +2513,7 @@ def test_get_completed_match_summaries_returns_compact_browse_rows_only_for_comp
                 "completed_at": "2026-03-29T12:15:00Z",
                 "winning_alliance_name": None,
                 "winning_player_display_names": [],
+                "winning_competitors": [],
             },
             {
                 "match_id": "00000000-0000-0000-0000-000000000201",
@@ -2482,6 +2524,18 @@ def test_get_completed_match_summaries_returns_compact_browse_rows_only_for_comp
                 "completed_at": "2026-03-29T08:30:00Z",
                 "winning_alliance_name": "Iron Crown",
                 "winning_player_display_names": ["Arthur", "Morgana"],
+                "winning_competitors": [
+                    {
+                        "display_name": "Arthur",
+                        "competitor_kind": "human",
+                        "agent_id": None,
+                    },
+                    {
+                        "display_name": "Morgana",
+                        "competitor_kind": "agent",
+                        "agent_id": "agent-player-2",
+                    },
+                ],
             },
         ]
     }
@@ -2514,6 +2568,18 @@ def test_get_completed_match_summaries_keeps_winner_player_names_when_alliance_r
         "completed_at": "2026-03-29T08:30:00Z",
         "winning_alliance_name": None,
         "winning_player_display_names": ["Arthur", "Morgana"],
+        "winning_competitors": [
+            {
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+            },
+            {
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+            },
+        ],
     }
 
 

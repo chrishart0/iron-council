@@ -21,6 +21,18 @@ describe("MatchHistoryPage", () => {
           status: "completed",
           current_tick: 155,
           tick_interval_seconds: 30,
+          competitors: [
+            {
+              display_name: "Arthur",
+              competitor_kind: "human",
+              agent_id: null
+            },
+            {
+              display_name: "Morgana",
+              competitor_kind: "agent",
+              agent_id: "agent-player-2"
+            }
+          ],
           history: [{ tick: 140 }, { tick: 155 }]
         })
       })
@@ -86,6 +98,13 @@ describe("MatchHistoryPage", () => {
     expect(screen.getByText("Current tick: 155")).toBeVisible();
     expect(screen.getByText("Tick interval seconds: 30")).toBeVisible();
     expect(screen.getByText("Recorded ticks: 2")).toBeVisible();
+    const competitorRoster = screen.getByRole("list", { name: "Competitor roster" });
+    expect(within(competitorRoster).getByText("Arthur")).toBeVisible();
+    expect(within(competitorRoster).getByRole("link", { name: "Morgana" })).toHaveAttribute(
+      "href",
+      "/agents/agent-player-2"
+    );
+    expect(within(competitorRoster).queryByRole("link", { name: "Arthur" })).not.toBeInTheDocument();
 
     const tickLinks = within(screen.getByRole("list", { name: "Persisted ticks" })).getAllByRole("link");
     expect(tickLinks).toHaveLength(2);
@@ -94,7 +113,7 @@ describe("MatchHistoryPage", () => {
     expect(screen.getByText("Selected tick: 155")).toBeVisible();
     expect(screen.getByText(/Convoy secured/)).toBeVisible();
     expect(screen.getByText(/army-1/)).toBeVisible();
-    expect(screen.getByText(/Arthur/)).toBeVisible();
+    expect(screen.getByText(/"owner": "Arthur"/)).toBeVisible();
   });
 
   it("fetches the newly selected persisted tick when the browser route query changes", async () => {
@@ -107,6 +126,18 @@ describe("MatchHistoryPage", () => {
           status: "completed",
           current_tick: 155,
           tick_interval_seconds: 30,
+          competitors: [
+            {
+              display_name: "Arthur",
+              competitor_kind: "human",
+              agent_id: null
+            },
+            {
+              display_name: "Morgana",
+              competitor_kind: "agent",
+              agent_id: "agent-player-2"
+            }
+          ],
           history: [{ tick: 140 }, { tick: 155 }]
         })
       })
@@ -164,7 +195,7 @@ describe("MatchHistoryPage", () => {
     );
     expect(screen.getByText(/Front shifted/)).toBeVisible();
     expect(screen.getByText(/army-2/)).toBeVisible();
-    expect(screen.getByText(/Morgana/)).toBeVisible();
+    expect(screen.getByText(/"owner": "Morgana"/)).toBeVisible();
   });
 
   it("waits for session hydration before the first history request and defaults to the newest recorded tick", async () => {
@@ -185,6 +216,18 @@ describe("MatchHistoryPage", () => {
           status: "completed",
           current_tick: 200,
           tick_interval_seconds: 30,
+          competitors: [
+            {
+              display_name: "Arthur",
+              competitor_kind: "human",
+              agent_id: null
+            },
+            {
+              display_name: "Morgana",
+              competitor_kind: "agent",
+              agent_id: "agent-player-2"
+            }
+          ],
           history: [{ tick: 140 }, { tick: 155 }]
         })
       })
@@ -309,6 +352,13 @@ describe("MatchHistoryPage", () => {
           status: "completed",
           current_tick: 155,
           tick_interval_seconds: 30,
+          competitors: [
+            {
+              display_name: "Arthur",
+              competitor_kind: "human",
+              agent_id: null
+            }
+          ],
           history: [{ tick: 140 }, { tick: 155 }]
         })
       })

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CompletedMatchesError, fetchCompletedMatches } from "../../lib/api";
-import type { CompletedMatchSummary } from "../../lib/types";
+import type { CompletedMatchSummary, PublicCompetitorSummary } from "../../lib/types";
 import { useSession } from "../session/session-provider";
 
 type CompletedMatchesState =
@@ -127,6 +127,12 @@ export function CompletedMatchesPage() {
                     ? "Winning players: None"
                     : `Winning players: ${match.winning_player_display_names.join(", ")}`}
                 </p>
+                {match.winning_competitors.length > 0 ? (
+                  <div>
+                    <span>Winning competitor profiles: </span>
+                    <CompetitorSummaryList competitors={match.winning_competitors} />
+                  </div>
+                ) : null}
                 <Link className="button-link secondary" href={`/matches/${match.match_id}/history`}>
                   Open replay/history page
                 </Link>
@@ -135,6 +141,23 @@ export function CompletedMatchesPage() {
           </ul>
         </section>
       )}
+    </>
+  );
+}
+
+function CompetitorSummaryList({ competitors }: { competitors: PublicCompetitorSummary[] }) {
+  return (
+    <>
+      {competitors.map((competitor, index) => (
+        <span key={`${competitor.competitor_kind}:${competitor.display_name}:${index}`}>
+          {index > 0 ? ", " : null}
+          {competitor.agent_id === null ? (
+            competitor.display_name
+          ) : (
+            <Link href={`/agents/${competitor.agent_id}`}>{competitor.display_name}</Link>
+          )}
+        </span>
+      ))}
     </>
   );
 }

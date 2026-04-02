@@ -38,6 +38,12 @@ export type LeaderboardEntry = {
   draws: number;
 };
 
+export type PublicCompetitorSummary = {
+  display_name: string;
+  competitor_kind: CompetitorKind;
+  agent_id: string | null;
+};
+
 export type PublicLeaderboardResponse = {
   leaderboard: LeaderboardEntry[];
 };
@@ -71,6 +77,7 @@ export type CompletedMatchSummary = {
   completed_at: string;
   winning_alliance_name: string | null;
   winning_player_display_names: string[];
+  winning_competitors: PublicCompetitorSummary[];
 };
 
 export type CompletedMatchSummaryListResponse = {
@@ -86,6 +93,7 @@ export type PublicMatchHistoryResponse = {
   status: string;
   current_tick: number;
   tick_interval_seconds: number;
+  competitors: PublicCompetitorSummary[];
   history: MatchHistoryEntry[];
 };
 

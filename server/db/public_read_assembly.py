@@ -17,6 +17,7 @@ from server.models.api import (
     MatchHistoryResponse,
     MatchReplayTickResponse,
     MatchSummary,
+    PublicCompetitorSummary,
     PublicLeaderboardResponse,
     PublicMatchDetailResponse,
     PublicMatchRosterRow,
@@ -76,12 +77,19 @@ def build_public_match_detail(
     )
 
 
-def build_match_history_response(*, match: Match, ticks: Sequence[int]) -> MatchHistoryResponse:
+def build_match_history_response(
+    *,
+    match: Match,
+    ticks: Sequence[int],
+    players: Sequence[Player],
+    api_key_rows: Sequence[ApiKey],
+) -> MatchHistoryResponse:
     return MatchHistoryResponse(
         match_id=str(match.id),
         status=MatchStatus(match.status),
         current_tick=int(match.current_tick),
         tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
+        competitors=build_public_competitor_summaries(players=players, api_key_rows=api_key_rows),
         history=[MatchHistoryEntry(tick=int(tick)) for tick in ticks],
     )
 
@@ -114,6 +122,44 @@ def build_public_match_roster_rows(
         for player in sorted(players, key=public_match_roster_sort_key)
         if (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None
     ]
+
+
+def build_public_competitor_summaries(
+    *,
+    players: Sequence[Player],
+    api_key_rows: Sequence[ApiKey],
+) -> list[PublicCompetitorSummary]:
+    api_keys_by_id = {str(api_key.id): api_key for api_key in api_key_rows}
+    seeded_profiles_by_key_hash = build_seeded_profiles_by_key_hash()
+    return [
+        PublicCompetitorSummary(
+            display_name=player.display_name,
+            competitor_kind="agent" if player.is_agent else "human",
+            agent_id=public_competitor_agent_id(
+                player=player,
+                api_keys_by_id=api_keys_by_id,
+                seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
+            ),
+        )
+        for player in sorted(players, key=public_match_roster_sort_key)
+    ]
+
+
+def public_competitor_agent_id(
+    *,
+    player: Player,
+    api_keys_by_id: dict[str, ApiKey],
+    seeded_profiles_by_key_hash: dict[str, AgentProfileResponse],
+) -> str | None:
+    if not player.is_agent:
+        return None
+
+    api_key = api_keys_by_id.get(str(player.api_key_id)) if player.api_key_id is not None else None
+    return resolve_loaded_agent_identity(
+        player=player,
+        api_key=api_key,
+        seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
+    ).agent_id
 
 
 def public_match_browse_sort_key(match: Match) -> tuple[int, float, int, str]:
@@ -268,6 +314,7 @@ def build_completed_match_summary_list(
     *,
     completed_matches: Sequence[Match],
     players: Sequence[Player],
+    api_key_rows: Sequence[ApiKey],
     alliances: Sequence[Alliance],
 ) -> CompletedMatchSummaryListResponse:
     players_by_match: dict[str, list[Player]] = defaultdict(list)
@@ -301,6 +348,12 @@ def build_completed_match_summary_list(
                     players_by_match_and_alliance=players_by_match_and_alliance,
                     players_by_match_and_id=players_by_match_and_id,
                 ),
+                winning_competitors=winning_competitors(
+                    match=match,
+                    players_by_match_and_alliance=players_by_match_and_alliance,
+                    players_by_match_and_id=players_by_match_and_id,
+                    api_key_rows=api_key_rows,
+                ),
             )
             for match in completed_matches
         ]
@@ -333,6 +386,26 @@ def winning_player_display_names(
     if solo_winner is None:
         return []
     return [solo_winner.display_name]
+
+
+def winning_competitors(
+    *,
+    match: Match,
+    players_by_match_and_alliance: dict[tuple[str, str], list[Player]],
+    players_by_match_and_id: dict[tuple[str, str], Player],
+    api_key_rows: Sequence[ApiKey],
+) -> list[PublicCompetitorSummary]:
+    if match.winner_alliance is None:
+        return []
+
+    winners = players_by_match_and_alliance.get((str(match.id), str(match.winner_alliance)), [])
+    if winners:
+        return build_public_competitor_summaries(players=winners, api_key_rows=api_key_rows)
+
+    solo_winner = players_by_match_and_id.get((str(match.id), str(match.winner_alliance)))
+    if solo_winner is None:
+        return []
+    return build_public_competitor_summaries(players=[solo_winner], api_key_rows=api_key_rows)
 
 
 def winner_identity_for_player(

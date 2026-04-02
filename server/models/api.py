@@ -43,6 +43,7 @@ class MatchHistoryResponse(StrictModel):
     status: MatchStatus
     current_tick: TickDuration
     tick_interval_seconds: int = Field(gt=0)
+    competitors: list[PublicCompetitorSummary] = Field(default_factory=list)
     history: list[MatchHistoryEntry] = Field(default_factory=list)
 
 
@@ -55,6 +56,12 @@ class MatchReplayTickResponse(StrictModel):
 
 
 CompetitorKind = Literal["human", "agent"]
+
+
+class PublicCompetitorSummary(StrictModel):
+    display_name: str
+    competitor_kind: CompetitorKind
+    agent_id: str | None = None
 
 
 class PublicMatchRosterRow(StrictModel):
@@ -93,6 +100,7 @@ class CompletedMatchSummary(StrictModel):
     completed_at: datetime
     winning_alliance_name: str | None = None
     winning_player_display_names: list[str] = Field(default_factory=list)
+    winning_competitors: list[PublicCompetitorSummary] = Field(default_factory=list)
 
 
 class CompletedMatchSummaryListResponse(StrictModel):

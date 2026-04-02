@@ -177,6 +177,23 @@ def test_match_history_and_replay_smoke_flow_runs_through_real_process(
         "status": "active",
         "current_tick": 142,
         "tick_interval_seconds": 30,
+        "competitors": [
+            {
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+            },
+            {
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+            },
+            {
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+            },
+        ],
         "history": [{"tick": 142}],
     }
     assert replay_response.status_code == HTTPStatus.OK
@@ -263,6 +280,7 @@ def test_public_leaderboard_and_completed_match_smoke_flow_runs_through_real_pro
                 "completed_at": "2026-03-29T12:15:00Z",
                 "winning_alliance_name": None,
                 "winning_player_display_names": [],
+                "winning_competitors": [],
             },
             {
                 "match_id": "00000000-0000-0000-0000-000000000201",
@@ -273,6 +291,18 @@ def test_public_leaderboard_and_completed_match_smoke_flow_runs_through_real_pro
                 "completed_at": "2026-03-29T08:30:00Z",
                 "winning_alliance_name": "Iron Crown",
                 "winning_player_display_names": ["Arthur", "Morgana"],
+                "winning_competitors": [
+                    {
+                        "display_name": "Arthur",
+                        "competitor_kind": "human",
+                        "agent_id": None,
+                    },
+                    {
+                        "display_name": "Morgana",
+                        "competitor_kind": "agent",
+                        "agent_id": "agent-player-2",
+                    },
+                ],
             },
         ]
     }
@@ -337,6 +367,23 @@ def test_completion_to_leaderboard_smoke_flow_runs_through_real_process(
         "status": "completed",
         "current_tick": 143,
         "tick_interval_seconds": 1,
+        "competitors": [
+            {
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+            },
+            {
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+            },
+            {
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+            },
+        ],
         "history": [{"tick": 142}, {"tick": 143}],
     }
     assert terminal_summary == {
@@ -348,6 +395,18 @@ def test_completion_to_leaderboard_smoke_flow_runs_through_real_process(
         "completed_at": terminal_summary["completed_at"],
         "winning_alliance_name": "Western Accord",
         "winning_player_display_names": ["Arthur", "Morgana"],
+        "winning_competitors": [
+            {
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+            },
+            {
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+            },
+        ],
     }
     assert datetime.fromisoformat(terminal_summary["completed_at"].replace("Z", "+00:00"))
 

@@ -40,7 +40,19 @@ describe("CompletedMatchesPage", () => {
             player_count: 3,
             completed_at: "2026-03-29T08:30:00Z",
             winning_alliance_name: "Iron Crown",
-            winning_player_display_names: ["Arthur", "Morgana"]
+            winning_player_display_names: ["Arthur", "Morgana"],
+            winning_competitors: [
+              {
+                display_name: "Arthur",
+                competitor_kind: "human",
+                agent_id: null
+              },
+              {
+                display_name: "Morgana",
+                competitor_kind: "agent",
+                agent_id: "agent-player-2"
+              }
+            ]
           }
         ]
       })
@@ -62,6 +74,11 @@ describe("CompletedMatchesPage", () => {
     expect(cards[0]).toHaveTextContent("2026-03-29T08:30:00Z");
     expect(cards[0]).toHaveTextContent("Iron Crown");
     expect(cards[0]).toHaveTextContent("Arthur, Morgana");
+    expect(within(cards[0]).getByRole("link", { name: "Morgana" })).toHaveAttribute(
+      "href",
+      "/agents/agent-player-2"
+    );
+    expect(within(cards[0]).queryByRole("link", { name: "Arthur" })).not.toBeInTheDocument();
     expect(within(cards[0]).getByRole("link", { name: "Open replay/history page" })).toHaveAttribute(
       "href",
       "/matches/match-complete/history"

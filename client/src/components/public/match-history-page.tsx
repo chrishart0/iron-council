@@ -8,7 +8,10 @@ import {
   MatchReplayTickError,
   PublicMatchHistoryError
 } from "../../lib/api";
-import type { MatchReplayTickResponse, PublicMatchHistoryResponse } from "../../lib/types";
+import type {
+  MatchReplayTickResponse,
+  PublicMatchHistoryResponse
+} from "../../lib/types";
 import { useSession } from "../session/session-provider";
 
 type MatchHistoryPageProps = {
@@ -215,6 +218,27 @@ export function MatchHistoryPage({ matchId, selectedTick }: MatchHistoryPageProp
         <p>{`Current tick: ${historyState.history.current_tick}`}</p>
         <p>{`Tick interval seconds: ${historyState.history.tick_interval_seconds}`}</p>
         <p>{`Recorded ticks: ${historyState.history.history.length}`}</p>
+        <div>
+          <span>Competitors: </span>
+          {historyState.history.competitors.length === 0 ? (
+            <span>None</span>
+          ) : (
+            <ul className="roster-list" aria-label="Competitor roster">
+              {historyState.history.competitors.map((competitor, index) => (
+                <li
+                  key={`${competitor.competitor_kind}:${competitor.display_name}:${index}`}
+                  className="roster-row"
+                >
+                  {competitor.agent_id === null ? (
+                    competitor.display_name
+                  ) : (
+                    <Link href={`/agents/${competitor.agent_id}`}>{competitor.display_name}</Link>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       <section className="panel panel-section">
@@ -290,7 +314,10 @@ function ReplayPanel({
   value
 }: {
   heading: string;
-  value: MatchReplayTickResponse["state_snapshot"] | MatchReplayTickResponse["orders"] | MatchReplayTickResponse["events"];
+  value:
+    | MatchReplayTickResponse["state_snapshot"]
+    | MatchReplayTickResponse["orders"]
+    | MatchReplayTickResponse["events"];
 }) {
   return (
     <section className="panel panel-section">
