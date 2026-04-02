@@ -200,5 +200,5 @@ development_status:
   39-3-extract-public-history-and-replay-routes-out-of-server-api-public_routes-py: done
 
   epic-40: active
-  40-1-detect-and-persist-completed-matches-from-victory-state: drafted
+  40-1-detect-and-persist-completed-matches-from-victory-state: done
   40-2-add-deterministic-post-match-rating-settlement-and-profile-history-updates: drafted

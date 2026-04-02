@@ -154,8 +154,11 @@ def build_public_leaderboard(
     players: Sequence[Player],
 ) -> PublicLeaderboardResponse:
     players_by_match: dict[str, list[Player]] = defaultdict(list)
+    players_by_match_and_id: dict[tuple[str, str], Player] = {}
     for player in players:
-        players_by_match[str(player.match_id)].append(player)
+        match_id = str(player.match_id)
+        players_by_match[match_id].append(player)
+        players_by_match_and_id[(match_id, str(player.id))] = player
 
     ranked_matches = sorted(
         completed_matches,
@@ -163,9 +166,6 @@ def build_public_leaderboard(
     )
     aggregates: dict[str, LeaderboardAggregate] = {}
     for match in ranked_matches:
-        winner_alliance_id = (
-            str(match.winner_alliance) if match.winner_alliance is not None else None
-        )
         for player in players_by_match.get(str(match.id), []):
             competitor_kind: Literal["human", "agent"] = "agent" if player.is_agent else "human"
             competitor_identity = leaderboard_competitor_identity(player)
@@ -181,10 +181,14 @@ def build_public_leaderboard(
                 aggregates[competitor_identity] = aggregate
 
             aggregate.matches_played += 1
-            player_alliance_id = str(player.alliance_id) if player.alliance_id is not None else None
-            if winner_alliance_id is None:
+            winner_identity = winner_identity_for_player(
+                match=match,
+                player=player,
+                players_by_match_and_id=players_by_match_and_id,
+            )
+            if winner_identity is None:
                 aggregate.draws += 1
-            elif player_alliance_id == winner_alliance_id:
+            elif winner_identity == "win":
                 aggregate.wins += 1
             else:
                 aggregate.losses += 1
@@ -224,9 +228,11 @@ def build_completed_match_summary_list(
 ) -> CompletedMatchSummaryListResponse:
     players_by_match: dict[str, list[Player]] = defaultdict(list)
     players_by_match_and_alliance: dict[tuple[str, str], list[Player]] = defaultdict(list)
+    players_by_match_and_id: dict[tuple[str, str], Player] = {}
     for player in players:
         match_id = str(player.match_id)
         players_by_match[match_id].append(player)
+        players_by_match_and_id[(match_id, str(player.id))] = player
         if player.alliance_id is not None:
             players_by_match_and_alliance[(match_id, str(player.alliance_id))].append(player)
 
@@ -249,6 +255,7 @@ def build_completed_match_summary_list(
                 winning_player_display_names=winning_player_display_names(
                     match=match,
                     players_by_match_and_alliance=players_by_match_and_alliance,
+                    players_by_match_and_id=players_by_match_and_id,
                 ),
             )
             for match in completed_matches
@@ -271,11 +278,35 @@ def winning_player_display_names(
     *,
     match: Match,
     players_by_match_and_alliance: dict[tuple[str, str], list[Player]],
+    players_by_match_and_id: dict[tuple[str, str], Player],
 ) -> list[str]:
     if match.winner_alliance is None:
         return []
     winners = players_by_match_and_alliance.get((str(match.id), str(match.winner_alliance)), [])
-    return sorted(player.display_name for player in winners)
+    if winners:
+        return sorted(player.display_name for player in winners)
+    solo_winner = players_by_match_and_id.get((str(match.id), str(match.winner_alliance)))
+    if solo_winner is None:
+        return []
+    return [solo_winner.display_name]
+
+
+def winner_identity_for_player(
+    *,
+    match: Match,
+    player: Player,
+    players_by_match_and_id: dict[tuple[str, str], Player],
+) -> Literal["win", "loss"] | None:
+    if match.winner_alliance is None:
+        return None
+    if player.alliance_id is not None and str(player.alliance_id) == str(match.winner_alliance):
+        return "win"
+    winner_player = players_by_match_and_id.get((str(match.id), str(match.winner_alliance)))
+    if winner_player is None:
+        return "loss"
+    if str(player.id) == str(winner_player.id):
+        return "win"
+    return "loss"
 
 
 def to_utc(value: datetime) -> datetime:

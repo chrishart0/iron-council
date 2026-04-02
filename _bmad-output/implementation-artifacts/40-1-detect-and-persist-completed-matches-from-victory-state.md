@@ -1,6 +1,6 @@
 # Story: 40.1 Detect and persist completed matches from victory state
 
-Status: drafted
+Status: completed
 
 ## Story
 
@@ -18,11 +18,11 @@ So that completed-match browse, replay/history, and future rating settlement all
 
 ## Tasks / Subtasks
 
-- [ ] Audit the current runtime loop, tick persistence path, and completed-match public-read assumptions to identify the smallest compatibility-safe completion seam. (AC: 1, 2, 4)
-- [ ] Add focused failing tests for terminal victory persistence, runtime stop behavior, and completed-match public visibility before implementing the change. (AC: 1, 2, 3, 4)
-- [ ] Implement the terminal victory completion transition in the persistence and runtime layers without changing non-terminal behavior. (AC: 1, 2, 4)
-- [ ] Add or tighten focused regressions around completed browse visibility and terminal replay/history fidelity if needed. (AC: 3, 5)
-- [ ] Run focused verification plus the strongest practical repo-managed checks. (AC: 5)
+- [x] Audit the current runtime loop, tick persistence path, and completed-match public-read assumptions to identify the smallest compatibility-safe completion seam. (AC: 1, 2, 4)
+- [x] Add focused failing tests for terminal victory persistence, runtime stop behavior, and completed-match public visibility before implementing the change. (AC: 1, 2, 3, 4)
+- [x] Implement the terminal victory completion transition in the persistence and runtime layers without changing non-terminal behavior. (AC: 1, 2, 4)
+- [x] Add or tighten focused regressions around completed browse visibility and terminal replay/history fidelity if needed. (AC: 3, 5)
+- [x] Run focused verification plus the strongest practical repo-managed checks. (AC: 5)
 
 ## Dev Notes
 
@@ -37,15 +37,28 @@ So that completed-match browse, replay/history, and future rating settlement all
 ### Debug Log
 
 - 2026-04-02: Drafted after Epic 39 closed. This is the first story in the new match-completion / rating-finalization phase.
+- 2026-04-02: Implemented terminal completion persistence and runtime stop behavior, then tightened follow-up review coverage for `updated_at`-backed completed ordering and unresolved persisted-winner rollback semantics.
+- 2026-04-02: Re-ran the focused Story 40.1 terminal regressions plus static checks after the review fixes.
 
 ### Completion Notes
 
-- Pending.
+- Terminal completed ticks now persist `matches.status=completed`, the final `winner_alliance`, and a fresh `matches.updated_at` timestamp in the same transaction as the terminal tick log append, so completed browse ordering and `completed_at` no longer reuse the seeded active-match timestamp.
+- Terminal winner persistence no longer degrades silently when persisted alliance membership drifts. If the winner alliance cannot be resolved from the current persisted player/alliance rows, persistence raises and the runtime rollback path preserves the pre-tick in-memory match instead of storing a winnerless completed record.
+- Runtime terminal handling now uses a local `is_terminal` flag to keep the completion/broadcast/stop flow explicit without changing non-terminal behavior.
+- Focused regression coverage now locks in the `updated_at` contract, the unresolved terminal-winner failure semantics, the runtime rollback path, and the DB-backed public completed/history visibility after a terminal tick.
+- Verification: `uv run pytest -o addopts='' tests/test_db_registry.py -k 'terminal'`; `uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'completed_terminal_tick_is_excluded'`; `uv run ruff check server/agent_registry.py server/db/tick_persistence.py server/runtime.py tests/test_db_registry.py tests/api/test_agent_api.py`; `uv run mypy server/agent_registry.py server/db/tick_persistence.py server/runtime.py tests/test_db_registry.py tests/api/test_agent_api.py`; `make quality`.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/40-1-detect-and-persist-completed-matches-from-victory-state.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `server/agent_registry.py`
+- `server/db/tick_persistence.py`
+- `server/runtime.py`
+- `tests/api/test_agent_api.py`
+- `tests/test_db_registry.py`
 
 ### Change Log
 
 - 2026-04-02: Drafted Story 40.1 to move Iron Council from provisional live-only victory state into persisted completed-match finalization.
+- 2026-04-02: Completed Story 40.1 with terminal completion persistence, runtime stop/rollback handling, and focused DB/API/runtime regressions.
