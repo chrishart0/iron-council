@@ -1918,6 +1918,120 @@ def test_get_public_match_detail_maps_canonical_player_ids_from_persisted_ids_no
     ]
 
 
+def test_public_match_browse_and_detail_keep_counts_while_roster_filters_unmapped_rows(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-public-match-detail-filtering.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM players WHERE match_id = :match_id"),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        )
+        match_state = json.loads(
+            connection.execute(
+                text("SELECT state FROM matches WHERE id = :match_id"),
+                {"match_id": "00000000-0000-0000-0000-000000000101"},
+            ).scalar_one()
+        )
+        match_state["players"] = {
+            "player-1": match_state["players"]["player-1"],
+            "player-2": match_state["players"]["player-2"],
+        }
+        connection.execute(
+            text("UPDATE matches SET state = :state WHERE id = :match_id"),
+            {
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "state": json.dumps(match_state),
+            },
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO players (
+                    id, user_id, match_id, display_name, is_agent, api_key_id, elo_rating,
+                    alliance_id, alliance_joined_tick, eliminated_at
+                ) VALUES (
+                    :id, :user_id, :match_id, :display_name, :is_agent, :api_key_id, :elo_rating,
+                    :alliance_id, :alliance_joined_tick, :eliminated_at
+                )
+                """
+            ),
+            [
+                {
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-2",
+                    ),
+                    "user_id": "00000000-0000-0000-0000-000000000302",
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "display_name": "Morgana",
+                    "is_agent": True,
+                    "api_key_id": "00000000-0000-0000-0000-000000000202",
+                    "elo_rating": 1190,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-1",
+                    ),
+                    "user_id": "00000000-0000-0000-0000-000000000301",
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "display_name": "Arthur",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1210,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-3",
+                    ),
+                    "user_id": "00000000-0000-0000-0000-000000000303",
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "display_name": "Unmapped Extra",
+                    "is_agent": True,
+                    "api_key_id": "00000000-0000-0000-0000-000000000203",
+                    "elo_rating": 1175,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+            ],
+        )
+
+    browse = get_public_match_summaries(database_url=database_url)
+    detail = get_public_match_detail(
+        database_url=database_url,
+        match_id="00000000-0000-0000-0000-000000000101",
+    )
+
+    assert browse.matches[0].model_dump(mode="json") == {
+        "match_id": "00000000-0000-0000-0000-000000000101",
+        "status": "active",
+        "map": "britain",
+        "tick": 142,
+        "tick_interval_seconds": 30,
+        "current_player_count": 3,
+        "max_player_count": 5,
+        "open_slot_count": 2,
+    }
+    assert detail.current_player_count == 3
+    assert detail.open_slot_count == 2
+    assert [row.model_dump(mode="json") for row in detail.roster] == [
+        {"player_id": "player-1", "display_name": "Arthur", "competitor_kind": "human"},
+        {"player_id": "player-2", "display_name": "Morgana", "competitor_kind": "agent"},
+    ]
+
+
 def test_build_persisted_player_mapping_ignores_invalid_ids_and_rejects_duplicates() -> None:
     assert (
         db_registry_module._build_persisted_player_mapping(

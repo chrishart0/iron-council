@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Literal
 
 from sqlalchemy import create_engine, select
@@ -10,6 +9,13 @@ from sqlalchemy.orm import Session
 
 from server.db.models import Alliance, Match, Player, TickLog
 from server.db.player_ids import build_persisted_player_mapping
+from server.db.public_read_assembly import (
+    build_public_match_detail,
+    build_public_match_summary,
+    leaderboard_competitor_identity,
+    public_match_browse_sort_key,
+    to_utc,
+)
 from server.models.api import (
     CompletedMatchSummary,
     CompletedMatchSummaryListResponse,
@@ -18,10 +24,8 @@ from server.models.api import (
     MatchHistoryResponse,
     MatchListResponse,
     MatchReplayTickResponse,
-    MatchSummary,
     PublicLeaderboardResponse,
     PublicMatchDetailResponse,
-    PublicMatchRosterRow,
 )
 from server.models.domain import MatchStatus
 from server.models.state import MatchState
@@ -207,19 +211,9 @@ def get_public_match_summaries(*, database_url: str) -> MatchListResponse:
 
     return MatchListResponse(
         matches=[
-            MatchSummary(
-                match_id=str(match.id),
-                status=MatchStatus(match.status),
-                map=str(match.config.get("map", "")),
-                tick=int(match.current_tick),
-                tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
+            build_public_match_summary(
+                match=match,
                 current_player_count=player_counts_by_match.get(str(match.id), 0),
-                max_player_count=max(int(match.config.get("max_players", 0)), 0),
-                open_slot_count=max(
-                    int(match.config.get("max_players", 0))
-                    - player_counts_by_match.get(str(match.id), 0),
-                    0,
-                ),
             )
             for match in sorted(public_matches, key=public_match_browse_sort_key)
         ]
@@ -249,24 +243,10 @@ def get_public_match_detail(*, database_url: str, match_id: str) -> PublicMatchD
             persisted_players=players,
         )
 
-    return PublicMatchDetailResponse(
-        match_id=str(match.id),
-        status=MatchStatus(match.status),
-        map=str(match.config.get("map", "")),
-        tick=int(match.current_tick),
-        tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
-        current_player_count=len(players),
-        max_player_count=max(int(match.config.get("max_players", 0)), 0),
-        open_slot_count=max(int(match.config.get("max_players", 0)) - len(players), 0),
-        roster=[
-            PublicMatchRosterRow(
-                player_id=canonical_player_id,
-                display_name=player.display_name,
-                competitor_kind="agent" if player.is_agent else "human",
-            )
-            for player in sorted(players, key=public_match_roster_sort_key)
-            if (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None
-        ],
+    return build_public_match_detail(
+        match=match,
+        players=players,
+        persisted_player_mapping=persisted_player_mapping,
     )
 
 
@@ -324,48 +304,6 @@ def get_completed_match_summaries(*, database_url: str) -> CompletedMatchSummary
         for match in completed_matches
     ]
     return CompletedMatchSummaryListResponse(matches=summaries)
-
-
-def leaderboard_competitor_identity(player: Player) -> str:
-    if player.is_agent:
-        if player.api_key_id is not None:
-            return f"agent:{player.api_key_id}"
-        return f"agent-user:{player.user_id}"
-    return f"human:{player.user_id}"
-
-
-def public_match_browse_sort_key(match: Match) -> tuple[int, float, int, str]:
-    return (
-        public_status_priority(MatchStatus(match.status)),
-        -to_utc(match.updated_at).timestamp(),
-        -int(match.current_tick),
-        str(match.id),
-    )
-
-
-def public_match_roster_sort_key(player: Player) -> tuple[str, int, str, str]:
-    return (
-        player.display_name.casefold(),
-        0 if not player.is_agent else 1,
-        player.display_name,
-        str(player.id),
-    )
-
-
-def public_status_priority(status: MatchStatus) -> int:
-    if status is MatchStatus.LOBBY:
-        return 0
-    if status is MatchStatus.ACTIVE:
-        return 1
-    if status is MatchStatus.PAUSED:
-        return 2
-    return 3
-
-
-def to_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 def winning_alliance_name(
