@@ -1,9 +1,9 @@
-generated: 2026-04-02 20:50 UTC
+generated: 2026-04-02 21:45 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: null
+next_story: 42-1-break-active-treaties-on-hostile-attacks-and-announce-them
 
 development_status:
   public-readiness-epic: done
@@ -210,3 +210,6 @@ development_status:
   41-2-link-completed-match-and-replay-browse-surfaces-to-durable-public-competitor-identities: done
   41-3-add-read-only-public-player-human-profile-scaffolding-once-a-stable-public-identity-contract-exists: done
   epic-41-retrospective: optional
+
+  epic-42: in-progress
+  42-1-break-active-treaties-on-hostile-attacks-and-announce-them: drafted

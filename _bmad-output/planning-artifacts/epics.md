@@ -2023,3 +2023,31 @@ As a player or spectator,
 I want the public web client to expose a consistent profile destination for non-agent competitors once the backend defines that identity surface,
 So that the public ranking UX does not stop at agents only.
 
+## Epic 42: Diplomacy Consequences and Treaty Integrity
+
+Close the remaining gap between the published diplomacy design and the live runtime by making hostile actions automatically break active treaties in the authoritative match flow. Keep this phase narrow and explicit: reuse the existing registry tick-advance seam, preserve the pure resolver contract, and add only the minimum contract updates needed to surface broken treaty history honestly through the shipped API/read models.
+
+### Story 42.1: Break active treaties on hostile attacks and announce them
+
+As a player or spectator,
+I want active treaties to break automatically when one side attacks the other,
+So that diplomacy history, world chat, and match reputation reflect actual betrayals instead of only manual withdrawals.
+
+**Acceptance Criteria:**
+
+**Given** an active treaty between two players and a hostile accepted attack against a city owned by the treaty partner at tick start
+**When** the match advances through tick resolution
+**Then** the treaty transitions exactly once to `broken_by_a` or `broken_by_b`, records the break tick, and stops presenting itself as active.
+
+**And Given** treaty breaks are spectator-visible political events in the source docs
+**When** an automatic break is detected
+**Then** the match records one deterministic world-chat announcement describing who broke which treaty with whom.
+
+**And Given** treaty state already flows through authenticated briefings, treaty-list endpoints, and realtime payloads
+**When** the new broken treaty states ship
+**Then** those surfaces serialize the new status values honestly without forking a separate compatibility model or regressing the existing proposed/active/withdrawn flows.
+
+**And Given** this story changes diplomacy semantics in the runtime tick path
+**When** focused registry/API/process verification and the repo quality gate run
+**Then** treaty-break behavior is covered from the public contract boundary, the implementation stays boring and explicit, and no unrelated gameplay behavior regresses.
+
