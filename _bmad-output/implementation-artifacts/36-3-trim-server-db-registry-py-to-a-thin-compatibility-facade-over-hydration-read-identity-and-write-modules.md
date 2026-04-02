@@ -1,6 +1,6 @@
 # Story: 36.3 Trim `server/db/registry.py` to a thin compatibility facade over hydration, read, identity, and write modules
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -38,12 +38,17 @@ So that future DB-backed features can extend focused modules without recreating 
 
 ### Completion Notes
 
-- Pending.
+- Reduced `server/db/registry.py` to a thinner compatibility facade by replacing local lobby/tick pass-through wrappers with direct module re-exports and keeping only the compatibility aliases still needed for the stable surface.
+- Added focused regression coverage that pins the facade's stable re-export surface against the owning hydration, public-read, lobby-write, and tick-persistence modules.
+- Verified the merged result with focused registry tests plus static checks (`uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_db_registry.py`, `uv run ruff check server/db/registry.py tests/test_db_registry.py`, `uv run mypy server tests`).
 
 ### File List
 
+- `server/db/registry.py`
+- `tests/test_db_registry.py`
 - `_bmad-output/implementation-artifacts/36-3-trim-server-db-registry-py-to-a-thin-compatibility-facade-over-hydration-read-identity-and-write-modules.md`
 
 ### Change Log
 
 - 2026-04-02: Drafted Story 36.3 as the next pragmatic follow-on to Story 36.2.
+- 2026-04-02: Completed Story 36.3 by trimming `server/db/registry.py` to a compatibility facade and pinning the stable export surface with focused regression tests.

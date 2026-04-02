@@ -1783,3 +1783,27 @@ As a server maintainer,
 I want the DB registry module reduced to a clearly boring compatibility layer,
 So that future DB-backed features can extend focused modules without recreating a monolithic registry file.
 
+## Epic 37: DB Hydration Composition Decomposition
+
+Reduce concentration in `server/db/hydration.py` by extracting reusable match-record composition helpers and grouped hydration loaders while preserving the current DB-backed reload semantics, public-read visibility metadata, seeded/non-seeded agent identity reconstruction, and stable caller contracts. Treat this as a refactor epic only: prefer plain functions, explicit data flow, and compatibility-preserving seams over new framework layers.
+
+### Story 37.1: Extract match-record assembly helpers out of `server/db/hydration.py`
+
+As a server maintainer,
+I want the duplicated match-record assembly logic in DB hydration isolated behind focused helpers,
+So that registry reloads and session-scoped match reloads can evolve without one large hydration file owning both row loading and record composition.
+
+**Acceptance Criteria:**
+
+**Given** `server/db/hydration.py` currently assembles `MatchRecord` values in both `load_match_registry_from_database` and `load_match_record_from_session`
+**When** Story 37.1 ships
+**Then** shared match-record composition helpers own the repeated `MatchRecord` construction logic while the stable caller contracts remain unchanged.
+
+**And Given** DB hydration currently reconstructs joined agents, joined humans, authenticated agent keys, public competitor kinds, alliances, and joinable player IDs from persisted rows
+**When** the refactor ships
+**Then** reload semantics, seeded/non-seeded identity reconstruction, joinability calculations, and public visibility metadata remain unchanged at the registry and route boundary.
+
+**And Given** the story is refactor-only
+**When** focused hydration/registry regressions and the strongest practical repo-managed verification run
+**Then** no HTTP/OpenAPI contract, auth semantics, DB schema, websocket behavior, runtime-loop behavior, or gameplay rules change and the resulting structure is simpler than the starting point.
+

@@ -1,9 +1,9 @@
-generated: 2026-04-02 01:34 UTC
+generated: 2026-04-02 02:24 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 36-3-trim-server-db-registry-py-to-a-thin-compatibility-facade-over-hydration-read-identity-and-write-modules.md
+next_story: 37-1-extract-match-record-assembly-helpers-out-of-server-db-hydration-py.md
 
 development_status:
   public-readiness-epic: done
@@ -179,7 +179,11 @@ development_status:
   35-5-extract-authenticated-treaty-and-alliance-routes-plus-shared-match-route-helpers-out-of-server-api-authenticated_match_routes-py: done
   epic-35-retrospective: optional
 
-  epic-36: in-progress
+  epic-36: done
   36-1-extract-db-backed-lobby-lifecycle-and-tick-persistence-out-of-server-db-registry-py: done
   36-2-extract-db-backed-identity-and-player-lookup-compatibility-helpers-out-of-server-db-registry-py: done
-  36-3-trim-server-db-registry-py-to-a-thin-compatibility-facade-over-hydration-read-identity-and-write-modules: drafted
+  36-3-trim-server-db-registry-py-to-a-thin-compatibility-facade-over-hydration-read-identity-and-write-modules: done
+  epic-36-retrospective: optional
+
+  epic-37: drafted
+  37-1-extract-match-record-assembly-helpers-out-of-server-db-hydration-py: drafted
