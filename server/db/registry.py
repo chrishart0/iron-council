@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from server.agent_registry import (
     AdvancedMatchTick,
 )
@@ -50,6 +48,22 @@ from server.db.identity import (
 from server.db.identity import (
     resolve_loaded_agent_identity as _resolve_loaded_agent_identity,
 )
+from server.db.identity_registry import (
+    build_human_actor_id as _build_human_actor_id,
+)
+from server.db.identity_registry import (
+    build_joined_player_id as _build_joined_player_id,
+)
+from server.db.identity_registry import (
+    build_match_scoped_player_id as _build_match_scoped_player_id,
+)
+from server.db.identity_registry import (
+    build_persisted_player_mapping as _build_persisted_player_mapping,
+)
+from server.db.identity_registry import (
+    resolve_authenticated_agent_context_from_db,
+    resolve_human_player_id_from_db,
+)
 from server.db.lobby_registry import (
     CreatedMatchLobby,
     JoinedMatch,
@@ -66,18 +80,6 @@ from server.db.lobby_registry import (
 from server.db.lobby_registry import (
     start_match_lobby as _start_match_lobby,
 )
-from server.db.player_ids import (
-    build_human_actor_id as _build_human_actor_id,
-)
-from server.db.player_ids import (
-    build_joined_player_id as _build_joined_player_id,
-)
-from server.db.player_ids import (
-    build_match_scoped_player_id as _build_match_scoped_player_id,
-)
-from server.db.player_ids import (
-    build_persisted_player_mapping as _build_persisted_player_mapping,
-)
 from server.db.public_reads import (
     MatchHistoryNotFoundError,
     PublicMatchDetailNotFoundError,
@@ -92,10 +94,7 @@ from server.db.public_reads import (
 from server.db.tick_persistence import (
     persist_advanced_match_tick as _persist_advanced_match_tick,
 )
-from server.models.api import (
-    AuthenticatedAgentContext,
-    MatchLobbyCreateRequest,
-)
+from server.models.api import MatchLobbyCreateRequest
 
 
 def persist_advanced_match_tick(*, database_url: str, advanced_tick: AdvancedMatchTick) -> None:
@@ -148,27 +147,6 @@ def start_match_lobby(
         match_id=match_id,
         authenticated_api_key_hash=authenticated_api_key_hash,
         authenticated_human_user_id=authenticated_human_user_id,
-    )
-
-
-def resolve_authenticated_agent_context_from_db(
-    *, database_url: str, api_key: str
-) -> AuthenticatedAgentContext | None:
-    return _resolve_authenticated_agent_context_from_db(
-        database_url=database_url,
-        api_key=api_key,
-        session_factory=Session,
-    )
-
-
-def resolve_human_player_id_from_db(
-    *, database_url: str, match_id: str, user_id: str
-) -> str | None:
-    return _resolve_human_player_id_from_db(
-        database_url=database_url,
-        match_id=match_id,
-        user_id=user_id,
-        session_factory=Session,
     )
 
 

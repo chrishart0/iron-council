@@ -16,6 +16,7 @@ from server.agent_registry import (
     build_seeded_profiles_by_key_hash,
 )
 from server.auth import hash_api_key
+from server.db import identity_registry as db_identity_registry_module
 from server.db.models import Player
 from server.db.registry import (
     MatchHistoryNotFoundError,
@@ -1870,6 +1871,52 @@ def test_build_persisted_player_mapping_ignores_invalid_ids_and_rejects_duplicat
             ),
         )
         == {}
+    )
+
+
+def test_registry_identity_compatibility_exports_delegate_to_identity_registry_module() -> None:
+    assert (
+        db_registry_module.resolve_authenticated_agent_context_from_db
+        is db_identity_registry_module.resolve_authenticated_agent_context_from_db
+    )
+    assert (
+        db_registry_module.resolve_human_player_id_from_db
+        is db_identity_registry_module.resolve_human_player_id_from_db
+    )
+    assert (
+        db_registry_module.resolve_authenticated_agent_from_db_key_hash
+        is db_identity_registry_module.resolve_authenticated_agent_from_db_key_hash
+    )
+    assert (
+        db_registry_module.resolve_human_display_name
+        is db_identity_registry_module.resolve_human_display_name
+    )
+    assert (
+        db_registry_module.resolve_human_elo_rating
+        is db_identity_registry_module.resolve_human_elo_rating
+    )
+    assert (
+        db_registry_module.resolve_loaded_agent_identity
+        is db_identity_registry_module.resolve_loaded_agent_identity
+    )
+    assert (
+        db_registry_module.build_human_actor_id is db_identity_registry_module.build_human_actor_id
+    )
+    assert (
+        db_registry_module.build_joined_player_id
+        is db_identity_registry_module.build_joined_player_id
+    )
+    assert (
+        db_registry_module.build_match_scoped_player_id
+        is db_identity_registry_module.build_match_scoped_player_id
+    )
+    assert (
+        db_registry_module.build_persisted_player_mapping
+        is db_identity_registry_module.build_persisted_player_mapping
+    )
+    assert (
+        db_registry_module.ResolvedAuthenticatedDbAgent
+        is db_identity_registry_module.ResolvedAuthenticatedDbAgent
     )
 
 
