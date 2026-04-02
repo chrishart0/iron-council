@@ -25,6 +25,54 @@ from server.models.domain import MatchStatus
 from server.models.state import MatchState
 
 
+def _compose_loaded_match_record(
+    *,
+    match: Match,
+    state: MatchState,
+    joined_agents: dict[str, str],
+    joined_humans: dict[str, str],
+    agent_profiles: list[AgentProfileResponse],
+    public_competitor_kinds: dict[str, Literal["human", "agent"]],
+    authenticated_agent_keys: list[AuthenticatedAgentKeyRecord],
+    alliances: list[MatchAlliance] | None = None,
+) -> MatchRecord:
+    return MatchRecord(
+        match_id=str(match.id),
+        status=MatchStatus(match.status),
+        tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
+        state=state,
+        map_id=str(match.config.get("map", "britain")),
+        max_player_count=int(match.config.get("max_players", len(state.players))),
+        current_player_count=len(joined_agents) + len(joined_humans),
+        joinable_player_ids=_derive_joinable_player_ids(
+            match_status=match.status,
+            state=state,
+            joined_agents=joined_agents,
+            joined_humans=joined_humans,
+        ),
+        agent_profiles=agent_profiles,
+        public_competitor_kinds=public_competitor_kinds,
+        joined_agents=joined_agents,
+        joined_humans=joined_humans,
+        alliances=list(alliances or []),
+        authenticated_agent_keys=authenticated_agent_keys,
+    )
+
+
+def _derive_joinable_player_ids(
+    *,
+    match_status: str,
+    state: MatchState,
+    joined_agents: dict[str, str],
+    joined_humans: dict[str, str],
+) -> list[str]:
+    if match_status not in {MatchStatus.LOBBY.value, MatchStatus.PAUSED.value}:
+        return []
+
+    joined_player_ids = set(joined_agents.values()) | set(joined_humans.values())
+    return sorted(player_id for player_id in state.players if player_id not in joined_player_ids)
+
+
 def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistry:
     registry = InMemoryMatchRegistry()
     engine = create_engine(database_url)
@@ -73,28 +121,13 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
             state = MatchState.model_validate(match.state)
             joined_agents = joined_agents_by_match.get(match_id, {})
             joined_humans = joined_humans_by_match.get(match_id, {})
-            record = MatchRecord(
-                match_id=match_id,
-                status=MatchStatus(match.status),
-                tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
+            record = _compose_loaded_match_record(
+                match=match,
                 state=state,
-                map_id=str(match.config.get("map", "britain")),
-                max_player_count=int(match.config.get("max_players", len(state.players))),
-                current_player_count=len(joined_agents) + len(joined_humans),
-                joinable_player_ids=(
-                    sorted(
-                        player_id
-                        for player_id in state.players
-                        if player_id not in joined_agents.values()
-                        and player_id not in joined_humans.values()
-                    )
-                    if match.status in {MatchStatus.LOBBY.value, MatchStatus.PAUSED.value}
-                    else []
-                ),
-                agent_profiles=agent_profiles_by_match.get(match_id, build_seeded_agent_profiles()),
-                public_competitor_kinds=public_competitor_kinds_by_match.get(match_id, {}),
                 joined_agents=joined_agents,
                 joined_humans=joined_humans,
+                agent_profiles=agent_profiles_by_match.get(match_id, build_seeded_agent_profiles()),
+                public_competitor_kinds=public_competitor_kinds_by_match.get(match_id, {}),
                 alliances=persisted_alliances,
                 authenticated_agent_keys=authenticated_keys_by_match.get(match_id, []),
             )
@@ -138,28 +171,13 @@ def load_match_record_from_session(*, session: Session, match: Match) -> MatchRe
         matches=[match],
         player_rows=player_rows,
     ).get(match_id, {})
-    joinable_player_ids = (
-        sorted(
-            player_id
-            for player_id in state.players
-            if player_id not in joined_agents.values() and player_id not in joined_humans.values()
-        )
-        if match.status in {MatchStatus.LOBBY.value, MatchStatus.PAUSED.value}
-        else []
-    )
-    return MatchRecord(
-        match_id=match_id,
-        status=MatchStatus(match.status),
-        tick_interval_seconds=int(match.config.get("turn_seconds", 0)),
+    return _compose_loaded_match_record(
+        match=match,
         state=state,
-        map_id=str(match.config.get("map", "britain")),
-        max_player_count=int(match.config.get("max_players", len(state.players))),
-        current_player_count=len(joined_agents) + len(joined_humans),
-        joinable_player_ids=joinable_player_ids,
-        agent_profiles=agent_profiles,
-        public_competitor_kinds=public_competitor_kinds,
         joined_agents=joined_agents,
         joined_humans=joined_humans,
+        agent_profiles=agent_profiles,
+        public_competitor_kinds=public_competitor_kinds,
         authenticated_agent_keys=authenticated_agent_keys,
     )
 

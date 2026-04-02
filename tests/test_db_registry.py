@@ -21,7 +21,7 @@ from server.db import identity_registry as db_identity_registry_module
 from server.db import lobby_registry as db_lobby_registry_module
 from server.db import public_reads as db_public_reads_module
 from server.db import tick_persistence as db_tick_persistence_module
-from server.db.models import Player
+from server.db.models import Match, Player
 from server.db.registry import (
     MatchHistoryNotFoundError,
     MatchLobbyCreationError,
@@ -48,6 +48,7 @@ from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
 from server.runtime import MatchRuntime
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 
 from tests.support import (
     build_persisted_player_id,
@@ -134,6 +135,68 @@ def test_shared_seeded_profiles_by_key_hash_matches_seeded_agent_profiles() -> N
         ].agent_id
         == "agent-player-2"
     )
+
+
+def test_load_match_record_from_session_matches_registry_reload_for_lobby_membership_fields(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-session-load.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    created = create_match_lobby(
+        database_url=database_url,
+        authenticated_agent_id="agent-player-2",
+        authenticated_agent_display_name="Morgana",
+        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        request=MatchLobbyCreateRequest(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=4,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        ),
+    )
+    join_match(
+        database_url=database_url,
+        match_id=created.response.match_id,
+        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-3")),
+    )
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        persisted_match = session.get(Match, created.response.match_id)
+        assert persisted_match is not None
+        session_loaded = db_hydration_module.load_match_record_from_session(
+            session=session,
+            match=persisted_match,
+        )
+
+    reloaded_registry = load_match_registry_from_database(database_url)
+    reloaded_match = reloaded_registry.get_match(created.response.match_id)
+    assert reloaded_match is not None
+
+    assert session_loaded.match_id == reloaded_match.match_id
+    assert session_loaded.status == reloaded_match.status
+    assert session_loaded.tick_interval_seconds == reloaded_match.tick_interval_seconds
+    assert session_loaded.state.model_dump(mode="json") == reloaded_match.state.model_dump(
+        mode="json"
+    )
+    assert session_loaded.map_id == reloaded_match.map_id
+    assert session_loaded.max_player_count == reloaded_match.max_player_count
+    assert session_loaded.current_player_count == reloaded_match.current_player_count
+    assert session_loaded.joinable_player_ids == reloaded_match.joinable_player_ids
+    assert session_loaded.joined_agents == reloaded_match.joined_agents
+    assert session_loaded.joined_humans == reloaded_match.joined_humans
+    assert session_loaded.public_competitor_kinds == reloaded_match.public_competitor_kinds
+
+    expected_agent_ids = sorted(session_loaded.joined_agents)
+    assert [profile.agent_id for profile in session_loaded.agent_profiles] == expected_agent_ids
+    assert all(profile.is_seeded for profile in session_loaded.agent_profiles)
+    assert [key.agent_id for key in session_loaded.authenticated_agent_keys] == expected_agent_ids
+    assert all(key.is_active for key in session_loaded.authenticated_agent_keys)
+    assert [key.key_hash for key in session_loaded.authenticated_agent_keys] == [
+        hash_api_key(build_seeded_agent_api_key(agent_id)) for agent_id in expected_agent_ids
+    ]
 
 
 def test_create_match_lobby_persists_match_and_creator_membership_atomically(
