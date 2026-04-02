@@ -29,6 +29,7 @@ export type LeaderboardEntry = {
   rank: number;
   display_name: string;
   competitor_kind: CompetitorKind;
+  agent_id: string | null;
   elo: number;
   provisional: boolean;
   matches_played: number;
@@ -39,6 +40,26 @@ export type LeaderboardEntry = {
 
 export type PublicLeaderboardResponse = {
   leaderboard: LeaderboardEntry[];
+};
+
+export type AgentProfileRating = {
+  elo: number;
+  provisional: boolean;
+};
+
+export type AgentProfileHistory = {
+  matches_played: number;
+  wins: number;
+  losses: number;
+  draws: number;
+};
+
+export type PublicAgentProfileResponse = {
+  agent_id: string;
+  display_name: string;
+  is_seeded: boolean;
+  rating: AgentProfileRating;
+  history: AgentProfileHistory;
 };
 
 export type CompletedMatchSummary = {

@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from server.db.models import Alliance, Match, Player, PlayerMatchSettlement, TickLog
+from server.db.identity import resolve_loaded_agent_identity
+from server.db.models import Alliance, ApiKey, Match, Player, PlayerMatchSettlement, TickLog
 from server.models.api import (
+    AgentProfileResponse,
     CompletedMatchSummary,
     CompletedMatchSummaryListResponse,
     LeaderboardEntry,
@@ -20,6 +22,7 @@ from server.models.api import (
     PublicMatchRosterRow,
 )
 from server.models.domain import MatchStatus
+from server.registry_seed_data import build_seeded_profiles_by_key_hash
 
 
 @dataclass
@@ -27,6 +30,7 @@ class LeaderboardAggregate:
     competitor_key: str
     display_name: str
     competitor_kind: Literal["human", "agent"]
+    agent_id: str | None
     elo: int
     provisional: bool
     matches_played: int = 0
@@ -152,11 +156,14 @@ def build_public_leaderboard(
     *,
     completed_matches: Sequence[Match],
     players: Sequence[Player],
+    api_key_rows: Sequence[ApiKey],
     settlements: Sequence[PlayerMatchSettlement],
 ) -> PublicLeaderboardResponse:
     players_by_match: dict[str, list[Player]] = defaultdict(list)
     players_by_match_and_id: dict[tuple[str, str], Player] = {}
     settlements_by_player_id = {str(settlement.player_id): settlement for settlement in settlements}
+    api_keys_by_id = {str(api_key.id): api_key for api_key in api_key_rows}
+    seeded_profiles_by_key_hash = build_seeded_profiles_by_key_hash()
     for player in players:
         match_id = str(player.match_id)
         players_by_match[match_id].append(player)
@@ -178,6 +185,11 @@ def build_public_leaderboard(
                     competitor_key=competitor_identity,
                     display_name=player.display_name,
                     competitor_kind=competitor_kind,
+                    agent_id=leaderboard_agent_id(
+                        player=player,
+                        api_keys_by_id=api_keys_by_id,
+                        seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
+                    ),
                     elo=int(settlement.elo_after)
                     if settlement is not None
                     else int(player.elo_rating),
@@ -222,6 +234,7 @@ def build_public_leaderboard(
                 rank=index,
                 display_name=aggregate.display_name,
                 competitor_kind=aggregate.competitor_kind,
+                agent_id=aggregate.agent_id,
                 elo=aggregate.elo,
                 provisional=aggregate.provisional,
                 matches_played=aggregate.matches_played,
@@ -232,6 +245,23 @@ def build_public_leaderboard(
             for index, aggregate in enumerate(ordered_aggregates, start=1)
         ]
     )
+
+
+def leaderboard_agent_id(
+    *,
+    player: Player,
+    api_keys_by_id: dict[str, ApiKey],
+    seeded_profiles_by_key_hash: dict[str, AgentProfileResponse],
+) -> str | None:
+    if not player.is_agent:
+        return None
+
+    api_key = api_keys_by_id.get(str(player.api_key_id)) if player.api_key_id is not None else None
+    return resolve_loaded_agent_identity(
+        player=player,
+        api_key=api_key,
+        seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
+    ).agent_id
 
 
 def build_completed_match_summary_list(

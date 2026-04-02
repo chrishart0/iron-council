@@ -3,6 +3,8 @@ import type {
   AllianceActionRequest,
   AllianceRecord,
   AllianceMemberRecord,
+  AgentProfileHistory,
+  AgentProfileRating,
   ApiErrorEnvelope,
   BuildingQueueItem,
   CityUpgradeState,
@@ -33,6 +35,7 @@ import type {
   PlayerMatchState,
   PublicMatchHistoryResponse,
   PublicLeaderboardResponse,
+  PublicAgentProfileResponse,
   PublicMatchDetailResponse,
   PublicMatchRosterRow,
   ReplayFieldRecord,
@@ -58,12 +61,15 @@ import { DEFAULT_API_BASE_URL, normalizeApiBaseUrl } from "./session-storage";
 const PUBLIC_MATCHES_ERROR_MESSAGE = "Unable to load public matches right now.";
 const PUBLIC_MATCH_DETAIL_ERROR_MESSAGE = "Unable to load this public match right now.";
 const PUBLIC_LEADERBOARD_ERROR_MESSAGE = "Unable to load the public leaderboard right now.";
+const PUBLIC_AGENT_PROFILE_ERROR_MESSAGE = "Unable to load this agent profile right now.";
 const COMPLETED_MATCHES_ERROR_MESSAGE = "Unable to load completed matches right now.";
 const PUBLIC_MATCH_DETAIL_NOT_FOUND_MESSAGE =
   "This match is unavailable. It may not exist or may already be completed.";
 const PUBLIC_MATCH_HISTORY_ERROR_MESSAGE = "Unable to load match history right now.";
 const PUBLIC_MATCH_HISTORY_NOT_FOUND_MESSAGE =
   "This completed match history is unavailable. It may not exist.";
+const PUBLIC_AGENT_PROFILE_NOT_FOUND_MESSAGE =
+  "This agent profile is unavailable. It may not exist.";
 const MATCH_REPLAY_TICK_ERROR_MESSAGE = "Unable to load this replay tick right now.";
 const MATCH_REPLAY_TICK_NOT_FOUND_MESSAGE =
   "This replay tick is unavailable for the selected match.";
@@ -101,6 +107,16 @@ export class PublicLeaderboardError extends Error {
   constructor(message = PUBLIC_LEADERBOARD_ERROR_MESSAGE) {
     super(message);
     this.name = "PublicLeaderboardError";
+  }
+}
+
+export class PublicAgentProfileError extends Error {
+  constructor(
+    message = PUBLIC_AGENT_PROFILE_ERROR_MESSAGE,
+    readonly kind: "not_found" | "unavailable" = "unavailable"
+  ) {
+    super(message);
+    this.name = "PublicAgentProfileError";
   }
 }
 
@@ -263,6 +279,40 @@ export async function fetchPublicLeaderboard(
 
   if (!isPublicLeaderboardResponse(payload)) {
     throw new PublicLeaderboardError();
+  }
+
+  return payload;
+}
+
+export async function fetchPublicAgentProfile(
+  agentId: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<PublicAgentProfileResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/agents/${encodeURIComponent(agentId)}/profile`,
+    {
+      cache: "no-store",
+      headers: {
+        accept: "application/json"
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+
+    if (response.status === 404 && hasApiErrorCode(payload, "agent_not_found")) {
+      throw new PublicAgentProfileError(PUBLIC_AGENT_PROFILE_NOT_FOUND_MESSAGE, "not_found");
+    }
+
+    throw new PublicAgentProfileError(PUBLIC_AGENT_PROFILE_ERROR_MESSAGE, "unavailable");
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!isPublicAgentProfileResponse(payload)) {
+    throw new PublicAgentProfileError(PUBLIC_AGENT_PROFILE_ERROR_MESSAGE, "unavailable");
   }
 
   return payload;
@@ -943,6 +993,17 @@ function isPublicLeaderboardResponse(payload: unknown): payload is PublicLeaderb
   return payload.leaderboard.every(isLeaderboardEntry);
 }
 
+function isPublicAgentProfileResponse(payload: unknown): payload is PublicAgentProfileResponse {
+  return (
+    isRecord(payload) &&
+    typeof payload.agent_id === "string" &&
+    typeof payload.display_name === "string" &&
+    typeof payload.is_seeded === "boolean" &&
+    isAgentProfileRating(payload.rating) &&
+    isAgentProfileHistory(payload.history)
+  );
+}
+
 function isCompletedMatchSummaryListResponse(
   payload: unknown
 ): payload is CompletedMatchSummaryListResponse {
@@ -1003,12 +1064,35 @@ function isLeaderboardEntry(payload: unknown): payload is LeaderboardEntry {
     return false;
   }
 
-  return (
+  const hasValidSharedFields =
     typeof payload.rank === "number" &&
     typeof payload.display_name === "string" &&
     (payload.competitor_kind === "human" || payload.competitor_kind === "agent") &&
     typeof payload.elo === "number" &&
     typeof payload.provisional === "boolean" &&
+    typeof payload.matches_played === "number" &&
+    typeof payload.wins === "number" &&
+    typeof payload.losses === "number" &&
+    typeof payload.draws === "number";
+
+  if (!hasValidSharedFields) {
+    return false;
+  }
+
+  if (payload.competitor_kind === "human") {
+    return payload.agent_id === null;
+  }
+
+  return typeof payload.agent_id === "string" || payload.agent_id === null;
+}
+
+function isAgentProfileRating(payload: unknown): payload is AgentProfileRating {
+  return isRecord(payload) && typeof payload.elo === "number" && typeof payload.provisional === "boolean";
+}
+
+function isAgentProfileHistory(payload: unknown): payload is AgentProfileHistory {
+  return (
+    isRecord(payload) &&
     typeof payload.matches_played === "number" &&
     typeof payload.wins === "number" &&
     typeof payload.losses === "number" &&

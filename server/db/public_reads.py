@@ -5,7 +5,7 @@ from collections import defaultdict
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from server.db.models import Alliance, Match, Player, PlayerMatchSettlement, TickLog
+from server.db.models import Alliance, ApiKey, Match, Player, PlayerMatchSettlement, TickLog
 from server.db.player_ids import build_persisted_player_mapping
 from server.db.public_read_assembly import (
     build_completed_match_summary_list,
@@ -97,6 +97,14 @@ def get_public_leaderboard(*, database_url: str) -> PublicLeaderboardResponse:
             .where(Player.match_id.in_(match_ids))
             .order_by(Player.match_id, Player.id)
         ).all()
+        api_key_ids = [player.api_key_id for player in players if player.api_key_id is not None]
+        api_key_rows = (
+            session.scalars(
+                select(ApiKey).where(ApiKey.id.in_(api_key_ids)).order_by(ApiKey.id)
+            ).all()
+            if api_key_ids
+            else []
+        )
         settlements = session.scalars(
             select(PlayerMatchSettlement)
             .where(PlayerMatchSettlement.match_id.in_(match_ids))
@@ -106,6 +114,7 @@ def get_public_leaderboard(*, database_url: str) -> PublicLeaderboardResponse:
     return build_public_leaderboard(
         completed_matches=completed_matches,
         players=players,
+        api_key_rows=api_key_rows,
         settlements=settlements,
     )
 

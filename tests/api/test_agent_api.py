@@ -805,6 +805,7 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "rank": 1,
                 "display_name": "Arthur",
                 "competitor_kind": "human",
+                "agent_id": None,
                 "elo": 1234,
                 "provisional": False,
                 "matches_played": 1,
@@ -816,6 +817,7 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "rank": 2,
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
                 "elo": 1211,
                 "provisional": False,
                 "matches_played": 2,
@@ -827,6 +829,7 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "rank": 3,
                 "display_name": "Bedivere",
                 "competitor_kind": "human",
+                "agent_id": None,
                 "elo": 1190,
                 "provisional": False,
                 "matches_played": 1,
@@ -838,6 +841,7 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "rank": 4,
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
                 "elo": 1163,
                 "provisional": False,
                 "matches_played": 1,
@@ -4479,6 +4483,11 @@ async def test_openapi_declares_public_read_contracts(app_client: AsyncClient) -
     assert paths["/api/v1/leaderboard"]["get"]["responses"]["200"]["content"]["application/json"][
         "schema"
     ] == {"$ref": "#/components/schemas/PublicLeaderboardResponse"}
+    leaderboard_entry_schema = openapi_response.json()["components"]["schemas"]["LeaderboardEntry"]
+    assert leaderboard_entry_schema["properties"]["agent_id"] == {
+        "anyOf": [{"type": "string"}, {"type": "null"}],
+        "title": "Agent Id",
+    }
     assert paths["/api/v1/matches/completed"]["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/CompletedMatchSummaryListResponse"}

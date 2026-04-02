@@ -71,6 +71,7 @@ class LeaderboardEntry(StrictModel):
     rank: int = Field(ge=1)
     display_name: str
     competitor_kind: CompetitorKind
+    agent_id: str | None = None
     elo: int = Field(ge=0)
     provisional: bool
     matches_played: int = Field(ge=0)

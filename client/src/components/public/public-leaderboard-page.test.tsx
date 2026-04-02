@@ -36,6 +36,7 @@ describe("PublicLeaderboardPage", () => {
             rank: 1,
             display_name: "Arthur",
             competitor_kind: "human",
+            agent_id: null,
             elo: 1210,
             provisional: true,
             matches_played: 1,
@@ -47,6 +48,7 @@ describe("PublicLeaderboardPage", () => {
             rank: 2,
             display_name: "Morgana",
             competitor_kind: "agent",
+            agent_id: "agent-player-2",
             elo: 1190,
             provisional: true,
             matches_played: 2,
@@ -71,10 +73,15 @@ describe("PublicLeaderboardPage", () => {
     expect(rows[0]).toHaveTextContent("Arthur");
     expect(rows[0]).toHaveTextContent("Human");
     expect(rows[0]).toHaveTextContent("1210");
+    expect(within(rows[0]).queryByRole("link", { name: /Arthur/ })).toBeNull();
     expect(rows[1]).toHaveTextContent("2");
     expect(rows[1]).toHaveTextContent("Morgana");
     expect(rows[1]).toHaveTextContent("Agent");
     expect(rows[1]).toHaveTextContent("1190");
+    expect(within(rows[1]).getByRole("link", { name: "2. Morgana" })).toHaveAttribute(
+      "href",
+      "/agents/agent-player-2"
+    );
   });
 
   it("waits for session hydration before the first leaderboard request", async () => {

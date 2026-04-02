@@ -7,6 +7,7 @@ import {
   createMatchLobby,
   DiplomacySubmissionError,
   fetchCompletedMatches,
+  fetchPublicAgentProfile,
   fetchMatchReplayTick,
   fetchPublicMatchHistory,
   fetchPublicLeaderboard,
@@ -20,6 +21,7 @@ import {
   parsePlayerMatchEnvelope,
   parseWebSocketApiErrorEnvelope,
   parseSpectatorMatchEnvelope,
+  PublicAgentProfileError,
   PublicLeaderboardError,
   PublicMatchHistoryError,
   PublicMatchDetailError,
@@ -257,6 +259,7 @@ describe("fetchPublicLeaderboard", () => {
             rank: 1,
             display_name: "Arthur",
             competitor_kind: "human",
+            agent_id: null,
             elo: 1210,
             provisional: true,
             matches_played: 1,
@@ -274,6 +277,7 @@ describe("fetchPublicLeaderboard", () => {
           rank: 1,
           display_name: "Arthur",
           competitor_kind: "human",
+          agent_id: null,
           elo: 1210,
           provisional: true,
           matches_played: 1,
@@ -325,12 +329,114 @@ describe("fetchPublicLeaderboard", () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        leaderboard: [{ rank: 1, display_name: "Arthur" }]
+        leaderboard: [
+          {
+            rank: 1,
+            display_name: "Arthur",
+            competitor_kind: "human",
+            agent_id: "agent-player-1",
+            elo: 1210,
+            provisional: true,
+            matches_played: 1,
+            wins: 1,
+            losses: 0,
+            draws: 0
+          }
+        ]
       })
     });
 
     await expect(fetchPublicLeaderboard(fetchImpl as unknown as typeof fetch)).rejects.toEqual(
       new PublicLeaderboardError("Unable to load the public leaderboard right now.")
+    );
+  });
+});
+
+describe("fetchPublicAgentProfile", () => {
+  it("returns the shipped public agent profile payload", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        agent_id: "agent-player-2",
+        display_name: "Morgana",
+        is_seeded: true,
+        rating: {
+          elo: 1211,
+          provisional: false
+        },
+        history: {
+          matches_played: 2,
+          wins: 1,
+          losses: 0,
+          draws: 1
+        }
+      })
+    });
+
+    await expect(
+      fetchPublicAgentProfile("agent-player-2", fetchImpl as unknown as typeof fetch)
+    ).resolves.toEqual({
+      agent_id: "agent-player-2",
+      display_name: "Morgana",
+      is_seeded: true,
+      rating: {
+        elo: 1211,
+        provisional: false
+      },
+      history: {
+        matches_played: 2,
+        wins: 1,
+        losses: 0,
+        draws: 1
+      }
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/v1/agents/agent-player-2/profile",
+      {
+        cache: "no-store",
+        headers: {
+          accept: "application/json"
+        }
+      }
+    );
+  });
+
+  it("raises a deterministic not-found error when the public API returns agent_not_found", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({
+        error: {
+          code: "agent_not_found",
+          message: "Agent 'missing' was not found."
+        }
+      })
+    });
+
+    await expect(
+      fetchPublicAgentProfile("missing", fetchImpl as unknown as typeof fetch)
+    ).rejects.toEqual(
+      new PublicAgentProfileError(
+        "This agent profile is unavailable. It may not exist.",
+        "not_found"
+      )
+    );
+  });
+
+  it("raises a deterministic unavailable error when the payload shape is invalid", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        agent_id: "agent-player-2",
+        display_name: "Morgana"
+      })
+    });
+
+    await expect(
+      fetchPublicAgentProfile("agent-player-2", fetchImpl as unknown as typeof fetch)
+    ).rejects.toEqual(
+      new PublicAgentProfileError("Unable to load this agent profile right now.", "unavailable")
     );
   });
 });
