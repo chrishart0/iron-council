@@ -199,6 +199,8 @@ development_status:
   39-2-extract-public-aggregate-summary-routes-out-of-server-api-public_routes-py: done
   39-3-extract-public-history-and-replay-routes-out-of-server-api-public_routes-py: done
 
-  epic-40: active
+  epic-40: done
   40-1-detect-and-persist-completed-matches-from-victory-state: done
   40-2-add-deterministic-post-match-rating-settlement-and-profile-history-updates: done
+  40-3-consume-finalized-ratings-and-non-provisional-outcomes-in-leaderboard-profile-reads: done
+  40-4-add-completion-to-leaderboard-end-to-end-regression-coverage: done

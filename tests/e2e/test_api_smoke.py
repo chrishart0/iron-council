@@ -274,6 +274,131 @@ def test_public_leaderboard_and_completed_match_smoke_flow_runs_through_real_pro
     }
 
 
+def test_completion_to_leaderboard_smoke_flow_runs_through_real_process(
+    running_terminal_fast_tick_app: RunningApp,
+) -> None:
+    completed_payload: dict[str, Any] | None = None
+    history_payload: dict[str, Any] | None = None
+
+    with httpx.Client(base_url=running_terminal_fast_tick_app.base_url, timeout=5) as client:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            matches_response = client.get("/api/v1/matches")
+            completed_response = client.get("/api/v1/matches/completed")
+            history_response = client.get(
+                f"/api/v1/matches/{running_terminal_fast_tick_app.primary_match_id}/history"
+            )
+
+            assert matches_response.status_code == HTTPStatus.OK
+            assert completed_response.status_code == HTTPStatus.OK
+            assert history_response.status_code == HTTPStatus.OK
+
+            completed_payload = completed_response.json()
+            history_payload = history_response.json()
+            active_match_ids = {match["match_id"] for match in matches_response.json()["matches"]}
+            terminal_summary = next(
+                (
+                    match
+                    for match in completed_payload["matches"]
+                    if match["match_id"] == running_terminal_fast_tick_app.primary_match_id
+                ),
+                None,
+            )
+            if (
+                running_terminal_fast_tick_app.primary_match_id not in active_match_ids
+                and terminal_summary is not None
+                and history_payload["status"] == "completed"
+            ):
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("Live runtime did not settle the seeded terminal match in time.")
+
+        leaderboard_response = client.get("/api/v1/leaderboard")
+        public_profile_response = client.get("/api/v1/agents/agent-player-2/profile")
+        authenticated_profile_response = client.get(
+            "/api/v1/agent/profile",
+            headers=_headers("agent-player-2"),
+        )
+
+    assert completed_payload is not None
+    assert history_payload is not None
+    terminal_summary = next(
+        match
+        for match in completed_payload["matches"]
+        if match["match_id"] == running_terminal_fast_tick_app.primary_match_id
+    )
+    assert history_payload == {
+        "match_id": running_terminal_fast_tick_app.primary_match_id,
+        "status": "completed",
+        "current_tick": 143,
+        "tick_interval_seconds": 1,
+        "history": [{"tick": 142}, {"tick": 143}],
+    }
+    assert terminal_summary == {
+        "match_id": running_terminal_fast_tick_app.primary_match_id,
+        "map": "britain",
+        "final_tick": 143,
+        "tick_interval_seconds": 1,
+        "player_count": 3,
+        "completed_at": terminal_summary["completed_at"],
+        "winning_alliance_name": "Western Accord",
+        "winning_player_display_names": ["Arthur", "Morgana"],
+    }
+    assert datetime.fromisoformat(terminal_summary["completed_at"].replace("Z", "+00:00"))
+
+    assert leaderboard_response.status_code == HTTPStatus.OK
+    assert leaderboard_response.json() == {
+        "leaderboard": [
+            {
+                "rank": 1,
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "elo": 1229,
+                "provisional": False,
+                "matches_played": 1,
+                "wins": 1,
+                "losses": 0,
+                "draws": 0,
+            },
+            {
+                "rank": 2,
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "elo": 1211,
+                "provisional": False,
+                "matches_played": 1,
+                "wins": 1,
+                "losses": 0,
+                "draws": 0,
+            },
+            {
+                "rank": 3,
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "elo": 1163,
+                "provisional": False,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 1,
+                "draws": 0,
+            },
+        ]
+    }
+
+    expected_profile = {
+        "agent_id": "agent-player-2",
+        "display_name": "Morgana",
+        "is_seeded": True,
+        "rating": {"elo": 1211, "provisional": False},
+        "history": {"matches_played": 1, "wins": 1, "losses": 0, "draws": 0},
+    }
+    assert public_profile_response.status_code == HTTPStatus.OK
+    assert public_profile_response.json() == expected_profile
+    assert authenticated_profile_response.status_code == HTTPStatus.OK
+    assert authenticated_profile_response.json() == expected_profile
+
+
 def test_match_browse_smoke_flow_runs_through_real_process_with_compact_db_backed_rows(
     running_seeded_app: RunningApp,
 ) -> None:

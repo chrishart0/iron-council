@@ -11,7 +11,7 @@ import pytest
 from server.db.testing import prepare_test_database, provision_seeded_database
 from sqlalchemy import create_engine, text
 
-from tests.support import RunningApp
+from tests.support import RunningApp, prepare_seeded_terminal_match
 
 
 @pytest.fixture(autouse=True)
@@ -167,6 +167,64 @@ def running_fast_tick_app(tmp_path: Path) -> Iterator[RunningApp]:
                 ),
             },
         )
+
+    host = "127.0.0.1"
+    port = _allocate_tcp_port()
+    process = subprocess.Popen(
+        [
+            "uv",
+            "run",
+            "uvicorn",
+            "server.main:app",
+            "--host",
+            host,
+            "--port",
+            str(port),
+            "--log-level",
+            "warning",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        env={
+            **os.environ,
+            "DATABASE_URL": database_url,
+            "IRON_COUNCIL_MATCH_REGISTRY_BACKEND": "db",
+            "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+            "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+            "HUMAN_JWT_AUDIENCE": "authenticated",
+            "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+            "PYTHONUNBUFFERED": "1",
+        },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    base_url = f"http://{host}:{port}"
+    try:
+        _wait_for_running_app(base_url, process)
+        yield RunningApp(
+            base_url=base_url,
+            primary_match_id="00000000-0000-0000-0000-000000000101",
+            secondary_match_id="00000000-0000-0000-0000-000000000102",
+            database_url=database_url,
+        )
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+
+@pytest.fixture
+def running_terminal_fast_tick_app(tmp_path: Path) -> Iterator[RunningApp]:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'process-terminal-fast-tick.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    prepare_seeded_terminal_match(
+        database_url,
+        match_id="00000000-0000-0000-0000-000000000101",
+    )
 
     host = "127.0.0.1"
     port = _allocate_tcp_port()

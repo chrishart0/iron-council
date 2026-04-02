@@ -417,6 +417,36 @@ def insert_completed_match_fixture(database_url: str) -> None:
         )
 
 
+def prepare_seeded_terminal_match(database_url: str, *, match_id: str) -> None:
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        state = json.loads(
+            connection.execute(
+                text("SELECT state FROM matches WHERE id = :match_id"),
+                {"match_id": match_id},
+            ).scalar_one()
+        )
+        state["victory"]["threshold"] = 2
+        state["victory"]["countdown_ticks_remaining"] = 1
+        connection.execute(
+            text(
+                """
+                UPDATE matches
+                SET config = :config, state = :state
+                WHERE id = :match_id
+                """
+            ),
+            {
+                "match_id": match_id,
+                "config": (
+                    '{"map":"britain","max_players":5,"turn_seconds":1,'
+                    '"seed_profile":"agent_api_primary"}'
+                ),
+                "state": json.dumps(state),
+            },
+        )
+
+
 def load_python_agent_sdk_module() -> ModuleType:
     sdk_path = Path(__file__).resolve().parents[1] / "agent-sdk/python/iron_council_client.py"
     spec = spec_from_file_location("iron_council_client", sdk_path)
