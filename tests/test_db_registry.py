@@ -17,6 +17,7 @@ from server.agent_registry import (
 )
 from server.auth import hash_api_key
 from server.db import hydration as db_hydration_module
+from server.db import hydration_identity as db_hydration_identity_module
 from server.db import identity_registry as db_identity_registry_module
 from server.db import lobby_registry as db_lobby_registry_module
 from server.db import public_reads as db_public_reads_module
@@ -2042,6 +2043,29 @@ def test_registry_facade_re_exports_stable_module_surfaces() -> None:
     assert (
         db_registry_module.persist_advanced_match_tick
         is db_tick_persistence_module.persist_advanced_match_tick
+    )
+
+
+def test_hydration_identity_loader_exports_delegate_to_focused_identity_module() -> None:
+    assert (
+        db_hydration_module.load_agent_profiles_by_match
+        is db_hydration_identity_module.load_agent_profiles_by_match
+    )
+    assert (
+        db_hydration_module.load_authenticated_agent_keys_by_match
+        is db_hydration_identity_module.load_authenticated_agent_keys_by_match
+    )
+    assert (
+        db_hydration_module.load_joined_agents_by_match
+        is db_hydration_identity_module.load_joined_agents_by_match
+    )
+    assert (
+        db_hydration_module.load_joined_humans_by_match
+        is db_hydration_identity_module.load_joined_humans_by_match
+    )
+    assert (
+        db_hydration_module.load_public_competitor_kinds_by_match
+        is db_hydration_identity_module.load_public_competitor_kinds_by_match
     )
 
 

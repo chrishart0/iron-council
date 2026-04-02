@@ -1,6 +1,6 @@
 # Story: 37.2 Extract agent and identity hydration loaders out of `server/db/hydration.py`
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -18,11 +18,11 @@ So that `server/db/hydration.py` can evolve without one file continuing to own b
 
 ## Tasks / Subtasks
 
-- [ ] Audit the identity-related hydration loaders and identify the tightest extraction seam that preserves current behavior. (AC: 1, 5)
-- [ ] Extract the grouped agent/identity/public-competitor hydration loaders into a focused compatibility-safe module or helper surface. (AC: 1, 2, 3, 5)
-- [ ] Keep `server.db.hydration` and `server.db.registry` import behavior stable for current callers. (AC: 1, 2)
-- [ ] Add or tighten focused regression coverage around DB-backed identity reconstruction and reload behavior. (AC: 2, 4)
-- [ ] Run focused verification plus the strongest practical repo-managed checks. (AC: 4, 5)
+- [x] Audit the identity-related hydration loaders and identify the tightest extraction seam that preserves current behavior. (AC: 1, 5)
+- [x] Extract the grouped agent/identity/public-competitor hydration loaders into a focused compatibility-safe module or helper surface. (AC: 1, 2, 3, 5)
+- [x] Keep `server.db.hydration` and `server.db.registry` import behavior stable for current callers. (AC: 1, 2)
+- [x] Add or tighten focused regression coverage around DB-backed identity reconstruction and reload behavior. (AC: 2, 4)
+- [x] Run focused verification plus the strongest practical repo-managed checks. (AC: 4, 5)
 
 ## Dev Notes
 
@@ -36,15 +36,25 @@ So that `server/db/hydration.py` can evolve without one file continuing to own b
 ### Debug Log
 
 - 2026-04-02: Drafted as the next Epic 37 slice after Story 37.1 completed.
+- 2026-04-02: Bootstrapped the repo dev extras with `uv sync --extra dev --frozen` after the focused red-phase pytest run failed because `pytest-cov` was not yet installed in the local `.venv`.
+- 2026-04-02: Verified focused hydration/registry regressions with `uv run pytest --no-cov tests/test_db_registry.py -k "hydration_identity_loader_exports_delegate_to_focused_identity_module or registry_facade_re_exports_stable_module_surfaces or create_match_lobby_reload_preserves_authenticated_creator_identity or create_match_lobby_reload_preserves_non_seeded_authenticated_creator_identity or load_match_record_from_session_matches_registry_reload_for_lobby_membership_fields"`.
+- 2026-04-02: Re-ran the full repo-managed gate with `make quality`.
 
 ### Completion Notes
 
-- Pending.
+- Extracted the five persisted identity-related hydration loaders into a focused plain-function module, `server/db/hydration_identity.py`, so seeded/non-seeded agent identity reconstruction, authenticated-key loading, joined agent/human mapping, and public competitor kind hydration now have clearer ownership outside the top-level reload orchestrator.
+- Kept `server.db.hydration` as the stable compatibility surface by re-exporting the extracted loaders there, which preserves existing imports from both `server.db.hydration` and `server.db.registry` without introducing a new service or framework abstraction.
+- Added a focused regression proving the `server.db.hydration` compatibility exports now delegate to the focused identity hydration module while existing registry compatibility assertions and full repo verification remain green.
 
 ### File List
 
+- `server/db/hydration.py`
+- `server/db/hydration_identity.py`
+- `tests/test_db_registry.py`
 - `_bmad-output/implementation-artifacts/37-2-extract-agent-and-identity-hydration-loaders-out-of-server-db-hydration-py.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ### Change Log
 
 - 2026-04-02: Drafted Story 37.2 to continue Epic 37 by extracting the clustered persisted identity hydration loaders out of `server/db/hydration.py`.
+- 2026-04-02: Completed Story 37.2 by moving the clustered identity loaders into `server/db/hydration_identity.py`, preserving hydration/registry compatibility exports, tightening the focused regression seam, and passing `make quality`.

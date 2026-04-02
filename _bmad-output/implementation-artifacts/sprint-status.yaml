@@ -1,9 +1,9 @@
-generated: 2026-04-02 03:27 UTC
+generated: 2026-04-02 04:06 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 37-2-extract-agent-and-identity-hydration-loaders-out-of-server-db-hydration-py.md
+next_story: null
 
 development_status:
   public-readiness-epic: done
@@ -187,4 +187,4 @@ development_status:
 
   epic-37: active
   37-1-extract-match-record-assembly-helpers-out-of-server-db-hydration-py: done
-  37-2-extract-agent-and-identity-hydration-loaders-out-of-server-db-hydration-py: drafted
+  37-2-extract-agent-and-identity-hydration-loaders-out-of-server-db-hydration-py: done
