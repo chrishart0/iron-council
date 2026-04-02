@@ -1,9 +1,9 @@
-generated: 2026-04-02 07:42 UTC
+generated: 2026-04-02 08:46 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 39-1-extract-public-browse-and-detail-route-handlers-out-of-server-api-public_routes-py.md
+next_story: 39-2-extract-public-aggregate-summary-routes-out-of-server-api-public_routes-py.md
 
 development_status:
   public-readiness-epic: done
@@ -194,5 +194,6 @@ development_status:
   38-2-extract-public-leaderboard-and-completed-match-aggregation-helpers-out-of-server-db-public_reads-py: done
   38-3-extract-public-history-and-replay-assembly-helpers-out-of-server-db-public_reads-py: done
 
-  epic-39: drafted
-  39-1-extract-public-browse-and-detail-route-handlers-out-of-server-api-public_routes-py: drafted
+  epic-39: active
+  39-1-extract-public-browse-and-detail-route-handlers-out-of-server-api-public_routes-py: done
+  39-2-extract-public-aggregate-summary-routes-out-of-server-api-public_routes-py: drafted

@@ -1,6 +1,6 @@
 # Story: 39.1 Extract public browse and detail route handlers out of `server/api/public_routes.py`
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -39,12 +39,19 @@ So that `server/api/public_routes.py` can stop mixing root/health metadata endpo
 
 ### Completion Notes
 
-- Pending.
+- Extracted `/api/v1/matches` and `/api/v1/matches/{match_id}` into `server/api/public_match_routes.py` behind a repo-conventional `build_public_match_router(...)` helper while keeping `build_public_api_router(...)` as the compatibility entrypoint.
+- Preserved DB-backed versus in-memory fallback behavior, compact public payload shapes, public roster ordering, completed-match exclusion, and structured `match_not_found` mapping.
+- Kept static `/api/v1/matches/completed` registration ahead of dynamic `/api/v1/matches/{match_id}` and documented that ordering in `server/api/public_routes.py`.
+- Verification: `uv run pytest -o addopts='' tests/api/test_agent_api.py -k 'public_leaderboard_and_completed_match_routes or list_matches_returns_stable_json_summaries or list_matches_returns_compact_db_backed_public_browse_rows_and_excludes_completed or public_match_detail_route or api_schema_lists_public_match_and_history_routes or test_server_api_modules_expose_extracted_phase_one_seams'`; `uv run pytest -o addopts='' tests/e2e/test_api_smoke.py -k 'public_leaderboard_and_completed_match_smoke_flow or public_match_detail_smoke_flow or db_backed_public_match_browse_smoke'`; `make quality`.
 
 ### File List
 
 - `_bmad-output/implementation-artifacts/39-1-extract-public-browse-and-detail-route-handlers-out-of-server-api-public_routes-py.md`
+- `server/api/public_match_routes.py`
+- `server/api/public_routes.py`
+- `docs/plans/2026-04-02-story-39-1-public-route-browse-detail-extraction.md`
 
 ### Change Log
 
 - 2026-04-02: Drafted Story 39.1 to begin decomposing `server/api/public_routes.py` while preserving the shipped public browse/detail contract.
+- 2026-04-02: Completed Story 39.1 by extracting public browse/detail routes into `server/api/public_match_routes.py` and preserving the existing API contract.
