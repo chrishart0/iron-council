@@ -38,7 +38,7 @@ So that `server/db/hydration.py` can evolve without one file continuing to own b
 - 2026-04-02: Drafted as the next Epic 37 slice after Story 37.1 completed.
 - 2026-04-02: Bootstrapped the repo dev extras with `uv sync --extra dev --frozen` after the focused red-phase pytest run failed because `pytest-cov` was not yet installed in the local `.venv`.
 - 2026-04-02: Verified focused hydration/registry regressions with `uv run pytest --no-cov tests/test_db_registry.py -k "hydration_identity_loader_exports_delegate_to_focused_identity_module or registry_facade_re_exports_stable_module_surfaces or create_match_lobby_reload_preserves_authenticated_creator_identity or create_match_lobby_reload_preserves_non_seeded_authenticated_creator_identity or load_match_record_from_session_matches_registry_reload_for_lobby_membership_fields"`.
-- 2026-04-02: Re-ran the full repo-managed gate with `make quality`.
+- 2026-04-02: Re-ran the strongest practical touched-seam checks with `uv run pytest --no-cov tests/test_db_registry.py`, `uv run ruff check server/db/hydration.py server/db/hydration_identity.py tests/test_db_registry.py`, `uv run ruff format --check server/db/hydration.py server/db/hydration_identity.py tests/test_db_registry.py`, and `uv run mypy server tests/api`.
 
 ### Completion Notes
 
@@ -57,4 +57,4 @@ So that `server/db/hydration.py` can evolve without one file continuing to own b
 ### Change Log
 
 - 2026-04-02: Drafted Story 37.2 to continue Epic 37 by extracting the clustered persisted identity hydration loaders out of `server/db/hydration.py`.
-- 2026-04-02: Completed Story 37.2 by moving the clustered identity loaders into `server/db/hydration_identity.py`, preserving hydration/registry compatibility exports, tightening the focused regression seam, and passing `make quality`.
+- 2026-04-02: Completed Story 37.2 by moving the clustered identity loaders into `server/db/hydration_identity.py`, preserving hydration/registry compatibility exports, tightening the focused regression seam, and passing the focused DB hydration/registry verification plus lint/type checks.

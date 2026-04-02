@@ -22,7 +22,7 @@ from server.db import identity_registry as db_identity_registry_module
 from server.db import lobby_registry as db_lobby_registry_module
 from server.db import public_reads as db_public_reads_module
 from server.db import tick_persistence as db_tick_persistence_module
-from server.db.models import Match, Player
+from server.db.models import ApiKey, Match, Player
 from server.db.registry import (
     MatchHistoryNotFoundError,
     MatchLobbyCreationError,
@@ -48,7 +48,7 @@ from server.models.api import MatchLobbyCreateRequest
 from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
 from server.runtime import MatchRuntime
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from tests.support import (
@@ -2067,6 +2067,181 @@ def test_hydration_identity_loader_exports_delegate_to_focused_identity_module()
         db_hydration_module.load_public_competitor_kinds_by_match
         is db_hydration_identity_module.load_public_competitor_kinds_by_match
     )
+
+
+def test_hydration_identity_loaders_match_session_reload_components(tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-hydration-identity-components.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    created = create_match_lobby(
+        database_url=database_url,
+        authenticated_agent_id="agent-player-2",
+        authenticated_agent_display_name="Agent Player 2",
+        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        request=MatchLobbyCreateRequest(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=4,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        ),
+    )
+    join_match(
+        database_url=database_url,
+        match_id=created.response.match_id,
+        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-3")),
+    )
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        persisted_match = session.get(Match, created.response.match_id)
+        assert persisted_match is not None
+        player_rows = session.scalars(
+            select(Player).where(Player.match_id == persisted_match.id).order_by(Player.id)
+        ).all()
+        api_key_ids = [player.api_key_id for player in player_rows if player.api_key_id is not None]
+        api_key_rows = (
+            session.scalars(
+                select(ApiKey).where(ApiKey.id.in_(api_key_ids)).order_by(ApiKey.id)
+            ).all()
+            if api_key_ids
+            else []
+        )
+        session_loaded = db_hydration_module.load_match_record_from_session(
+            session=session,
+            match=persisted_match,
+        )
+
+    match_id = created.response.match_id
+    assert session_loaded.joined_agents == {
+        "agent-player-2": "player-1",
+        "agent-player-3": "player-2",
+    }
+    assert session_loaded.joined_humans == {}
+    assert session_loaded.public_competitor_kinds == {
+        "player-1": "agent",
+        "player-2": "agent",
+    }
+    assert [profile.agent_id for profile in session_loaded.agent_profiles] == [
+        "agent-player-2",
+        "agent-player-3",
+    ]
+    assert [key.agent_id for key in session_loaded.authenticated_agent_keys] == [
+        "agent-player-2",
+        "agent-player-3",
+    ]
+
+    assert db_hydration_identity_module.load_agent_profiles_by_match(
+        matches=[persisted_match],
+        player_rows=player_rows,
+        api_key_rows=api_key_rows,
+    ) == {match_id: session_loaded.agent_profiles}
+    assert db_hydration_identity_module.load_authenticated_agent_keys_by_match(
+        matches=[persisted_match],
+        player_rows=player_rows,
+        api_key_rows=api_key_rows,
+    ) == {match_id: session_loaded.authenticated_agent_keys}
+    assert db_hydration_identity_module.load_joined_agents_by_match(
+        matches=[persisted_match],
+        player_rows=player_rows,
+        api_key_rows=api_key_rows,
+    ) == {match_id: session_loaded.joined_agents}
+    assert (
+        db_hydration_identity_module.load_joined_humans_by_match(
+            matches=[persisted_match],
+            player_rows=player_rows,
+        )
+        == {}
+    )
+    assert db_hydration_identity_module.load_public_competitor_kinds_by_match(
+        matches=[persisted_match],
+        player_rows=player_rows,
+    ) == {match_id: session_loaded.public_competitor_kinds}
+
+
+def test_hydration_identity_loaders_preserve_mixed_agent_and_human_membership(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-hydration-identity-mixed.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    created = create_match_lobby(
+        database_url=database_url,
+        authenticated_human_user_id="00000000-0000-0000-0000-000000000304",
+        request=MatchLobbyCreateRequest(
+            map="britain",
+            tick_interval_seconds=20,
+            max_players=4,
+            victory_city_threshold=13,
+            starting_cities_per_player=2,
+        ),
+    )
+    insert_seeded_agent_player(
+        database_url=database_url,
+        match_id=created.response.match_id,
+        agent_id="agent-player-2",
+        persisted_player_id=build_persisted_player_id(
+            match_id=created.response.match_id,
+            public_player_id="player-2",
+        ),
+    )
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        persisted_match = session.get(Match, created.response.match_id)
+        assert persisted_match is not None
+        player_rows = session.scalars(
+            select(Player).where(Player.match_id == persisted_match.id).order_by(Player.id)
+        ).all()
+        api_key_ids = [player.api_key_id for player in player_rows if player.api_key_id is not None]
+        api_key_rows = (
+            session.scalars(
+                select(ApiKey).where(ApiKey.id.in_(api_key_ids)).order_by(ApiKey.id)
+            ).all()
+            if api_key_ids
+            else []
+        )
+        session_loaded = db_hydration_module.load_match_record_from_session(
+            session=session,
+            match=persisted_match,
+        )
+
+    match_id = created.response.match_id
+    assert session_loaded.joined_agents == {"agent-player-2": "player-2"}
+    assert session_loaded.joined_humans == {"00000000-0000-0000-0000-000000000304": "player-1"}
+    assert session_loaded.public_competitor_kinds == {
+        "player-1": "human",
+        "player-2": "agent",
+    }
+    assert [profile.agent_id for profile in session_loaded.agent_profiles] == ["agent-player-2"]
+    assert [key.agent_id for key in session_loaded.authenticated_agent_keys] == ["agent-player-2"]
+    assert [key.key_hash for key in session_loaded.authenticated_agent_keys] == [
+        hash_api_key(build_seeded_agent_api_key("agent-player-2"))
+    ]
+
+    assert db_hydration_identity_module.load_agent_profiles_by_match(
+        matches=[persisted_match],
+        player_rows=player_rows,
+        api_key_rows=api_key_rows,
+    ) == {match_id: session_loaded.agent_profiles}
+    assert db_hydration_identity_module.load_authenticated_agent_keys_by_match(
+        matches=[persisted_match],
+        player_rows=player_rows,
+        api_key_rows=api_key_rows,
+    ) == {match_id: session_loaded.authenticated_agent_keys}
+    assert db_hydration_identity_module.load_joined_agents_by_match(
+        matches=[persisted_match],
+        player_rows=player_rows,
+        api_key_rows=api_key_rows,
+    ) == {match_id: session_loaded.joined_agents}
+    assert db_hydration_identity_module.load_joined_humans_by_match(
+        matches=[persisted_match],
+        player_rows=player_rows,
+    ) == {match_id: session_loaded.joined_humans}
+    assert db_hydration_identity_module.load_public_competitor_kinds_by_match(
+        matches=[persisted_match],
+        player_rows=player_rows,
+    ) == {match_id: session_loaded.public_competitor_kinds}
 
 
 def test_get_public_match_detail_treats_completed_and_unknown_matches_as_not_found(
