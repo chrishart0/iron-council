@@ -205,8 +205,8 @@ def test_public_leaderboard_and_completed_match_smoke_flow_runs_through_real_pro
                 "rank": 1,
                 "display_name": "Arthur",
                 "competitor_kind": "human",
-                "elo": 1210,
-                "provisional": True,
+                "elo": 1234,
+                "provisional": False,
                 "matches_played": 1,
                 "wins": 1,
                 "losses": 0,
@@ -214,23 +214,23 @@ def test_public_leaderboard_and_completed_match_smoke_flow_runs_through_real_pro
             },
             {
                 "rank": 2,
-                "display_name": "Bedivere",
-                "competitor_kind": "human",
-                "elo": 1190,
-                "provisional": True,
-                "matches_played": 1,
-                "wins": 0,
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "elo": 1211,
+                "provisional": False,
+                "matches_played": 2,
+                "wins": 1,
                 "losses": 0,
                 "draws": 1,
             },
             {
                 "rank": 3,
-                "display_name": "Morgana",
-                "competitor_kind": "agent",
+                "display_name": "Bedivere",
+                "competitor_kind": "human",
                 "elo": 1190,
-                "provisional": True,
-                "matches_played": 2,
-                "wins": 1,
+                "provisional": False,
+                "matches_played": 1,
+                "wins": 0,
                 "losses": 0,
                 "draws": 1,
             },
@@ -238,8 +238,8 @@ def test_public_leaderboard_and_completed_match_smoke_flow_runs_through_real_pro
                 "rank": 4,
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
-                "elo": 1175,
-                "provisional": True,
+                "elo": 1163,
+                "provisional": False,
                 "matches_played": 1,
                 "wins": 0,
                 "losses": 1,
@@ -422,6 +422,8 @@ def test_match_websocket_smoke_broadcasts_initial_and_tick_updates_for_player_an
 def test_agent_join_and_profile_smoke_flow_runs_through_real_process(
     running_seeded_app: RunningApp,
 ) -> None:
+    insert_completed_match_fixture(running_seeded_app.database_url)
+
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
         profile_response = client.get("/api/v1/agents/agent-player-2/profile")
         join_response = client.post(
@@ -440,8 +442,8 @@ def test_agent_join_and_profile_smoke_flow_runs_through_real_process(
         "agent_id": "agent-player-2",
         "display_name": "Morgana",
         "is_seeded": True,
-        "rating": {"elo": 1190, "provisional": True},
-        "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
+        "rating": {"elo": 1211, "provisional": False},
+        "history": {"matches_played": 2, "wins": 1, "losses": 0, "draws": 1},
     }
     assert join_response.status_code == HTTPStatus.ACCEPTED
     assert join_response.json() == {

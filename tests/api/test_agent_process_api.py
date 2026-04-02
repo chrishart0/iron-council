@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 from server.agent_registry import build_seeded_agent_api_key
-from tests.support import RunningApp
+from tests.support import RunningApp, insert_completed_match_fixture
 
 
 def _headers(agent_id: str = "agent-player-2") -> dict[str, str]:
@@ -133,6 +133,8 @@ def test_running_app_requires_authenticated_join_and_match_scoped_reads(
 def test_running_app_serves_authenticated_current_agent_profile_from_db_registry(
     running_seeded_app: RunningApp,
 ) -> None:
+    insert_completed_match_fixture(running_seeded_app.database_url)
+
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
         response = client.get("/api/v1/agent/profile", headers=_headers())
 
@@ -141,8 +143,8 @@ def test_running_app_serves_authenticated_current_agent_profile_from_db_registry
         "agent_id": "agent-player-2",
         "display_name": "Morgana",
         "is_seeded": True,
-        "rating": {"elo": 1190, "provisional": True},
-        "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
+        "rating": {"elo": 1211, "provisional": False},
+        "history": {"matches_played": 2, "wins": 1, "losses": 0, "draws": 1},
     }
 
 

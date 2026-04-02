@@ -9,6 +9,7 @@ from server.agent_registry import build_seeded_profiles_by_key_hash
 from server.auth import hash_api_key
 from server.db.models import ApiKey, Match, Player
 from server.db.player_ids import build_human_actor_id, build_persisted_player_mapping
+from server.db.rating_settlement import latest_human_settled_elo
 from server.models.api import AgentProfileResponse, AuthenticatedAgentContext
 from server.models.state import MatchState
 
@@ -31,8 +32,8 @@ class ResolvedAuthenticatedDbAgent:
 def resolve_human_display_name(*, session: Session, user_id: str) -> str:
     existing_player = session.scalar(
         select(Player)
-        .where(Player.user_id == user_id)
-        .order_by(Player.is_agent.asc(), Player.id.asc())
+        .where(Player.user_id == user_id, Player.is_agent.is_(False))
+        .order_by(Player.id.asc())
     )
     if existing_player is not None:
         return existing_player.display_name
@@ -40,10 +41,13 @@ def resolve_human_display_name(*, session: Session, user_id: str) -> str:
 
 
 def resolve_human_elo_rating(*, session: Session, user_id: str) -> int:
+    if (settled_elo := latest_human_settled_elo(session=session, user_id=user_id)) is not None:
+        return settled_elo
+
     existing_player = session.scalar(
         select(Player)
-        .where(Player.user_id == user_id)
-        .order_by(Player.is_agent.asc(), Player.id.asc())
+        .where(Player.user_id == user_id, Player.is_agent.is_(False))
+        .order_by(Player.id.asc())
     )
     if existing_player is not None:
         return int(existing_player.elo_rating)
@@ -110,7 +114,7 @@ def resolve_loaded_agent_identity(
     return LoadedAgentIdentity(
         agent_id=build_non_seeded_agent_id(str(api_key.id))
         if api_key is not None
-        else f"agent-{player.display_name.casefold()}",
+        else build_user_backed_agent_id(str(player.user_id)),
         is_seeded=False,
     )
 
@@ -168,12 +172,17 @@ def build_non_seeded_display_name(api_key_id: str) -> str:
     return f"Agent {api_key_id[:8]}"
 
 
+def build_user_backed_agent_id(user_id: str) -> str:
+    return f"agent-user-{user_id}"
+
+
 __all__ = [
     "LoadedAgentIdentity",
     "ResolvedAuthenticatedDbAgent",
     "build_human_actor_id",
     "build_non_seeded_agent_id",
     "build_non_seeded_display_name",
+    "build_user_backed_agent_id",
     "resolve_authenticated_agent_context_from_db",
     "resolve_authenticated_agent_from_db_key_hash",
     "resolve_human_display_name",

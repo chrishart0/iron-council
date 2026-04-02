@@ -805,8 +805,8 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "rank": 1,
                 "display_name": "Arthur",
                 "competitor_kind": "human",
-                "elo": 1210,
-                "provisional": True,
+                "elo": 1234,
+                "provisional": False,
                 "matches_played": 1,
                 "wins": 1,
                 "losses": 0,
@@ -814,23 +814,23 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
             },
             {
                 "rank": 2,
-                "display_name": "Bedivere",
-                "competitor_kind": "human",
-                "elo": 1190,
-                "provisional": True,
-                "matches_played": 1,
-                "wins": 0,
+                "display_name": "Morgana",
+                "competitor_kind": "agent",
+                "elo": 1211,
+                "provisional": False,
+                "matches_played": 2,
+                "wins": 1,
                 "losses": 0,
                 "draws": 1,
             },
             {
                 "rank": 3,
-                "display_name": "Morgana",
-                "competitor_kind": "agent",
+                "display_name": "Bedivere",
+                "competitor_kind": "human",
                 "elo": 1190,
-                "provisional": True,
-                "matches_played": 2,
-                "wins": 1,
+                "provisional": False,
+                "matches_played": 1,
+                "wins": 0,
                 "losses": 0,
                 "draws": 1,
             },
@@ -838,8 +838,8 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
                 "rank": 4,
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
-                "elo": 1175,
-                "provisional": True,
+                "elo": 1163,
+                "provisional": False,
                 "matches_played": 1,
                 "wins": 0,
                 "losses": 1,
@@ -872,6 +872,42 @@ async def test_public_leaderboard_and_completed_match_routes_return_compact_db_b
             },
         ]
     }
+
+
+@pytest.mark.asyncio
+async def test_db_backed_agent_profile_routes_return_finalized_settlement_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-settled-profile.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        public_profile_response = await client.get("/api/v1/agents/agent-player-2/profile")
+        authenticated_profile_response = await client.get(
+            "/api/v1/agent/profile",
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+
+    expected_profile = {
+        "agent_id": "agent-player-2",
+        "display_name": "Morgana",
+        "is_seeded": True,
+        "rating": {"elo": 1211, "provisional": False},
+        "history": {"matches_played": 2, "wins": 1, "losses": 0, "draws": 1},
+    }
+    assert public_profile_response.status_code == HTTPStatus.OK
+    assert public_profile_response.json() == expected_profile
+    assert authenticated_profile_response.status_code == HTTPStatus.OK
+    assert authenticated_profile_response.json() == expected_profile
 
 
 @pytest.mark.asyncio

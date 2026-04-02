@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 
 from server.agent_registry import InMemoryMatchRegistry
+from server.db.identity_hydration import get_agent_profile_from_db
 from server.fog import project_agent_state
 from server.models.api import (
     AgentBriefingResponse,
@@ -61,7 +62,14 @@ def build_authenticated_read_router(
         authenticated_agent: AuthenticatedAgentContext = authenticated_agent_dependency,
         registry: InMemoryMatchRegistry = registry_dependency,
     ) -> AgentProfileResponse:
-        profile = registry.get_agent_profile(authenticated_agent.agent_id)
+        profile = (
+            get_agent_profile_from_db(
+                database_url=app_services.history_database_url,
+                agent_id=authenticated_agent.agent_id,
+            )
+            if app_services.history_database_url is not None
+            else registry.get_agent_profile(authenticated_agent.agent_id)
+        )
         if profile is None:
             raise ApiError(
                 status_code=HTTPStatus.NOT_FOUND,
@@ -79,7 +87,14 @@ def build_authenticated_read_router(
         agent_id: str,
         registry: InMemoryMatchRegistry = registry_dependency,
     ) -> AgentProfileResponse:
-        profile = registry.get_agent_profile(agent_id)
+        profile = (
+            get_agent_profile_from_db(
+                database_url=app_services.history_database_url,
+                agent_id=agent_id,
+            )
+            if app_services.history_database_url is not None
+            else registry.get_agent_profile(agent_id)
+        )
         if profile is None:
             raise ApiError(
                 status_code=HTTPStatus.NOT_FOUND,

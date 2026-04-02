@@ -11,6 +11,7 @@ from server.agent_registry import AdvancedMatchTick, get_terminal_winner_allianc
 from server.agent_registry_types import MatchAlliance
 from server.db.models import Alliance, Match, Player, TickLog
 from server.db.player_ids import build_persisted_player_mapping
+from server.db.rating_settlement import settle_completed_match_if_needed
 from server.models.domain import MatchStatus
 
 
@@ -39,6 +40,7 @@ def persist_advanced_match_tick(*, database_url: str, advanced_tick: AdvancedMat
             match.updated_at = datetime.now(tz=UTC)
         if terminal_winner_alliance is not None:
             match.winner_alliance = terminal_winner_alliance
+        settle_completed_match_if_needed(session=session, match=match)
         session.add(
             TickLog(
                 match_id=advanced_tick.match_id,

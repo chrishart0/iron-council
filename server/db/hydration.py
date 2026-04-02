@@ -4,7 +4,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from typing import Literal
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import and_, create_engine, or_, select
 from sqlalchemy.orm import Session
 
 from server import agent_registry_diplomacy
@@ -31,7 +31,7 @@ from server.db.identity_hydration import (
 from server.db.identity_hydration import (
     load_public_competitor_kinds_by_match as _load_public_competitor_kinds_by_match,
 )
-from server.db.models import Alliance, ApiKey, Match, Player
+from server.db.models import Alliance, ApiKey, Match, Player, PlayerMatchSettlement
 from server.db.player_ids import build_persisted_player_mapping
 from server.models.api import AgentProfileResponse
 from server.models.domain import MatchStatus
@@ -98,6 +98,12 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
         ).all()
         player_rows = session.scalars(select(Player).order_by(Player.match_id, Player.id)).all()
         api_key_rows = session.scalars(select(ApiKey).order_by(ApiKey.id)).all()
+        settlement_rows = session.scalars(
+            select(PlayerMatchSettlement).order_by(
+                PlayerMatchSettlement.settled_at,
+                PlayerMatchSettlement.player_id,
+            )
+        ).all()
 
         alliances_by_match = load_persisted_alliances_by_match(
             matches=matches,
@@ -108,6 +114,7 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
             matches=matches,
             player_rows=player_rows,
             api_key_rows=api_key_rows,
+            settlement_rows=settlement_rows,
         )
         authenticated_keys_by_match = load_authenticated_agent_keys_by_match(
             matches=matches,
@@ -160,6 +167,45 @@ def load_match_record_from_session(*, session: Session, match: Match) -> MatchRe
         if api_key_ids
         else []
     )
+    settlement_filters = []
+    api_key_ids_for_players = [
+        player.api_key_id for player in player_rows if player.api_key_id is not None
+    ]
+    if api_key_ids_for_players:
+        settlement_filters.append(
+            and_(
+                PlayerMatchSettlement.is_agent.is_(True),
+                PlayerMatchSettlement.api_key_id.in_(api_key_ids_for_players),
+            )
+        )
+    api_keyless_agent_user_ids = [
+        player.user_id for player in player_rows if player.is_agent and player.api_key_id is None
+    ]
+    if api_keyless_agent_user_ids:
+        settlement_filters.append(
+            and_(
+                PlayerMatchSettlement.is_agent.is_(True),
+                PlayerMatchSettlement.api_key_id.is_(None),
+                PlayerMatchSettlement.user_id.in_(api_keyless_agent_user_ids),
+            )
+        )
+    human_user_ids = [player.user_id for player in player_rows if not player.is_agent]
+    if human_user_ids:
+        settlement_filters.append(
+            and_(
+                PlayerMatchSettlement.is_agent.is_(False),
+                PlayerMatchSettlement.user_id.in_(human_user_ids),
+            )
+        )
+    settlement_rows = (
+        session.scalars(
+            select(PlayerMatchSettlement)
+            .where(or_(*settlement_filters))
+            .order_by(PlayerMatchSettlement.settled_at, PlayerMatchSettlement.player_id)
+        ).all()
+        if settlement_filters
+        else []
+    )
     state = MatchState.model_validate(match.state)
     joined_agents = load_joined_agents_by_match(
         matches=[match],
@@ -174,6 +220,7 @@ def load_match_record_from_session(*, session: Session, match: Match) -> MatchRe
         matches=[match],
         player_rows=player_rows,
         api_key_rows=api_key_rows,
+        settlement_rows=settlement_rows,
     ).get(match_id, [])
     authenticated_agent_keys = load_authenticated_agent_keys_by_match(
         matches=[match],

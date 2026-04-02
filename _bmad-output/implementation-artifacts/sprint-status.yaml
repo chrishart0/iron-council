@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 40-1-detect-and-persist-completed-matches-from-victory-state.md
+next_story: null
 
 development_status:
   public-readiness-epic: done
@@ -201,4 +201,4 @@ development_status:
 
   epic-40: active
   40-1-detect-and-persist-completed-matches-from-victory-state: done
-  40-2-add-deterministic-post-match-rating-settlement-and-profile-history-updates: drafted
+  40-2-add-deterministic-post-match-rating-settlement-and-profile-history-updates: done

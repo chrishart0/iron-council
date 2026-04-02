@@ -12,6 +12,7 @@ MATCH_STATUSES = ("lobby", "active", "paused", "completed")
 MESSAGE_CHANNEL_TYPES = ("dm", "group", "world")
 TREATY_TYPES = ("non_aggression", "defensive", "trade")
 TREATY_STATUSES = ("active", "broken_by_a", "broken_by_b", "withdrawn")
+SETTLEMENT_OUTCOMES = ("win", "loss", "draw")
 
 
 def enum_values(*values: str) -> sa.Enum:
@@ -86,6 +87,54 @@ class Player(Base):
     )
     alliance_joined_tick: Mapped[int | None] = mapped_column(sa.Integer(), nullable=True)
     eliminated_at: Mapped[int | None] = mapped_column(sa.Integer(), nullable=True)
+
+
+class MatchSettlement(Base):
+    __tablename__ = "match_settlements"
+
+    match_id: Mapped[Any] = mapped_column(
+        uuid_type,
+        sa.ForeignKey("matches.id"),
+        primary_key=True,
+    )
+    settled_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("CURRENT_TIMESTAMP"),
+    )
+
+
+class PlayerMatchSettlement(Base):
+    __tablename__ = "player_match_settlements"
+
+    player_id: Mapped[Any] = mapped_column(
+        uuid_type,
+        sa.ForeignKey("players.id"),
+        primary_key=True,
+    )
+    match_id: Mapped[Any] = mapped_column(
+        uuid_type,
+        sa.ForeignKey("matches.id"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[Any] = mapped_column(uuid_type, nullable=False, index=True)
+    api_key_id: Mapped[Any | None] = mapped_column(
+        uuid_type,
+        sa.ForeignKey("api_keys.id"),
+        nullable=True,
+        index=True,
+    )
+    display_name: Mapped[str] = mapped_column(sa.Text(), nullable=False)
+    is_agent: Mapped[bool] = mapped_column(sa.Boolean(), nullable=False)
+    outcome: Mapped[str] = mapped_column(enum_values(*SETTLEMENT_OUTCOMES), nullable=False)
+    elo_before: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
+    elo_after: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
+    settled_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("CURRENT_TIMESTAMP"),
+    )
 
 
 class Message(Base):

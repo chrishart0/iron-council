@@ -179,6 +179,133 @@ def insert_completed_match_fixture(database_url: str) -> None:
         connection.execute(
             text(
                 """
+                INSERT INTO match_settlements (
+                    match_id, settled_at
+                ) VALUES (
+                    :match_id, :settled_at
+                )
+                """
+            ),
+            [
+                {
+                    "match_id": "00000000-0000-0000-0000-000000000201",
+                    "settled_at": "2026-03-29 08:30:00+00:00",
+                },
+                {
+                    "match_id": "00000000-0000-0000-0000-000000000202",
+                    "settled_at": "2026-03-29 12:15:00+00:00",
+                },
+            ],
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO player_match_settlements (
+                    player_id, match_id, user_id, api_key_id, display_name, is_agent,
+                    outcome, elo_before, elo_after, settled_at
+                ) VALUES (
+                    :player_id, :match_id, :user_id, :api_key_id, :display_name, :is_agent,
+                    :outcome, :elo_before, :elo_after, :settled_at
+                )
+                """
+            ),
+            [
+                {
+                    "player_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000201",
+                        public_player_id="player-1",
+                    ),
+                    "match_id": "00000000-0000-0000-0000-000000000201",
+                    "user_id": "00000000-0000-0000-0000-000000000301",
+                    "api_key_id": None,
+                    "display_name": "Arthur",
+                    "is_agent": False,
+                    "outcome": "win",
+                    "elo_before": 1210,
+                    "elo_after": 1234,
+                    "settled_at": "2026-03-29 08:30:00+00:00",
+                },
+                {
+                    "player_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000201",
+                        public_player_id="player-2",
+                    ),
+                    "match_id": "00000000-0000-0000-0000-000000000201",
+                    "user_id": "00000000-0000-0000-0000-000000000302",
+                    "api_key_id": "00000000-0000-0000-0000-000000000202",
+                    "display_name": "Morgana",
+                    "is_agent": True,
+                    "outcome": "win",
+                    "elo_before": 1190,
+                    "elo_after": 1211,
+                    "settled_at": "2026-03-29 08:30:00+00:00",
+                },
+                {
+                    "player_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000201",
+                        public_player_id="player-3",
+                    ),
+                    "match_id": "00000000-0000-0000-0000-000000000201",
+                    "user_id": "00000000-0000-0000-0000-000000000303",
+                    "api_key_id": "00000000-0000-0000-0000-000000000203",
+                    "display_name": "Gawain",
+                    "is_agent": True,
+                    "outcome": "loss",
+                    "elo_before": 1175,
+                    "elo_after": 1163,
+                    "settled_at": "2026-03-29 08:30:00+00:00",
+                },
+                {
+                    "player_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000202",
+                        public_player_id="player-1",
+                    ),
+                    "match_id": "00000000-0000-0000-0000-000000000202",
+                    "user_id": "00000000-0000-0000-0000-000000000302",
+                    "api_key_id": "00000000-0000-0000-0000-000000000202",
+                    "display_name": "Morgana",
+                    "is_agent": True,
+                    "outcome": "draw",
+                    "elo_before": 1211,
+                    "elo_after": 1211,
+                    "settled_at": "2026-03-29 12:15:00+00:00",
+                },
+                {
+                    "player_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000202",
+                        public_player_id="player-2",
+                    ),
+                    "match_id": "00000000-0000-0000-0000-000000000202",
+                    "user_id": "00000000-0000-0000-0000-000000000304",
+                    "api_key_id": None,
+                    "display_name": "Bedivere",
+                    "is_agent": False,
+                    "outcome": "draw",
+                    "elo_before": 1190,
+                    "elo_after": 1190,
+                    "settled_at": "2026-03-29 12:15:00+00:00",
+                },
+            ],
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE api_keys
+                SET elo_rating = CASE id
+                    WHEN '00000000-0000-0000-0000-000000000202' THEN 1211
+                    WHEN '00000000-0000-0000-0000-000000000203' THEN 1163
+                    ELSE elo_rating
+                END
+                WHERE id IN (
+                    '00000000-0000-0000-0000-000000000202',
+                    '00000000-0000-0000-0000-000000000203'
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
                 INSERT INTO alliances (
                     id, match_id, name, leader_id, formed_tick, dissolved_tick
                 ) VALUES (

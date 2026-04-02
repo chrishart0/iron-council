@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from server.db.models import Alliance, Match, Player, TickLog
+from server.db.models import Alliance, Match, Player, PlayerMatchSettlement, TickLog
 from server.models.api import (
     CompletedMatchSummary,
     CompletedMatchSummaryListResponse,
@@ -152,9 +152,11 @@ def build_public_leaderboard(
     *,
     completed_matches: Sequence[Match],
     players: Sequence[Player],
+    settlements: Sequence[PlayerMatchSettlement],
 ) -> PublicLeaderboardResponse:
     players_by_match: dict[str, list[Player]] = defaultdict(list)
     players_by_match_and_id: dict[tuple[str, str], Player] = {}
+    settlements_by_player_id = {str(settlement.player_id): settlement for settlement in settlements}
     for player in players:
         match_id = str(player.match_id)
         players_by_match[match_id].append(player)
@@ -169,23 +171,35 @@ def build_public_leaderboard(
         for player in players_by_match.get(str(match.id), []):
             competitor_kind: Literal["human", "agent"] = "agent" if player.is_agent else "human"
             competitor_identity = leaderboard_competitor_identity(player)
+            settlement = settlements_by_player_id.get(str(player.id))
             aggregate = aggregates.get(competitor_identity)
             if aggregate is None:
                 aggregate = LeaderboardAggregate(
                     competitor_key=competitor_identity,
                     display_name=player.display_name,
                     competitor_kind=competitor_kind,
-                    elo=int(player.elo_rating),
-                    provisional=True,
+                    elo=int(settlement.elo_after)
+                    if settlement is not None
+                    else int(player.elo_rating),
+                    provisional=settlement is None,
                 )
                 aggregates[competitor_identity] = aggregate
 
             aggregate.matches_played += 1
-            winner_identity = winner_identity_for_player(
-                match=match,
-                player=player,
-                players_by_match_and_id=players_by_match_and_id,
-            )
+            if settlement is None:
+                winner_identity = winner_identity_for_player(
+                    match=match,
+                    player=player,
+                    players_by_match_and_id=players_by_match_and_id,
+                )
+            else:
+                if settlement.outcome == "draw":
+                    winner_identity = None
+                elif settlement.outcome == "win":
+                    winner_identity = "win"
+                else:
+                    winner_identity = "loss"
+
             if winner_identity is None:
                 aggregate.draws += 1
             elif winner_identity == "win":

@@ -85,6 +85,8 @@ def seed_database(database_url: str) -> None:
             "messages",
             "treaties",
             "tick_log",
+            "player_match_settlements",
+            "match_settlements",
             "players",
             "alliances",
             "api_keys",
