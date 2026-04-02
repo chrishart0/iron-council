@@ -1851,3 +1851,43 @@ So that `server/db/public_reads.py` can keep the top-level query orchestration v
 **When** the implementation is reviewed
 **Then** `server/db/public_reads.py` ends up with fewer mixed responsibilities, explicit top-level read orchestration stays visible, and no new framework-style abstraction is introduced.
 
+### Story 38.2: Extract public leaderboard and completed-match aggregation helpers out of `server/db/public_reads.py`
+
+As a server maintainer,
+I want the leaderboard aggregation and completed-match browse payload assembly logic grouped behind focused helpers,
+So that `server/db/public_reads.py` can keep top-level public-read query orchestration visible without one file continuing to own every completed-match and ranking aggregation detail.
+
+**Acceptance Criteria:**
+
+**Given** `server/db/public_reads.py` still owns inline leaderboard aggregation, competitor identity grouping, completed-match browse payload construction, and winner-name assembly
+**When** Story 38.2 ships
+**Then** those responsibilities move behind a focused compatibility-safe helper surface while `server.db.public_reads` and `server.db.registry` keep their stable caller behavior.
+
+**And Given** public leaderboard ranking order, same-user multi-agent separation, completed-match browse payloads, winner alliance/player naming, and UTC/timestamp ordering already work at the registry, route, and smoke-test boundary
+**When** the refactor ships
+**Then** those behaviors remain unchanged and covered by focused DB public-read regressions plus the strongest practical repo-managed verification for the touched seam.
+
+**And Given** the epic remains a boring decomposition effort
+**When** the implementation is reviewed
+**Then** `server/db/public_reads.py` keeps explicit query orchestration visible, no service abstraction is added, and the resulting structure is simpler than the post-38.1 starting point.
+
+### Story 38.3: Extract public history and replay assembly helpers out of `server/db/public_reads.py`
+
+As a server maintainer,
+I want the match-history and replay response assembly logic grouped behind focused helpers,
+So that `server/db/public_reads.py` can finish Epic 38 as a thin orchestration surface for public DB reads instead of mixing SQL query flow with every response-construction detail.
+
+**Acceptance Criteria:**
+
+**Given** `server/db/public_reads.py` still assembles `MatchHistoryResponse` and `MatchReplayTickResponse` inline for history/replay reads
+**When** Story 38.3 ships
+**Then** that response-building detail moves behind a focused compatibility-safe helper surface while `server.db.public_reads` and `server.db.registry` keep stable caller behavior and error semantics.
+
+**And Given** persisted tick ordering, tick/state/orders/events payload fidelity, status/current-tick metadata, and not-found behavior already work at the DB registry, route, and smoke-test boundary
+**When** the refactor ships
+**Then** those behaviors remain unchanged and covered by focused regression tests plus the strongest practical repo-managed verification for the touched seam.
+
+**And Given** this is the final pragmatic Epic 38 slice
+**When** the implementation is reviewed
+**Then** `server/db/public_reads.py` is left as a simple orchestration module, no framework-style abstraction is introduced, and Epic 38 can close in a clearly simpler state than the pre-refactor baseline.
+

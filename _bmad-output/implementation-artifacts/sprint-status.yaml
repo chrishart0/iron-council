@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 38-2-extract-public-leaderboard-and-completed-match-aggregation-helpers-out-of-server-db-public_reads-py.md
+next_story: 38-3-extract-public-history-and-replay-assembly-helpers-out-of-server-db-public_reads-py.md
 
 development_status:
   public-readiness-epic: done
@@ -191,4 +191,5 @@ development_status:
 
   epic-38: active
   38-1-extract-public-browse-and-roster-assembly-helpers-out-of-server-db-public_reads-py: done
-  38-2-extract-public-leaderboard-and-completed-match-aggregation-helpers-out-of-server-db-public_reads-py: drafted
+  38-2-extract-public-leaderboard-and-completed-match-aggregation-helpers-out-of-server-db-public_reads-py: done
+  38-3-extract-public-history-and-replay-assembly-helpers-out-of-server-db-public_reads-py: drafted
