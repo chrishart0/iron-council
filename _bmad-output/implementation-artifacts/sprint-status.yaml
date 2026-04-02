@@ -1,9 +1,9 @@
-generated: 2026-04-02 05:06 UTC
+generated: 2026-04-02 05:55 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 38-1-extract-public-browse-and-roster-assembly-helpers-out-of-server-db-public_reads-py.md
+next_story: 38-2-extract-public-leaderboard-and-completed-match-aggregation-helpers-out-of-server-db-public_reads-py.md
 
 development_status:
   public-readiness-epic: done
@@ -190,4 +190,5 @@ development_status:
   37-2-extract-agent-and-identity-hydration-loaders-out-of-server-db-hydration-py: done
 
   epic-38: active
-  38-1-extract-public-browse-and-roster-assembly-helpers-out-of-server-db-public_reads-py: drafted
+  38-1-extract-public-browse-and-roster-assembly-helpers-out-of-server-db-public_reads-py: done
+  38-2-extract-public-leaderboard-and-completed-match-aggregation-helpers-out-of-server-db-public_reads-py: drafted

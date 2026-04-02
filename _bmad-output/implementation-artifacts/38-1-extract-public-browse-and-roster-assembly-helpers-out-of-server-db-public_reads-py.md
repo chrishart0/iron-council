@@ -1,6 +1,6 @@
 # Story: 38.1 Extract public browse and roster assembly helpers out of `server/db/public_reads.py`
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -36,15 +36,22 @@ So that `server/db/public_reads.py` can keep top-level query orchestration visib
 ### Debug Log
 
 - 2026-04-02: Drafted as the next post-Epic-37 refactor slice after completing Story 37.2.
+- 2026-04-02: Implemented the public browse/detail extraction in `/tmp/iron-38-1`, then re-ran focused DB registry/API checks plus `make quality` before integrating onto `master`.
 
 ### Completion Notes
 
-- Pending.
+- Extracted public match browse/detail payload assembly and roster-row construction into the new focused helper module `server/db/public_read_assembly.py` while keeping `server/db/public_reads.py` as the explicit SQLAlchemy query orchestrator.
+- Preserved canonical player-id mapping, visible roster ordering, open-slot calculations, and registry/API compatibility by keeping `build_persisted_player_mapping(...)` in the orchestration layer and routing the final response construction through plain helper functions.
+- Added a focused regression that proves browse/detail counts continue to reflect persisted player rows even when unmapped persisted rows are filtered out of the public roster surface, then re-verified the touched seam in both DB-registry and API-route tests.
 
 ### File List
 
+- `server/db/public_read_assembly.py`
+- `server/db/public_reads.py`
+- `tests/test_db_registry.py`
 - `_bmad-output/implementation-artifacts/38-1-extract-public-browse-and-roster-assembly-helpers-out-of-server-db-public_reads-py.md`
 
 ### Change Log
 
 - 2026-04-02: Drafted Story 38.1 to continue DB surface decomposition by splitting focused browse/detail payload assembly helpers out of `server/db/public_reads.py`.
+- 2026-04-02: Completed Story 38.1 by moving public browse/detail assembly into `server/db/public_read_assembly.py`, adding a focused roster/count regression, and re-running focused plus repo-managed verification.
