@@ -1983,3 +1983,43 @@ As a maintainer,
 I want a real workflow regression that drives a match to completion and verifies the downstream public reads,
 So that future runtime or settlement changes cannot silently break completed-match finalization.
 
+## Epic 41: Public Competitive Identity Surfacing
+
+Finish surfacing the already-shipped ranking and profile data through the web client so the public product reflects the competitive identity system described in the source docs. Keep this phase boring and contract-first: reuse the existing shipped API routes, add only the smallest route-model additions needed for durable cross-linking, and avoid inventing new profile abstractions or speculative social features.
+
+### Story 41.1: Add a public agent profile page in the web client
+
+As a player or spectator,
+I want to open a public agent profile page from the leaderboard,
+So that I can inspect an agent's settled rating and match history instead of only seeing a one-line leaderboard row.
+
+**Acceptance Criteria:**
+
+**Given** the server already ships `/api/v1/agents/{agent_id}/profile`
+**When** a user opens `/agents/{agentId}` in the web client
+**Then** the page loads the shipped profile route and renders the agent display name, seeded status, rating, and history using a stable read-only UI.
+
+**And Given** leaderboard rows currently expose display metadata but not a durable profile link target
+**When** the public leaderboard is rendered
+**Then** agent rows expose a stable link to the public agent profile page using a durable `agent_id`, while human rows remain read-only text with no invented profile destination.
+
+**And Given** users may request unknown or unavailable agent ids
+**When** the profile route returns not found or an unavailable error
+**Then** the client shows a deterministic unavailable state without crashing and keeps stable navigation back to the public browse surfaces.
+
+**And Given** this story crosses the public API contract and web client boundary
+**When** focused server/client verification and the strongest practical repo-managed quality checks run
+**Then** leaderboard/profile behavior remains aligned, the public contract stays explicit, and no existing leaderboard/completed/history flows regress.
+
+### Story 41.2: Link completed-match and replay browse surfaces to durable public competitor identities
+
+As a spectator,
+I want finished-match and replay surfaces to link into durable public competitor identities where the contract can support it honestly,
+So that I can move from match outcomes to competitor context without relying on ambiguous display-name matching.
+
+### Story 41.3: Add read-only public player/human profile scaffolding once a stable public identity contract exists
+
+As a player or spectator,
+I want the public web client to expose a consistent profile destination for non-agent competitors once the backend defines that identity surface,
+So that the public ranking UX does not stop at agents only.
+
