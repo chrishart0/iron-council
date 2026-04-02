@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 39-3-extract-public-history-and-replay-routes-out-of-server-api-public_routes-py.md
+next_story: 40-1-detect-and-persist-completed-matches-from-victory-state.md
 
 development_status:
   public-readiness-epic: done
@@ -194,7 +194,11 @@ development_status:
   38-2-extract-public-leaderboard-and-completed-match-aggregation-helpers-out-of-server-db-public_reads-py: done
   38-3-extract-public-history-and-replay-assembly-helpers-out-of-server-db-public_reads-py: done
 
-  epic-39: active
+  epic-39: done
   39-1-extract-public-browse-and-detail-route-handlers-out-of-server-api-public_routes-py: done
   39-2-extract-public-aggregate-summary-routes-out-of-server-api-public_routes-py: done
   39-3-extract-public-history-and-replay-routes-out-of-server-api-public_routes-py: done
+
+  epic-40: active
+  40-1-detect-and-persist-completed-matches-from-victory-state: drafted
+  40-2-add-deterministic-post-match-rating-settlement-and-profile-history-updates: drafted

@@ -1,6 +1,6 @@
 # Story: 39.3 Extract public history and replay routes out of `server/api/public_routes.py`
 
-Status: done
+Status: completed
 
 ## Story
 
@@ -39,6 +39,7 @@ So that `server/api/public_routes.py` can finish Epic 39 as a thin composition l
 - 2026-04-02: Added the seam regression for `server.api.public_history_routes`, confirmed RED with `ModuleNotFoundError`, then extracted the persisted history/replay routes into `server/api/public_history_routes.py`.
 - 2026-04-02: Rewired `server/api/public_routes.py` into a thinner composition layer over summary, match, and history router builders while preserving the existing DB-backed error translations and OpenAPI declarations.
 - 2026-04-02: Focused verification passed for the extracted seam, history/replay API contract, real-process smoke flow, and the full repo-managed `make quality` gate after syncing the local dev environment with `make install`.
+- 2026-04-02: Post-implementation review passed: spec compliance PASS and code quality APPROVED; only BMAD follow-up was to advance `next_story` beyond the completed 39.3 artifact.
 
 ### Completion Notes
 

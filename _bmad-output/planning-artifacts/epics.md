@@ -1927,3 +1927,59 @@ As a server maintainer,
 I want `server/api/public_routes.py` reduced to a clearly boring metadata and composition surface,
 So that future public-route changes can extend focused route modules without recreating a monolithic public router.
 
+## Epic 40: Match Completion and Rating Finalization
+
+Close the loop between the existing live-match runtime and the already-shipped persisted history, completed-match browse, leaderboard, and agent-profile reads by detecting terminal victory, finalizing matches in persistence/runtime, and then settling durable post-match outcomes. Treat this as a product-correctness epic first, not a broad redesign: prefer explicit, idempotent helpers and transaction-safe state transitions over new service layers.
+
+### Story 40.1: Detect and persist completed matches from victory state
+
+As a server maintainer,
+I want the runtime and persistence layers to mark a match completed when the victory countdown fully expires,
+So that completed-match browse, replay/history, and future rating settlement all read from one authoritative terminal match record.
+
+**Acceptance Criteria:**
+
+**Given** the resolver already produces `VictoryState.leading_alliance` and `VictoryState.countdown_ticks_remaining`
+**When** an advanced tick reaches a terminal victory state
+**Then** the persisted `matches` row stores `status=completed`, `winner_alliance`, the terminal `current_tick`, and the final canonical `state` in the same atomic write that appends the tick log.
+
+**And Given** the runtime currently keeps advancing active matches until stopped externally
+**When** a match becomes completed
+**Then** the in-memory match record transitions to completed exactly once, the runtime loop stops scheduling further ticks for that match, and the terminal tick can still be persisted/broadcast without a follow-up duplicate tick.
+
+**And Given** the story changes runtime plus persistence semantics
+**When** focused runtime/DB/API/e2e regressions and the strongest practical repo-managed verification run
+**Then** terminal victory detection, completed-match browse visibility, replay/history fidelity, and persistence rollback behavior remain correct without changing non-terminal gameplay behavior.
+
+### Story 40.2: Add deterministic post-match rating settlement and profile history updates
+
+As a platform maintainer,
+I want completed matches to settle durable rating and history outcomes exactly once,
+So that public leaderboard and agent-profile reads reflect real post-match results instead of perpetual provisional snapshots.
+
+**Acceptance Criteria:**
+
+**Given** a completed match with a persisted winner alliance and participating players/agents
+**When** settlement runs
+**Then** every participant receives deterministic win/loss/draw history updates and persistent rating adjustments derived from the final match outcome.
+
+**And Given** runtime persistence can be retried after transient failures
+**When** settlement logic is triggered more than once for the same completed match
+**Then** ratings/history remain idempotent and no participant is double-settled.
+
+**And Given** this story touches durable profile state used by leaderboard/profile APIs
+**When** focused DB/API/e2e regressions and the repo quality gate run
+**Then** public leaderboard ordering, profile history totals, and completed-match summaries reflect the finalized outcome without breaking existing lobby/auth/history contracts.
+
+### Story 40.3: Consume finalized ratings and non-provisional outcomes in leaderboard/profile reads
+
+As a player or spectator,
+I want public leaderboard and profile endpoints to expose settled post-match results,
+So that the browse surface matches the real competitive state of the platform instead of only match-start snapshots.
+
+### Story 40.4: Add completion-to-leaderboard end-to-end regression coverage
+
+As a maintainer,
+I want a real workflow regression that drives a match to completion and verifies the downstream public reads,
+So that future runtime or settlement changes cannot silently break completed-match finalization.
+
