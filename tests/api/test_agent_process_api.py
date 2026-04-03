@@ -298,6 +298,12 @@ def test_running_app_supports_human_api_key_lifecycle_create_revoke_and_rejects_
 
     assert create_response.status_code == HTTPStatus.CREATED
     assert created_payload["api_key"].startswith("iron_")
+    assert created_payload["summary"]["entitlement"] == {
+        "is_entitled": True,
+        "grant_source": "dev",
+        "concurrent_match_allowance": 1,
+        "granted_at": "2026-03-29T00:00:00Z",
+    }
     assert list_response.status_code == HTTPStatus.OK
     assert created_payload["api_key"] not in list_response.text
     assert revoke_response.status_code == HTTPStatus.OK

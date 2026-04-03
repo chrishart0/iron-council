@@ -13,6 +13,7 @@ MESSAGE_CHANNEL_TYPES = ("dm", "group", "world")
 TREATY_TYPES = ("non_aggression", "defensive", "trade")
 TREATY_STATUSES = ("active", "broken_by_a", "broken_by_b", "withdrawn")
 SETTLEMENT_OUTCOMES = ("win", "loss", "draw")
+AGENT_ENTITLEMENT_GRANT_SOURCES = ("manual", "dev")
 
 
 def enum_values(*values: str) -> sa.Enum:
@@ -49,6 +50,29 @@ class ApiKey(Base):
     elo_rating: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
     is_active: Mapped[bool] = mapped_column(sa.Boolean(), nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
+        utc_datetime_type,
+        nullable=False,
+        server_default=sa.text("CURRENT_TIMESTAMP"),
+    )
+
+
+class AgentEntitlementGrant(Base):
+    __tablename__ = "agent_entitlement_grants"
+
+    id: Mapped[Any] = mapped_column(uuid_type, primary_key=True)
+    user_id: Mapped[Any] = mapped_column(uuid_type, nullable=False, index=True)
+    grant_source: Mapped[str] = mapped_column(
+        enum_values(*AGENT_ENTITLEMENT_GRANT_SOURCES),
+        nullable=False,
+    )
+    concurrent_match_allowance: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
+    is_active: Mapped[bool] = mapped_column(sa.Boolean(), nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        utc_datetime_type,
+        nullable=False,
+        server_default=sa.text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         utc_datetime_type,
         nullable=False,
         server_default=sa.text("CURRENT_TIMESTAMP"),

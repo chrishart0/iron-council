@@ -68,6 +68,7 @@ from sqlalchemy.orm import Session
 from tests.support import (
     build_persisted_player_id,
     insert_api_key,
+    insert_api_key_with_manual_entitlement,
     insert_completed_match_fixture,
     insert_seeded_agent_player,
     insert_seeded_human_player,
@@ -98,12 +99,13 @@ def _insert_fresh_lobby_creator_key(
 ) -> tuple[str, str, str]:
     api_key = f"fresh-lobby-creator-key-{suffix}"
     api_key_id = f"11111111-1111-1111-1111-{suffix}"
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=database_url,
         api_key_id=api_key_id,
         user_id=f"22222222-2222-2222-2222-{suffix}",
         raw_api_key=api_key,
         elo_rating=1111,
+        grant_id=f"33333333-3333-3333-3333-{suffix}",
     )
     return (
         api_key,
@@ -313,12 +315,13 @@ def test_load_match_record_from_session_matches_registry_reload_for_lobby_member
         database_url, suffix="111111111120"
     )
     joiner_api_key = "fresh-session-joiner-key"
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=database_url,
         api_key_id="33333333-3333-3333-3333-333333333334",
         user_id="44444444-4444-4444-4444-444444444334",
         raw_api_key=joiner_api_key,
         elo_rating=1099,
+        grant_id="55555555-5555-5555-5555-555555555334",
     )
 
     created = create_match_lobby(
@@ -822,26 +825,14 @@ def test_create_match_lobby_reload_preserves_non_seeded_authenticated_creator_id
 
     non_seeded_api_key = "fresh-db-agent-key"
     non_seeded_api_key_hash = hash_api_key(non_seeded_api_key)
-    engine = create_engine(database_url)
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                """
-                INSERT INTO api_keys (
-                    id, user_id, key_hash, elo_rating, is_active, created_at
-                ) VALUES (
-                    :id, :user_id, :key_hash, :elo_rating, :is_active, CURRENT_TIMESTAMP
-                )
-                """
-            ),
-            {
-                "id": "00000000-0000-0000-0000-000000000299",
-                "user_id": "00000000-0000-0000-0000-000000000399",
-                "key_hash": non_seeded_api_key_hash,
-                "elo_rating": 1111,
-                "is_active": True,
-            },
-        )
+    insert_api_key_with_manual_entitlement(
+        database_url=database_url,
+        api_key_id="00000000-0000-0000-0000-000000000299",
+        user_id="00000000-0000-0000-0000-000000000399",
+        raw_api_key=non_seeded_api_key,
+        elo_rating=1111,
+        grant_id="00000000-0000-0000-0000-000000000499",
+    )
 
     created = create_match_lobby(
         database_url=database_url,
@@ -909,12 +900,13 @@ def test_join_match_persists_membership_idempotently_and_remains_publicly_visibl
         ),
     )
     joiner_api_key = "fresh-lobby-joiner-key"
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=database_url,
         api_key_id="33333333-3333-3333-3333-333333333333",
         user_id="44444444-4444-4444-4444-444444444333",
         raw_api_key=joiner_api_key,
         elo_rating=1099,
+        grant_id="55555555-5555-5555-5555-555555555333",
     )
 
     joined = join_match(

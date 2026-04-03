@@ -121,7 +121,12 @@ def test_readme_docs_index_and_agent_sdk_document_self_serve_agent_key_lifecycle
     assert "/api/v1/account/api-keys" in readme
     assert "once only" in readme
     assert "Billing and entitlement rules are still" in readme
+    assert "manual" in readme
+    assert "dev" in readme
     assert "/api/v1/account/api-keys" in docs_index
     assert "one-time secret reveal" in docs_index
+    assert "manual/dev inspection" in docs_index
     assert "POST /api/v1/account/api-keys" in agent_sdk
     assert "compact summaries only" in agent_sdk
+    assert "manual" in agent_sdk
+    assert "dev" in agent_sdk

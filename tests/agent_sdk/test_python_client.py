@@ -17,7 +17,10 @@ from server.agent_registry import (
     build_seeded_match_records,
 )
 from server.main import create_app
-from tests.support import insert_api_key, load_python_agent_sdk_module
+from tests.support import (
+    insert_api_key_with_manual_entitlement,
+    load_python_agent_sdk_module,
+)
 
 
 def _message_payload(
@@ -168,12 +171,13 @@ def test_sdk_create_match_lobby_returns_typed_authenticated_contract(
 
     provision_seeded_database(database_url=database_url, reset=True)
     creator_api_key = "sdk-fresh-creator-key"
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=database_url,
         api_key_id="11111111-1111-1111-1111-111111111111",
         user_id="11111111-1111-1111-1111-111111111301",
         raw_api_key=creator_api_key,
         elo_rating=1111,
+        grant_id="33333333-3333-3333-3333-333333333111",
     )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
@@ -213,19 +217,21 @@ def test_sdk_start_match_lobby_returns_typed_compact_active_contract(
     provision_seeded_database(database_url=database_url, reset=True)
     creator_api_key = "sdk-start-creator-key"
     competitor_api_key = "sdk-start-competitor-key"
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=database_url,
         api_key_id="11111111-1111-1111-1111-111111111112",
         user_id="11111111-1111-1111-1111-111111111302",
         raw_api_key=creator_api_key,
         elo_rating=1111,
+        grant_id="33333333-3333-3333-3333-333333333112",
     )
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=database_url,
         api_key_id="22222222-2222-2222-2222-222222222222",
         user_id="22222222-2222-2222-2222-222222222302",
         raw_api_key=competitor_api_key,
         elo_rating=1099,
+        grant_id="44444444-4444-4444-4444-444444444222",
     )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
@@ -278,26 +284,29 @@ def test_sdk_start_match_lobby_wraps_creator_only_and_not_ready_errors(
     creator_api_key = "sdk-error-creator-key"
     second_creator_api_key = "sdk-error-creator-key-2"
     competitor_api_key = "sdk-error-competitor-key"
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=database_url,
         api_key_id="11111111-1111-1111-1111-111111111113",
         user_id="11111111-1111-1111-1111-111111111303",
         raw_api_key=creator_api_key,
         elo_rating=1111,
+        grant_id="33333333-3333-3333-3333-333333333113",
     )
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=database_url,
         api_key_id="11111111-1111-1111-1111-111111111114",
         user_id="11111111-1111-1111-1111-111111111304",
         raw_api_key=second_creator_api_key,
         elo_rating=1111,
+        grant_id="33333333-3333-3333-3333-333333333114",
     )
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=database_url,
         api_key_id="22222222-2222-2222-2222-222222222223",
         user_id="22222222-2222-2222-2222-222222222303",
         raw_api_key=competitor_api_key,
         elo_rating=1099,
+        grant_id="44444444-4444-4444-4444-444444444223",
     )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")

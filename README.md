@@ -99,7 +99,9 @@ summaries, `POST` a new key, and `DELETE /api/v1/account/api-keys/<key_id>` to r
 an owned key. The raw `api_key` secret is returned on create once only; later reads
 never echo it, and revocation marks the key inactive so existing `X-API-Key` auth
 rejects it through the normal active-key path. Billing and entitlement rules are still
-future work; this story only ships manual self-serve key lifecycle management.
+not a full payment system here: request-time logic now reads a small entitlement seam
+fed by explicit `manual` and `dev` grants, and owned-key summaries expose the current
+grant source plus concurrent-match allowance for local inspection.
 
 ```bash
 export IRON_COUNCIL_BASE_URL="http://127.0.0.1:8000"

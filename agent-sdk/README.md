@@ -28,8 +28,9 @@ If you are not using the seeded local demo keys, create your own first through t
 authenticated human account API: `POST /api/v1/account/api-keys` with a human Bearer
 token. That response reveals the raw secret once only; later `GET /api/v1/account/api-keys`
 reads return compact summaries only, and `DELETE /api/v1/account/api-keys/<key_id>`
-revokes a key without deleting its history. Stripe, billing, and entitlement checks are
-not part of the shipped flow yet.
+revokes a key without deleting its history. The current shipped seam is limited to
+explicit `manual`/`dev` entitlement grants plus a concurrent-match allowance summary;
+Stripe and broader billing flows are still not part of the request path.
 
 ## Setup
 

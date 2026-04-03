@@ -8,9 +8,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from server.auth import hash_api_key
+from server.db.agent_entitlements import (
+    EffectiveAgentEntitlement,
+    require_agent_entitlement,
+    resolve_effective_agent_entitlement,
+)
 from server.db.identity import resolve_human_elo_rating
 from server.db.models import ApiKey
-from server.models.api import OwnedApiKeySummary
+from server.models.api import ApiKeyEntitlementSummary, OwnedApiKeySummary
 
 
 def list_owned_api_keys(*, database_url: str, user_id: str) -> list[OwnedApiKeySummary]:
@@ -18,12 +23,13 @@ def list_owned_api_keys(*, database_url: str, user_id: str) -> list[OwnedApiKeyS
 
     engine = create_engine(database_url)
     with Session(engine) as session:
+        entitlement = resolve_effective_agent_entitlement(session=session, user_id=user_id)
         rows = session.scalars(
             select(ApiKey)
             .where(ApiKey.user_id == user_id)
             .order_by(ApiKey.created_at.asc(), ApiKey.id.asc())
         ).all()
-        return [_build_summary(row) for row in rows]
+        return [_build_summary(row, entitlement=entitlement) for row in rows]
 
 
 def create_owned_api_key(*, database_url: str, user_id: str) -> tuple[str, OwnedApiKeySummary]:
@@ -31,6 +37,8 @@ def create_owned_api_key(*, database_url: str, user_id: str) -> tuple[str, Owned
 
     engine = create_engine(database_url)
     with Session(engine) as session:
+        entitlement = resolve_effective_agent_entitlement(session=session, user_id=user_id)
+        require_agent_entitlement(entitlement)
         raw_key = _generate_unique_api_key(session=session)
         api_key = ApiKey(
             id=str(uuid4()),
@@ -43,7 +51,7 @@ def create_owned_api_key(*, database_url: str, user_id: str) -> tuple[str, Owned
         session.add(api_key)
         session.commit()
         session.refresh(api_key)
-        return raw_key, _build_summary(api_key)
+        return raw_key, _build_summary(api_key, entitlement=entitlement)
 
 
 def revoke_owned_api_key(
@@ -56,6 +64,7 @@ def revoke_owned_api_key(
 
     engine = create_engine(database_url)
     with Session(engine) as session:
+        entitlement = resolve_effective_agent_entitlement(session=session, user_id=user_id)
         api_key = session.scalar(
             select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == user_id)
         )
@@ -65,7 +74,7 @@ def revoke_owned_api_key(
         api_key.is_active = False
         session.commit()
         session.refresh(api_key)
-        return _build_summary(api_key)
+        return _build_summary(api_key, entitlement=entitlement)
 
 
 def _generate_unique_api_key(*, session: Session) -> str:
@@ -76,10 +85,20 @@ def _generate_unique_api_key(*, session: Session) -> str:
             return raw_key
 
 
-def _build_summary(api_key: ApiKey) -> OwnedApiKeySummary:
+def _build_summary(
+    api_key: ApiKey,
+    *,
+    entitlement: EffectiveAgentEntitlement,
+) -> OwnedApiKeySummary:
     return OwnedApiKeySummary(
         key_id=str(api_key.id),
         elo_rating=int(api_key.elo_rating),
         is_active=bool(api_key.is_active),
         created_at=api_key.created_at,
+        entitlement=ApiKeyEntitlementSummary(
+            is_entitled=entitlement.is_entitled,
+            grant_source=entitlement.grant_source,
+            concurrent_match_allowance=entitlement.concurrent_match_allowance,
+            granted_at=entitlement.granted_at,
+        ),
     )

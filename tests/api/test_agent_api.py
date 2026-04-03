@@ -41,6 +41,7 @@ from sqlalchemy import create_engine, text
 from starlette.websockets import WebSocketDisconnect
 from tests.support import (
     build_persisted_player_id,
+    insert_agent_entitlement_grant,
     insert_api_key,
     insert_completed_match_fixture,
     insert_seeded_agent_player,
@@ -1318,6 +1319,12 @@ async def test_authenticated_human_api_key_lifecycle_can_list_owned_keys_without
                 "elo_rating": 1211,
                 "is_active": True,
                 "created_at": "2026-03-29T00:00:00Z",
+                "entitlement": {
+                    "is_entitled": True,
+                    "grant_source": "dev",
+                    "concurrent_match_allowance": 1,
+                    "granted_at": "2026-03-29T00:00:00Z",
+                },
             }
         ]
     }
@@ -1363,6 +1370,12 @@ async def test_authenticated_human_api_key_lifecycle_can_create_and_revoke_owned
     assert created_payload["api_key"].startswith("iron_")
     assert created_payload["summary"]["elo_rating"] == 1210
     assert created_payload["summary"]["is_active"] is True
+    assert created_payload["summary"]["entitlement"] == {
+        "is_entitled": True,
+        "grant_source": "dev",
+        "concurrent_match_allowance": 1,
+        "granted_at": "2026-03-29T00:00:00Z",
+    }
     assert "key_hash" not in str(created_payload)
 
     assert list_response.status_code == HTTPStatus.OK
@@ -1372,6 +1385,12 @@ async def test_authenticated_human_api_key_lifecycle_can_create_and_revoke_owned
         "elo_rating": 1210,
         "is_active": True,
         "created_at": created_payload["summary"]["created_at"],
+        "entitlement": {
+            "is_entitled": True,
+            "grant_source": "dev",
+            "concurrent_match_allowance": 1,
+            "granted_at": "2026-03-29T00:00:00Z",
+        },
     } in list_payload["items"]
     assert created_payload["api_key"] not in list_response.text
 
@@ -1381,6 +1400,12 @@ async def test_authenticated_human_api_key_lifecycle_can_create_and_revoke_owned
         "elo_rating": 1210,
         "is_active": False,
         "created_at": created_payload["summary"]["created_at"],
+        "entitlement": {
+            "is_entitled": True,
+            "grant_source": "dev",
+            "concurrent_match_allowance": 1,
+            "granted_at": "2026-03-29T00:00:00Z",
+        },
     }
     assert revoked_profile_response.status_code == HTTPStatus.UNAUTHORIZED
     assert revoked_profile_response.json() == {
@@ -1429,6 +1454,41 @@ async def test_authenticated_human_api_key_lifecycle_routes_require_bearer_and_h
         "error": {
             "code": "api_key_not_found",
             "message": "API key '00000000-0000-0000-0000-000000000202' was not found.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_authenticated_human_api_key_lifecycle_rejects_create_without_positive_entitlement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-key-entitlement-required.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+    human_headers = _auth_headers_for_human("00000000-0000-0000-0000-000000000304")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        create_response = await client.post("/api/v1/account/api-keys", headers=human_headers)
+
+    assert create_response.status_code == HTTPStatus.FORBIDDEN
+    assert create_response.json() == {
+        "error": {
+            "code": "agent_entitlement_required",
+            "message": (
+                "Authenticated account lacks an active agent entitlement grant with positive "
+                "concurrent match allowance."
+            ),
         }
     }
 
@@ -3642,6 +3702,13 @@ async def test_create_match_lobby_route_creates_browseable_lobby_and_creator_mem
                 "is_active": True,
             },
         )
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="11111111-1111-1111-1111-111111111498",
+        user_id="11111111-1111-1111-1111-111111111398",
+        grant_source="manual",
+        concurrent_match_allowance=1,
+    )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -3762,6 +3829,13 @@ async def test_create_match_lobby_route_allows_first_time_valid_db_api_key(
                 "is_active": True,
             },
         )
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="00000000-0000-0000-0000-000000000399",
+        user_id="00000000-0000-0000-0000-000000000399",
+        grant_source="manual",
+        concurrent_match_allowance=1,
+    )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -3837,6 +3911,59 @@ async def test_create_match_lobby_route_rejects_agent_api_key_at_occupancy_limit
         }
     }
     assert len(browse_response.json()["matches"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_create_match_lobby_route_rejects_agent_api_key_without_positive_entitlement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-create-entitlement-required.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="00000000-0000-0000-0000-000000009901",
+        user_id="00000000-0000-0000-0000-000000000304",
+        grant_source="manual",
+        concurrent_match_allowance=0,
+    )
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="00000000-0000-0000-0000-000000009902",
+        user_id="00000000-0000-0000-0000-000000000304",
+        raw_api_key="iron_zero_capacity_create_key",
+        elo_rating=1188,
+    )
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        create_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers={"X-API-Key": "iron_zero_capacity_create_key"},
+        )
+
+    assert create_response.status_code == HTTPStatus.FORBIDDEN
+    assert create_response.json() == {
+        "error": {
+            "code": "agent_entitlement_required",
+            "message": (
+                "Authenticated account lacks an active agent entitlement grant with positive "
+                "concurrent match allowance."
+            ),
+        }
+    }
 
 
 @pytest.mark.asyncio
@@ -4060,6 +4187,13 @@ async def test_start_match_lobby_route_transitions_ready_creator_lobby_to_active
         raw_api_key=creator_api_key,
         elo_rating=1111,
     )
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="11111111-1111-1111-1111-111111111408",
+        user_id="11111111-1111-1111-1111-111111111308",
+        grant_source="manual",
+        concurrent_match_allowance=1,
+    )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -4189,12 +4323,26 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
         raw_api_key=creator_api_key,
         elo_rating=1111,
     )
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="11111111-1111-1111-1111-111111111409",
+        user_id="11111111-1111-1111-1111-111111111309",
+        grant_source="manual",
+        concurrent_match_allowance=1,
+    )
     insert_api_key(
         database_url=database_url,
         api_key_id="11111111-1111-1111-1111-111111111121",
         user_id="11111111-1111-1111-1111-111111111321",
         raw_api_key=second_creator_api_key,
         elo_rating=1111,
+    )
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="11111111-1111-1111-1111-111111111421",
+        user_id="11111111-1111-1111-1111-111111111321",
+        grant_source="manual",
+        concurrent_match_allowance=1,
     )
     insert_api_key(
         database_url=database_url,
@@ -4203,12 +4351,26 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
         raw_api_key=third_creator_api_key,
         elo_rating=1111,
     )
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="11111111-1111-1111-1111-111111111422",
+        user_id="11111111-1111-1111-1111-111111111322",
+        grant_source="manual",
+        concurrent_match_allowance=1,
+    )
     insert_api_key(
         database_url=database_url,
         api_key_id="11111111-1111-1111-1111-111111111123",
         user_id="11111111-1111-1111-1111-111111111323",
         raw_api_key=fourth_creator_api_key,
         elo_rating=1111,
+    )
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="11111111-1111-1111-1111-111111111423",
+        user_id="11111111-1111-1111-1111-111111111323",
+        grant_source="manual",
+        concurrent_match_allowance=1,
     )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
@@ -4395,6 +4557,13 @@ async def test_start_match_lobby_route_rejects_missing_match_and_paused_lobby(
         user_id="11111111-1111-1111-1111-111111111310",
         raw_api_key=creator_api_key,
         elo_rating=1111,
+    )
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="11111111-1111-1111-1111-111111111410",
+        user_id="11111111-1111-1111-1111-111111111310",
+        grant_source="manual",
+        concurrent_match_allowance=1,
     )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
@@ -4688,6 +4857,20 @@ async def test_join_match_persists_db_backed_lobby_membership_and_remains_idempo
                 },
             ],
         )
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="22222222-2222-2222-2222-222222222401",
+        user_id="22222222-2222-2222-2222-222222222301",
+        grant_source="manual",
+        concurrent_match_allowance=1,
+    )
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="33333333-3333-3333-3333-333333333401",
+        user_id="33333333-3333-3333-3333-333333333301",
+        grant_source="manual",
+        concurrent_match_allowance=1,
+    )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -4834,6 +5017,70 @@ async def test_join_match_rejects_agent_api_key_at_occupancy_limit_and_recovers_
     }
     assert state_response.status_code == HTTPStatus.OK
     assert state_response.json()["player_id"] == "player-2"
+
+
+@pytest.mark.asyncio
+async def test_join_match_rejects_agent_api_key_without_positive_entitlement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-join-entitlement-required.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id="00000000-0000-0000-0000-000000009903",
+        user_id="00000000-0000-0000-0000-000000000304",
+        grant_source="manual",
+        concurrent_match_allowance=0,
+    )
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="00000000-0000-0000-0000-000000009904",
+        user_id="00000000-0000-0000-0000-000000000304",
+        raw_api_key="iron_zero_capacity_join_key",
+        elo_rating=1188,
+    )
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        create_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000301"),
+        )
+        created_payload = create_response.json()
+        join_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json=_join_payload(match_id=created_payload["match_id"]),
+            headers={"X-API-Key": "iron_zero_capacity_join_key"},
+        )
+
+    assert create_response.status_code == HTTPStatus.CREATED
+    assert join_response.status_code == HTTPStatus.FORBIDDEN
+    assert join_response.json() == {
+        "error": {
+            "code": "agent_entitlement_required",
+            "message": (
+                "Authenticated account lacks an active agent entitlement grant with positive "
+                "concurrent match allowance."
+            ),
+        }
+    }
 
 
 @pytest.mark.asyncio

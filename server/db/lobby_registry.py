@@ -12,13 +12,17 @@ from server.agent_registry import (
     MatchJoinError,
     MatchRecord,
 )
+from server.db.agent_entitlements import (
+    AGENT_ENTITLEMENT_REQUIRED_CODE,
+    AGENT_ENTITLEMENT_REQUIRED_MESSAGE,
+)
 from server.db.hydration import load_match_record_from_session
 from server.db.hydration import (
     load_match_registry_from_database as _load_match_registry_from_database,
 )
 from server.db.identity import (
     ResolvedAuthenticatedDbAgent,
-    api_key_has_match_occupancy_capacity,
+    get_api_key_match_occupancy_entitlement,
     resolve_authenticated_agent_from_db_key_hash,
     resolve_human_display_name,
     resolve_human_elo_rating,
@@ -92,6 +96,20 @@ def _raise_match_join_occupancy_limit_error() -> None:
     )
 
 
+def _raise_match_entitlement_required_error() -> None:
+    raise MatchLobbyCreationError(
+        code=AGENT_ENTITLEMENT_REQUIRED_CODE,
+        message=AGENT_ENTITLEMENT_REQUIRED_MESSAGE,
+    )
+
+
+def _raise_match_join_entitlement_required_error() -> None:
+    raise MatchJoinError(
+        code=AGENT_ENTITLEMENT_REQUIRED_CODE,
+        message=AGENT_ENTITLEMENT_REQUIRED_MESSAGE,
+    )
+
+
 def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistry:
     return _load_match_registry_from_database(database_url)
 
@@ -142,10 +160,13 @@ def create_match_lobby(
                     code="invalid_api_key",
                     message="A valid active X-API-Key header is required.",
                 )
-            if not api_key_has_match_occupancy_capacity(
+            occupancy_entitlement = get_api_key_match_occupancy_entitlement(
                 session=session,
                 api_key_id=authenticated_agent_resolution.api_key_id,
-            ):
+            )
+            if not occupancy_entitlement.entitlement.is_entitled:
+                _raise_match_entitlement_required_error()
+            if not occupancy_entitlement.has_capacity:
                 _raise_match_lobby_creation_occupancy_limit_error()
             resolved_authenticated_agent = authenticated_agent_resolution.context
             creator_api_key_id = authenticated_agent_resolution.api_key_id
@@ -321,14 +342,15 @@ def join_match(
                     record=joined_record,
                 )
 
-            if match.status in {
-                MatchStatus.LOBBY.value,
-                MatchStatus.ACTIVE.value,
-            } and not api_key_has_match_occupancy_capacity(
-                session=session,
-                api_key_id=authenticated_agent_resolution.api_key_id,
-            ):
-                _raise_match_join_occupancy_limit_error()
+            if match.status in {MatchStatus.LOBBY.value, MatchStatus.ACTIVE.value}:
+                occupancy_entitlement = get_api_key_match_occupancy_entitlement(
+                    session=session,
+                    api_key_id=authenticated_agent_resolution.api_key_id,
+                )
+                if not occupancy_entitlement.entitlement.is_entitled:
+                    _raise_match_join_entitlement_required_error()
+                if not occupancy_entitlement.has_capacity:
+                    _raise_match_join_occupancy_limit_error()
 
             if assigned_player_id is None:
                 raise MatchJoinError(

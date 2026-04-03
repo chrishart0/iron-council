@@ -90,11 +90,58 @@ def seed_database(database_url: str) -> None:
             "match_settlements",
             "players",
             "alliances",
+            "agent_entitlement_grants",
             "api_keys",
             "matches",
         ):
             connection.execute(text(f"DELETE FROM {table_name}"))
 
+        connection.execute(
+            bind_utc_datetime_params(
+                text(
+                    """
+                INSERT INTO agent_entitlement_grants (
+                    id, user_id, grant_source, concurrent_match_allowance, is_active,
+                    created_at, updated_at
+                ) VALUES (
+                    :id, :user_id, :grant_source, :concurrent_match_allowance, :is_active,
+                    :created_at, :updated_at
+                )
+                """
+                ),
+                "created_at",
+                "updated_at",
+            ),
+            [
+                {
+                    "id": "00000000-0000-0000-0000-000000000211",
+                    "user_id": "00000000-0000-0000-0000-000000000301",
+                    "grant_source": "dev",
+                    "concurrent_match_allowance": 1,
+                    "is_active": True,
+                    "created_at": seed_timestamp,
+                    "updated_at": seed_timestamp,
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000212",
+                    "user_id": "00000000-0000-0000-0000-000000000302",
+                    "grant_source": "dev",
+                    "concurrent_match_allowance": 1,
+                    "is_active": True,
+                    "created_at": seed_timestamp,
+                    "updated_at": seed_timestamp,
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000213",
+                    "user_id": "00000000-0000-0000-0000-000000000303",
+                    "grant_source": "dev",
+                    "concurrent_match_allowance": 1,
+                    "is_active": True,
+                    "created_at": seed_timestamp,
+                    "updated_at": seed_timestamp,
+                },
+            ],
+        )
         connection.execute(
             bind_utc_datetime_params(
                 text(

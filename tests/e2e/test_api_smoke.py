@@ -15,7 +15,7 @@ from server.models.domain import MatchStatus
 from tests.support import (
     RunningApp,
     build_persisted_player_id,
-    insert_api_key,
+    insert_api_key_with_manual_entitlement,
     insert_completed_match_fixture,
     insert_seeded_agent_player,
     insert_seeded_human_player,
@@ -693,12 +693,13 @@ def test_create_match_lobby_smoke_flow_runs_through_real_process(
 ) -> None:
     creator_api_key = "api-smoke-creator-key"
     creator_api_key_id = "11111111-1111-1111-1111-111111111116"
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=running_seeded_app.database_url,
         api_key_id=creator_api_key_id,
         user_id="11111111-1111-1111-1111-111111111306",
         raw_api_key=creator_api_key,
         elo_rating=1111,
+        grant_id="33333333-3333-3333-3333-333333333116",
     )
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
         create_response = client.post(
@@ -755,12 +756,13 @@ def test_start_match_lobby_smoke_flow_runs_through_real_process(
 ) -> None:
     creator_api_key = "api-start-creator-key"
     creator_api_key_id = "11111111-1111-1111-1111-111111111117"
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=running_seeded_app.database_url,
         api_key_id=creator_api_key_id,
         user_id="11111111-1111-1111-1111-111111111307",
         raw_api_key=creator_api_key,
         elo_rating=1111,
+        grant_id="33333333-3333-3333-3333-333333333117",
     )
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
         create_response = client.post(

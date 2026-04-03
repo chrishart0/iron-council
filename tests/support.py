@@ -161,6 +161,79 @@ def insert_api_key(
         )
 
 
+def insert_api_key_with_manual_entitlement(
+    *,
+    database_url: str,
+    api_key_id: str,
+    user_id: str,
+    raw_api_key: str,
+    elo_rating: int,
+    grant_id: str | None = None,
+    grant_source: str = "manual",
+    concurrent_match_allowance: int = 1,
+    is_active: bool = True,
+) -> None:
+    insert_api_key(
+        database_url=database_url,
+        api_key_id=api_key_id,
+        user_id=user_id,
+        raw_api_key=raw_api_key,
+        elo_rating=elo_rating,
+        is_active=is_active,
+    )
+    insert_agent_entitlement_grant(
+        database_url=database_url,
+        grant_id=grant_id or f"grant-{api_key_id}",
+        user_id=user_id,
+        grant_source=grant_source,
+        concurrent_match_allowance=concurrent_match_allowance,
+        is_active=is_active,
+    )
+
+
+def insert_agent_entitlement_grant(
+    *,
+    database_url: str,
+    grant_id: str,
+    user_id: str,
+    grant_source: str,
+    concurrent_match_allowance: int,
+    is_active: bool = True,
+) -> None:
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO agent_entitlement_grants (
+                    id,
+                    user_id,
+                    grant_source,
+                    concurrent_match_allowance,
+                    is_active,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    :id,
+                    :user_id,
+                    :grant_source,
+                    :concurrent_match_allowance,
+                    :is_active,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                )
+                """
+            ),
+            {
+                "id": grant_id,
+                "user_id": user_id,
+                "grant_source": grant_source,
+                "concurrent_match_allowance": concurrent_match_allowance,
+                "is_active": is_active,
+            },
+        )
+
+
 def insert_completed_match_fixture(database_url: str) -> None:
     engine = create_engine(database_url)
     with engine.begin() as connection:

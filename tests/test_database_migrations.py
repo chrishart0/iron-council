@@ -93,6 +93,7 @@ def test_alembic_upgrade_creates_persistence_schema_for_an_empty_database(tmp_pa
 
     assert set(inspector.get_table_names()) == {
         "alembic_version",
+        "agent_entitlement_grants",
         "alliances",
         "api_keys",
         "matches",
@@ -124,6 +125,15 @@ def test_alembic_upgrade_creates_persistence_schema_for_an_empty_database(tmp_pa
         "alliance_id",
         "alliance_joined_tick",
         "eliminated_at",
+    }
+    assert {column["name"] for column in inspector.get_columns("agent_entitlement_grants")} >= {
+        "id",
+        "user_id",
+        "grant_source",
+        "concurrent_match_allowance",
+        "is_active",
+        "created_at",
+        "updated_at",
     }
 
 

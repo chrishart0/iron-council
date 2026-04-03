@@ -53,6 +53,7 @@ def build_authenticated_lobby_router(
         responses=_authenticated_lobby_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.CONFLICT,
+            HTTPStatus.FORBIDDEN,
             HTTPStatus.SERVICE_UNAVAILABLE,
         ),
     )
@@ -104,6 +105,8 @@ def build_authenticated_lobby_router(
             status_code = HTTPStatus.BAD_REQUEST
             if exc.code in {"invalid_api_key", "invalid_player_auth"}:
                 status_code = HTTPStatus.UNAUTHORIZED
+            elif exc.code == "agent_entitlement_required":
+                status_code = HTTPStatus.FORBIDDEN
             elif exc.code == "api_key_match_occupancy_limit_reached":
                 status_code = HTTPStatus.CONFLICT
             raise ApiError(

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 
 from server.agent_registry import InMemoryMatchRegistry, MatchJoinError
 from server.auth import hash_api_key
+from server.db.agent_entitlements import AgentEntitlementRequiredError
 from server.db.api_key_lifecycle import create_owned_api_key, revoke_owned_api_key
 from server.db.registry import join_match as join_db_match
 from server.models.api import (
@@ -51,6 +52,7 @@ def build_authenticated_write_router(
         status_code=HTTPStatus.CREATED,
         responses={
             int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
+            int(HTTPStatus.FORBIDDEN): API_ERROR_RESPONSE_SCHEMA,
             int(HTTPStatus.SERVICE_UNAVAILABLE): API_ERROR_RESPONSE_SCHEMA,
         },
     )
@@ -65,10 +67,17 @@ def build_authenticated_write_router(
             )
 
         user_id = app_services.require_authenticated_human_user_id(authorization=authorization)
-        raw_key, summary = create_owned_api_key(
-            database_url=history_database_url,
-            user_id=user_id,
-        )
+        try:
+            raw_key, summary = create_owned_api_key(
+                database_url=history_database_url,
+                user_id=user_id,
+            )
+        except AgentEntitlementRequiredError as exc:
+            raise ApiError(
+                status_code=HTTPStatus.FORBIDDEN,
+                code=exc.code,
+                message=exc.message,
+            ) from exc
         return OwnedApiKeyCreateResponse(api_key=raw_key, summary=summary)
 
     @router.delete(
@@ -111,6 +120,7 @@ def build_authenticated_write_router(
         status_code=HTTPStatus.ACCEPTED,
         responses=_authenticated_write_route_responses(
             HTTPStatus.BAD_REQUEST,
+            HTTPStatus.FORBIDDEN,
             HTTPStatus.CONFLICT,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -179,6 +189,8 @@ def build_authenticated_write_router(
             status_code = HTTPStatus.BAD_REQUEST
             if exc.code in {"invalid_api_key", "invalid_player_auth"}:
                 status_code = HTTPStatus.UNAUTHORIZED
+            elif exc.code == "agent_entitlement_required":
+                status_code = HTTPStatus.FORBIDDEN
             elif exc.code == "api_key_match_occupancy_limit_reached":
                 status_code = HTTPStatus.CONFLICT
             elif exc.code == "match_not_found":

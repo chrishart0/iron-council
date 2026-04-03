@@ -248,6 +248,14 @@ class OwnedApiKeySummary(StrictModel):
     elo_rating: int = Field(ge=0)
     is_active: bool
     created_at: datetime
+    entitlement: ApiKeyEntitlementSummary
+
+
+class ApiKeyEntitlementSummary(StrictModel):
+    is_entitled: bool
+    grant_source: Literal["manual", "dev"] | None = None
+    concurrent_match_allowance: int = Field(ge=0)
+    granted_at: datetime | None = None
 
 
 class OwnedApiKeyListResponse(StrictModel):

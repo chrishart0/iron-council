@@ -6,7 +6,11 @@ import sys
 from pathlib import Path
 
 from server.agent_registry import build_seeded_agent_api_key
-from tests.support import RunningApp, insert_api_key, load_python_agent_sdk_module
+from tests.support import (
+    RunningApp,
+    insert_api_key_with_manual_entitlement,
+    load_python_agent_sdk_module,
+)
 
 
 def test_agent_sdk_smoke_flow_runs_through_real_process(
@@ -118,19 +122,21 @@ def test_agent_sdk_lobby_lifecycle_smoke_flow_runs_through_real_process(
     sdk_module = load_python_agent_sdk_module()
     creator_api_key = "sdk-smoke-creator-key"
     competitor_api_key = "sdk-smoke-competitor-key"
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=running_seeded_app.database_url,
         api_key_id="11111111-1111-1111-1111-111111111114",
         user_id="11111111-1111-1111-1111-111111111304",
         raw_api_key=creator_api_key,
         elo_rating=1111,
+        grant_id="33333333-3333-3333-3333-333333333214",
     )
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=running_seeded_app.database_url,
         api_key_id="22222222-2222-2222-2222-222222222224",
         user_id="22222222-2222-2222-2222-222222222304",
         raw_api_key=competitor_api_key,
         elo_rating=1099,
+        grant_id="44444444-4444-4444-4444-444444444224",
     )
     creator_client = sdk_module.IronCouncilClient(
         base_url=running_seeded_app.base_url,
@@ -169,19 +175,21 @@ def test_agent_sdk_example_lobby_lifecycle_command_runs_through_real_process(
     repo_root = Path(__file__).resolve().parents[2]
     creator_api_key = "sdk-example-creator-key"
     competitor_api_key = "sdk-example-competitor-key"
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=running_seeded_app.database_url,
         api_key_id="11111111-1111-1111-1111-111111111115",
         user_id="11111111-1111-1111-1111-111111111305",
         raw_api_key=creator_api_key,
         elo_rating=1111,
+        grant_id="33333333-3333-3333-3333-333333333215",
     )
-    insert_api_key(
+    insert_api_key_with_manual_entitlement(
         database_url=running_seeded_app.database_url,
         api_key_id="22222222-2222-2222-2222-222222222225",
         user_id="22222222-2222-2222-2222-222222222305",
         raw_api_key=competitor_api_key,
         elo_rating=1099,
+        grant_id="44444444-4444-4444-4444-444444444225",
     )
     command = [
         sys.executable,
