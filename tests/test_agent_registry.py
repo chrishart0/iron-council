@@ -690,6 +690,203 @@ def test_reset_clears_seeded_matches_and_profiles() -> None:
     assert registry.get_agent_profile("agent-player-2") is None
 
 
+def test_replace_player_submissions_replaces_same_player_same_tick_orders() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-2",
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "york"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-2",
+                "tick": 142,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "manchester", "troops": 1}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-3",
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-c", "destination": "oxford"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+
+    submission_index, superseded_submission_count = registry.replace_player_submissions(
+        match_id="match-alpha",
+        player_id="player-2",
+        tick=142,
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-2",
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "london"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+
+    assert submission_index == 1
+    assert superseded_submission_count == 2
+    assert registry.list_order_submissions("match-alpha") == [
+        {
+            "match_id": "match-alpha",
+            "player_id": "player-3",
+            "tick": 142,
+            "orders": {
+                "movements": [{"army_id": "army-c", "destination": "oxford"}],
+                "recruitment": [],
+                "upgrades": [],
+                "transfers": [],
+            },
+        },
+        {
+            "match_id": "match-alpha",
+            "player_id": "player-2",
+            "tick": 142,
+            "orders": {
+                "movements": [{"army_id": "army-b", "destination": "london"}],
+                "recruitment": [],
+                "upgrades": [],
+                "transfers": [],
+            },
+        },
+    ]
+
+
+def test_replace_player_submissions_keeps_other_ticks_and_players_queued() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-2",
+                "tick": 143,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "york"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-1",
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-a", "destination": "birmingham"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+
+    submission_index, superseded_submission_count = registry.replace_player_submissions(
+        match_id="match-alpha",
+        player_id="player-2",
+        tick=142,
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-2",
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "london"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+
+    assert submission_index == 2
+    assert superseded_submission_count == 0
+    assert registry.list_order_submissions("match-alpha") == [
+        {
+            "match_id": "match-alpha",
+            "player_id": "player-2",
+            "tick": 143,
+            "orders": {
+                "movements": [{"army_id": "army-b", "destination": "york"}],
+                "recruitment": [],
+                "upgrades": [],
+                "transfers": [],
+            },
+        },
+        {
+            "match_id": "match-alpha",
+            "player_id": "player-1",
+            "tick": 142,
+            "orders": {
+                "movements": [{"army_id": "army-a", "destination": "birmingham"}],
+                "recruitment": [],
+                "upgrades": [],
+                "transfers": [],
+            },
+        },
+        {
+            "match_id": "match-alpha",
+            "player_id": "player-2",
+            "tick": 142,
+            "orders": {
+                "movements": [{"army_id": "army-b", "destination": "london"}],
+                "recruitment": [],
+                "upgrades": [],
+                "transfers": [],
+            },
+        },
+    ]
+
+
 def test_advance_match_tick_resolves_current_orders_and_keeps_future_submissions_queued() -> None:
     registry = InMemoryMatchRegistry()
     for record in build_seeded_match_records():

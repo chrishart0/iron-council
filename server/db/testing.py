@@ -83,6 +83,7 @@ def seed_database(database_url: str) -> None:
 
     with engine.begin() as connection:
         for table_name in (
+            "owned_agent_overrides",
             "owned_agent_guidance",
             "messages",
             "treaties",

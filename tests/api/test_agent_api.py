@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
@@ -213,6 +214,25 @@ def _owned_agent_guidance_payload(
         "match_id": match_id,
         "tick": tick,
         "content": content,
+    }
+
+
+def _owned_agent_override_payload(
+    *,
+    match_id: str = "match-alpha",
+    tick: int = 142,
+    orders: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "match_id": match_id,
+        "tick": tick,
+        "orders": orders
+        or {
+            "movements": [{"army_id": "army-b", "destination": "london"}],
+            "recruitment": [],
+            "upgrades": [],
+            "transfers": [],
+        },
     }
 
 
@@ -2473,6 +2493,430 @@ async def test_owned_agent_guidance_write_returns_not_found_mismatch_and_unavail
             "message": "Owned agent guidance writes are only available in DB-backed mode.",
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_owned_agent_override_replaces_current_tick_orders_and_records_audit_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'owned-agent-override-write.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+    registry = app.state.match_registry
+    record = registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert record is not None
+
+    registry.record_submission(
+        match_id=record.match_id,
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": record.match_id,
+                "player_id": "player-2",
+                "tick": record.state.tick,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "york"}],
+                    "recruitment": [{"city": "manchester", "troops": 1}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    registry.record_submission(
+        match_id=record.match_id,
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": record.match_id,
+                "player_id": "player-2",
+                "tick": record.state.tick,
+                "orders": {
+                    "movements": [],
+                    "recruitment": [{"city": "manchester", "troops": 2}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    registry.record_submission(
+        match_id=record.match_id,
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": record.match_id,
+                "player_id": "player-3",
+                "tick": record.state.tick,
+                "orders": {
+                    "movements": [{"army_id": "army-c", "destination": "oxford"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/override",
+            json=_owned_agent_override_payload(
+                match_id="00000000-0000-0000-0000-000000000101",
+                tick=142,
+                orders={
+                    "movements": [{"army_id": "army-b", "destination": "london"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            ),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert response.status_code == HTTPStatus.ACCEPTED
+    accepted = response.json()
+    assert accepted == {
+        "status": "accepted",
+        "override_id": accepted["override_id"],
+        "match_id": "00000000-0000-0000-0000-000000000101",
+        "agent_id": "agent-player-2",
+        "player_id": "player-2",
+        "tick": 142,
+        "submission_index": 1,
+        "superseded_submission_count": 2,
+        "orders": {
+            "movements": [{"army_id": "army-b", "destination": "london"}],
+            "recruitment": [],
+            "upgrades": [],
+            "transfers": [],
+        },
+    }
+    assert isinstance(accepted["override_id"], str)
+    assert registry.list_order_submissions("00000000-0000-0000-0000-000000000101") == [
+        {
+            "match_id": "00000000-0000-0000-0000-000000000101",
+            "player_id": "player-3",
+            "tick": 142,
+            "orders": {
+                "movements": [{"army_id": "army-c", "destination": "oxford"}],
+                "recruitment": [],
+                "upgrades": [],
+                "transfers": [],
+            },
+        },
+        {
+            "match_id": "00000000-0000-0000-0000-000000000101",
+            "player_id": "player-2",
+            "tick": 142,
+            "orders": {
+                "movements": [{"army_id": "army-b", "destination": "london"}],
+                "recruitment": [],
+                "upgrades": [],
+                "transfers": [],
+            },
+        },
+    ]
+
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        override_rows = (
+            connection.execute(
+                text(
+                    """
+                SELECT owner_user_id, agent_player_id, tick, superseded_submission_count, orders
+                FROM owned_agent_overrides
+                ORDER BY created_at, id
+                """
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    normalized_override_rows = []
+    for row in override_rows:
+        normalized_row = dict(row)
+        if isinstance(normalized_row["orders"], str):
+            normalized_row["orders"] = json.loads(normalized_row["orders"])
+        normalized_override_rows.append(normalized_row)
+
+    assert normalized_override_rows == [
+        {
+            "owner_user_id": "00000000-0000-0000-0000-000000000302",
+            "agent_player_id": build_persisted_player_id(
+                match_id="00000000-0000-0000-0000-000000000101",
+                public_player_id="player-2",
+            ),
+            "tick": 142,
+            "superseded_submission_count": 2,
+            "orders": {
+                "movements": [{"army_id": "army-b", "destination": "london"}],
+                "recruitment": [],
+                "upgrades": [],
+                "transfers": [],
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_owned_agent_override_rejects_invalid_requests_without_mutating_submissions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'owned-agent-override-write-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    db_app = create_app()
+    registry = db_app.state.match_registry
+    record = registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert record is not None
+    registry.record_submission(
+        match_id=record.match_id,
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": record.match_id,
+                "player_id": "player-2",
+                "tick": record.state.tick,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "york"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    before_submissions = registry.list_order_submissions(record.match_id)
+
+    memory_app = create_app(
+        match_registry=seeded_registry,
+        settings_override={
+            "IRON_COUNCIL_MATCH_REGISTRY_BACKEND": "memory",
+            "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+            "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+            "HUMAN_JWT_AUDIENCE": "authenticated",
+            "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+        },
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=db_app),
+        base_url="http://testserver",
+    ) as client:
+        missing_auth_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/override",
+            json=_owned_agent_override_payload(
+                match_id="00000000-0000-0000-0000-000000000101",
+            ),
+        )
+        wrong_owner_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/override",
+            json=_owned_agent_override_payload(
+                match_id="00000000-0000-0000-0000-000000000101",
+            ),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000301"),
+        )
+        late_tick_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/override",
+            json=_owned_agent_override_payload(
+                match_id="00000000-0000-0000-0000-000000000101",
+                tick=141,
+            ),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+        missing_orders_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/override",
+            json={
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "tick": 142,
+            },
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+        mismatch_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/override",
+            json=_owned_agent_override_payload(
+                match_id="00000000-0000-0000-0000-000000000102",
+            ),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+        missing_match_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-00000000ffff/agents/agent-player-2/override",
+            json=_owned_agent_override_payload(
+                match_id="00000000-0000-0000-0000-00000000ffff",
+            ),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+        unjoined_agent_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000102/agents/agent-player-2/override",
+            json=_owned_agent_override_payload(
+                match_id="00000000-0000-0000-0000-000000000102",
+            ),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=memory_app),
+        base_url="http://testserver",
+    ) as client:
+        unavailable_response = await client.post(
+            "/api/v1/matches/match-alpha/agents/agent-player-2/override",
+            json=_owned_agent_override_payload(match_id="match-alpha"),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert missing_auth_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_auth_response.json() == {
+        "error": {
+            "code": "invalid_human_token",
+            "message": "A valid human Bearer token is required.",
+        }
+    }
+    assert wrong_owner_response.status_code == HTTPStatus.FORBIDDEN
+    assert wrong_owner_response.json() == {
+        "error": {
+            "code": "agent_not_owned",
+            "message": (
+                "Authenticated human user '00000000-0000-0000-0000-000000000301' does not "
+                "own agent 'agent-player-2'."
+            ),
+        }
+    }
+    assert late_tick_response.status_code == HTTPStatus.BAD_REQUEST
+    assert late_tick_response.json() == {
+        "error": {
+            "code": "guided_override_tick_mismatch",
+            "message": ("Override payload tick '141' must match current match tick '142'."),
+        }
+    }
+    assert missing_orders_response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert missing_orders_response.json()["detail"][0]["loc"] == ["body", "orders"]
+    assert mismatch_response.status_code == HTTPStatus.BAD_REQUEST
+    assert mismatch_response.json() == {
+        "error": {
+            "code": "match_id_mismatch",
+            "message": (
+                "Override payload match_id '00000000-0000-0000-0000-000000000102' does not "
+                "match route match '00000000-0000-0000-0000-000000000101'."
+            ),
+        }
+    }
+    assert missing_match_response.status_code == HTTPStatus.NOT_FOUND
+    assert missing_match_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match '00000000-0000-0000-0000-00000000ffff' was not found.",
+        }
+    }
+    assert unjoined_agent_response.status_code == HTTPStatus.BAD_REQUEST
+    assert unjoined_agent_response.json() == {
+        "error": {
+            "code": "agent_not_joined",
+            "message": (
+                "Agent 'agent-player-2' has not joined match "
+                "'00000000-0000-0000-0000-000000000102' as a player."
+            ),
+        }
+    }
+    assert unavailable_response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert unavailable_response.json() == {
+        "error": {
+            "code": "guided_override_unavailable",
+            "message": "Owned agent override writes are only available in DB-backed mode.",
+        }
+    }
+    assert registry.list_order_submissions(record.match_id) == before_submissions
+
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        override_count = connection.execute(
+            text("SELECT COUNT(*) FROM owned_agent_overrides")
+        ).scalar_one()
+
+    assert override_count == 0
+
+
+@pytest.mark.asyncio
+async def test_owned_agent_override_leaves_queue_unchanged_when_persistence_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'owned-agent-override-persistence-error.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+    registry = app.state.match_registry
+    record = registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert record is not None
+    registry.record_submission(
+        match_id=record.match_id,
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": record.match_id,
+                "player_id": "player-2",
+                "tick": record.state.tick,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "york"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    before_submissions = registry.list_order_submissions(record.match_id)
+
+    def _raise_persistence_error(**_: Any) -> Any:
+        raise RuntimeError("override persistence failed")
+
+    monkeypatch.setattr(
+        "server.api.authenticated_write_routes.append_owned_agent_override",
+        _raise_persistence_error,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        with pytest.raises(RuntimeError, match="override persistence failed"):
+            await client.post(
+                "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/override",
+                json=_owned_agent_override_payload(
+                    match_id="00000000-0000-0000-0000-000000000101",
+                    tick=142,
+                    orders={
+                        "movements": [{"army_id": "army-b", "destination": "london"}],
+                        "recruitment": [],
+                        "upgrades": [],
+                        "transfers": [],
+                    },
+                ),
+                headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+            )
+
+    assert registry.list_order_submissions(record.match_id) == before_submissions
 
 
 @pytest.mark.asyncio
@@ -6172,6 +6616,11 @@ async def test_openapi_declares_secured_match_route_contracts(app_client: AsyncC
         "200"
     ]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/OwnedAgentGuidedSessionResponse"
+    }
+    assert paths["/api/v1/matches/{match_id}/agents/{agent_id}/override"]["post"]["responses"][
+        "202"
+    ]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/OwnedAgentOverrideAcceptanceResponse"
     }
     assert paths["/api/v1/matches/{match_id}/orders"]["post"]["responses"]["202"]["content"][
         "application/json"

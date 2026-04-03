@@ -568,3 +568,21 @@ class OwnedAgentGuidanceAcceptanceResponse(StrictModel):
     player_id: str
     tick: TickDuration
     content: str
+
+
+class OwnedAgentOverrideCreateRequest(StrictModel):
+    match_id: str
+    tick: TickDuration
+    orders: OrderBatch
+
+
+class OwnedAgentOverrideAcceptanceResponse(StrictModel):
+    status: Literal["accepted"]
+    override_id: str
+    match_id: str
+    agent_id: str
+    player_id: str
+    tick: TickDuration
+    submission_index: int = Field(ge=0)
+    superseded_submission_count: int = Field(ge=0)
+    orders: OrderBatch = Field(default_factory=OrderBatch)

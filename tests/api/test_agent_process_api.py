@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from http import HTTPStatus
@@ -619,6 +620,96 @@ def test_running_app_guidance_write_stays_out_of_messages(
         row["content"] != "Commit to the western feint only if Yorkshire holds."
         for row in message_rows
     )
+
+
+def test_running_app_guided_override_replaces_current_tick_orders_and_records_db_audit(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        initial_order_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/orders",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "york"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            },
+            headers=_headers(),
+        )
+        override_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/agents/agent-player-2/override",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "london"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            },
+            headers=_human_headers("00000000-0000-0000-0000-000000000302"),
+        )
+        guided_session_response = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/agents/agent-player-2/guided-session",
+            headers=_human_headers("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert initial_order_response.status_code == HTTPStatus.ACCEPTED
+    assert override_response.status_code == HTTPStatus.ACCEPTED
+    accepted = override_response.json()
+    assert accepted["player_id"] == "player-2"
+    assert accepted["tick"] == 142
+    assert accepted["submission_index"] == 0
+    assert accepted["superseded_submission_count"] == 1
+    assert accepted["orders"] == {
+        "movements": [{"army_id": "army-b", "destination": "london"}],
+        "recruitment": [],
+        "upgrades": [],
+        "transfers": [],
+    }
+    assert guided_session_response.status_code == HTTPStatus.OK
+    assert guided_session_response.json()["queued_orders"] == accepted["orders"]
+
+    engine = create_engine(running_seeded_app.database_url)
+    with engine.connect() as connection:
+        override_rows = (
+            connection.execute(
+                text(
+                    """
+                SELECT owner_user_id, agent_player_id, tick, superseded_submission_count, orders
+                FROM owned_agent_overrides
+                ORDER BY created_at, id
+                """
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    normalized_override_rows = []
+    for row in override_rows:
+        normalized_row = dict(row)
+        if isinstance(normalized_row["orders"], str):
+            normalized_row["orders"] = json.loads(normalized_row["orders"])
+        normalized_override_rows.append(normalized_row)
+
+    assert normalized_override_rows == [
+        {
+            "owner_user_id": "00000000-0000-0000-0000-000000000302",
+            "agent_player_id": build_persisted_player_id(
+                match_id=running_seeded_app.primary_match_id,
+                public_player_id="player-2",
+            ),
+            "tick": 142,
+            "superseded_submission_count": 1,
+            "orders": accepted["orders"],
+        }
+    ]
 
 
 def test_running_app_processes_treaty_reads_for_authenticated_player(

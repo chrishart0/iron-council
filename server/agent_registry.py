@@ -300,6 +300,25 @@ class InMemoryMatchRegistry:
         record.order_submissions.append(envelope.model_copy(deep=True))
         return len(record.order_submissions) - 1
 
+    def replace_player_submissions(
+        self,
+        *,
+        match_id: str,
+        player_id: str,
+        tick: int,
+        envelope: OrderEnvelope,
+    ) -> tuple[int, int]:
+        record = self._matches[match_id]
+        retained_submissions = [
+            submission
+            for submission in record.order_submissions
+            if submission.player_id != player_id or submission.tick != tick
+        ]
+        superseded_submission_count = len(record.order_submissions) - len(retained_submissions)
+        retained_submissions.append(envelope.model_copy(deep=True))
+        record.order_submissions = retained_submissions
+        return len(record.order_submissions) - 1, superseded_submission_count
+
     def advance_match_tick(self, match_id: str) -> AdvancedMatchTick:
         advanced_tick = agent_registry_commands.advance_match_tick(record=self._matches[match_id])
         return AdvancedMatchTick(

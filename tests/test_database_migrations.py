@@ -100,6 +100,7 @@ def test_alembic_upgrade_creates_persistence_schema_for_an_empty_database(tmp_pa
         "match_settlements",
         "messages",
         "owned_agent_guidance",
+        "owned_agent_overrides",
         "player_match_settlements",
         "players",
         "tick_log",
@@ -164,6 +165,37 @@ def test_alembic_upgrade_creates_persistence_schema_for_an_empty_database(tmp_pa
         "owner_user_id",
     )
     assert owned_agent_guidance_indexes["ix_owned_agent_guidance_agent_player_id"] == (
+        "agent_player_id",
+    )
+    assert {column["name"] for column in inspector.get_columns("owned_agent_overrides")} >= {
+        "id",
+        "match_id",
+        "owner_user_id",
+        "agent_player_id",
+        "tick",
+        "superseded_submission_count",
+        "orders",
+        "created_at",
+    }
+    owned_agent_override_foreign_keys = {
+        tuple(foreign_key["constrained_columns"]): (
+            foreign_key["referred_table"],
+            tuple(foreign_key["referred_columns"]),
+        )
+        for foreign_key in inspector.get_foreign_keys("owned_agent_overrides")
+    }
+    assert owned_agent_override_foreign_keys == {
+        ("match_id",): ("matches", ("id",)),
+        ("agent_player_id",): ("players", ("id",)),
+    }
+    owned_agent_override_indexes = {
+        index["name"]: tuple(index["column_names"])
+        for index in inspector.get_indexes("owned_agent_overrides")
+    }
+    assert owned_agent_override_indexes["ix_owned_agent_overrides_owner_user_id"] == (
+        "owner_user_id",
+    )
+    assert owned_agent_override_indexes["ix_owned_agent_overrides_agent_player_id"] == (
         "agent_player_id",
     )
 

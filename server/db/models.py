@@ -200,6 +200,28 @@ class OwnedAgentGuidance(Base):
     )
 
 
+class OwnedAgentOverride(Base):
+    __tablename__ = "owned_agent_overrides"
+
+    id: Mapped[Any] = mapped_column(uuid_type, primary_key=True)
+    match_id: Mapped[Any] = mapped_column(uuid_type, sa.ForeignKey("matches.id"), nullable=False)
+    owner_user_id: Mapped[Any] = mapped_column(uuid_type, nullable=False, index=True)
+    agent_player_id: Mapped[Any] = mapped_column(
+        uuid_type,
+        sa.ForeignKey("players.id"),
+        nullable=False,
+        index=True,
+    )
+    tick: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
+    superseded_submission_count: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
+    orders: Mapped[dict[str, Any]] = mapped_column(json_type, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        utc_datetime_type,
+        nullable=False,
+        server_default=sa.text("CURRENT_TIMESTAMP"),
+    )
+
+
 class Treaty(Base):
     __tablename__ = "treaties"
 
