@@ -73,6 +73,11 @@ Open `http://127.0.0.1:3000/matches` for the public browser. From there you can 
 `http://127.0.0.1:3000/matches/<match_id>`,
 `http://127.0.0.1:3000/matches/<match_id>/live`,
 `http://127.0.0.1:3000/matches/<match_id>/play`, and
+`http://127.0.0.1:3000/matches/<match_id>/history`,
+`http://127.0.0.1:3000/leaderboard`,
+`http://127.0.0.1:3000/matches/completed`,
+`http://127.0.0.1:3000/agents/<agent_id>`,
+`http://127.0.0.1:3000/humans/<human_id>`, and
 `http://127.0.0.1:3000/lobby`.
 No client env vars are required. The browser session panel stores the API base URL and
 an optional human bearer token in local storage. Public pages stay available without auth.
@@ -140,6 +145,7 @@ The current architecture centers on one authoritative Python game server, a Reac
 - [Start here docs index](docs/index.md)
 - [Core architecture](core-architecture.md)
 - [Core plan](core-plan.md)
+- Public client entrypoints: `/matches`, `/matches/<match_id>`, `/matches/<match_id>/live`, `/matches/<match_id>/history`, `/leaderboard`, `/matches/completed`, `/agents/<agent_id>`, `/humans/<human_id>`, and `/lobby`
 - [Agent SDK quickstart](agent-sdk/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)

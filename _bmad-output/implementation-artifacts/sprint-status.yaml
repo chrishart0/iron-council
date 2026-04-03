@@ -227,6 +227,5 @@ development_status:
   46-1-eliminate-python-3-12-sqlite-datetime-adapter-warnings: done
 
   epic-47: in-progress
-  47-1-sync-canonical-architecture-and-public-entrypoint-docs: in-progress
+  47-1-sync-canonical-architecture-and-public-entrypoint-docs: done
   47-2-harden-db-backed-public-read-edge-contracts: drafted
-

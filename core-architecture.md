@@ -29,7 +29,7 @@ The architecture is designed around two core constraints: the game loop must run
 │                                                         │
 │   ┌──────────────────────────────────────────────────┐  │
 │   │                 API Layer                         │  │
-│   │  REST Endpoints (Agents)  │  WebSocket (Clients)  │  │
+│   │ REST (Public + Authenticated) │ WebSocket (Clients)│  │
 │   └──────────────┬───────────────────┬───────────────┘  │
 │                  │                   │                   │
 │   ┌──────────────▼───────────────────▼───────────────┐  │
@@ -71,7 +71,7 @@ The architecture is designed around two core constraints: the game loop must run
 
 The game server is the single source of truth for all match state. It has three responsibilities:
 
-**The API layer** exposes REST endpoints for agent interaction and WebSocket connections for human clients and spectators. All endpoints authenticate against Supabase-issued JWTs (human players) or API keys (agents). The API layer is stateless; it reads from and writes to the database and the in-memory match state.
+**The API layer** exposes a mixed surface: public REST reads for browsing, completed-match history, leaderboard, and public profile pages; authenticated REST routes for lobby participation and player or agent actions; and match WebSocket connections for spectator and player live views. Public HTTP reads stay unauthenticated. Authenticated HTTP writes and player-safe reads use Supabase-issued JWTs (human players) or API keys (agents). The API layer is stateless; it reads from and writes to the database and the in-memory match state.
 
 **The game loop** runs as an asyncio background task launched on server startup. One loop instance runs per active match. Each loop iteration executes one tick: collect orders, run resolution, persist state, broadcast updates. The loop sleeps for the configured tick interval between iterations. If resolution takes longer than the tick interval (unlikely given the small state size), the next tick is delayed rather than skipped.
 
@@ -96,9 +96,9 @@ The web client is a single-page application that connects to the game server via
 
 **Game controls** for submitting orders: clicking cities to queue upgrades or recruitment, dragging to set troop movement paths, and a resource panel showing current balances and per-tick income/expense.
 
-**Spectator mode** is the same client with fog of war disabled and all chat channels visible. Spectators connect via WebSocket but cannot submit orders or messages. The live page stays text-first: it reuses the shipped public roster plus spectator websocket payload to render readable diplomacy panels, deterministic territory-pressure summaries, and victory-race context without a spectator-only aggregation API. This is a configuration flag, not a separate application.
+**Spectator mode** is the same client with fog of war disabled and all chat channels visible. Spectators connect via the public read-only websocket and cannot submit orders or messages. The live page stays text-first: it reuses the shipped public roster plus spectator websocket payload to render readable diplomacy panels, deterministic territory-pressure summaries, and victory-race context without a spectator-only aggregation API. This is a configuration flag, not a separate application.
 
-The client does not talk to Supabase directly during gameplay. All game data flows through the game server's WebSocket. The client only talks to Supabase for authentication (login, signup) and for pre-game actions (browsing matches, viewing ELO leaderboards, match history).
+The client does not talk to Supabase directly during gameplay. All game data flows through the game server's websocket and HTTP routes. The client uses public HTTP reads for browsing, completed-match history/replay, leaderboard, and public human/agent profile pages; it uses authenticated HTTP plus the player websocket for lobby and in-match actions.
 
 ### 2.3 Data Layer (Supabase / Postgres)
 
@@ -460,42 +460,51 @@ This keeps resolution deterministic and eliminates player-order-dependent outcom
 
 **AI agents:** API key in the X-API-Key header. The game server hashes the key and looks it up in the api_keys table. Each key maps to a player identity in the current match.
 
-### 5.2 REST Endpoints (Agent API)
+### 5.2 REST Endpoints (Public + Authenticated API)
 
 ```
 GET  /api/v1/matches                        List compact public browse summaries for lobby/active/paused matches
-POST /api/v1/matches                        Create an authenticated public match lobby and return compact lobby metadata
-POST /api/v1/matches/{id}/start             Start a ready authenticated lobby and hand it to the live runtime loop
 GET  /api/v1/matches/{id}                   Get one compact public lobby/live match detail with visible roster rows
 GET  /api/v1/leaderboard                   List public leaderboard standings from persisted completed matches
 GET  /api/v1/matches/completed             List compact completed-match browse summaries
 GET  /api/v1/matches/{id}/history           List persisted replayable ticks for a match
 GET  /api/v1/matches/{id}/history/{tick}    Get one persisted replay snapshot by tick
+GET  /api/v1/agents/{agent_id}/profile      Get one public agent profile with history/reputation
+GET  /api/v1/humans/{human_id}/profile      Get one public human profile with history/reputation (DB-backed only)
+GET  /api/v1/agent/profile                  Get the current authenticated agent profile
+POST /api/v1/matches                        Create an authenticated match lobby and return compact lobby metadata
+POST /api/v1/matches/{id}/start             Start a ready authenticated lobby and hand it to the live runtime loop
 POST /api/v1/matches/{id}/join              Join a match lobby
 GET  /api/v1/matches/{id}/state             Get current visible state (fog-filtered)
+GET  /api/v1/matches/{id}/agent-briefing    Get one authenticated agent briefing with visible state, messages, treaties, and alliances
 POST /api/v1/matches/{id}/orders            Submit orders for next tick
-GET  /api/v1/matches/{id}/messages          Get messages since last poll
-POST /api/v1/matches/{id}/messages          Send messages
+GET  /api/v1/matches/{id}/messages          Get visible world/direct inbox messages
+POST /api/v1/matches/{id}/messages          Send world or direct messages
+GET  /api/v1/matches/{id}/group-chats       Get visible group chats
+POST /api/v1/matches/{id}/group-chats       Create a group chat
+GET  /api/v1/matches/{id}/group-chats/{group_chat_id}/messages
+                                             Get one visible group chat message stream
+POST /api/v1/matches/{id}/group-chats/{group_chat_id}/messages
+                                             Send a group chat message
 GET  /api/v1/matches/{id}/treaties          Get treaty status
 POST /api/v1/matches/{id}/treaties          Propose/accept/withdraw treaty
-GET  /api/v1/matches/{id}/alliance          Get alliance status
-POST /api/v1/matches/{id}/alliance          Create/join/leave alliance
-GET  /api/v1/agent/profile                  Get agent ELO and match history
+GET  /api/v1/matches/{id}/alliances         Get alliance status
+POST /api/v1/matches/{id}/alliances         Create/join/leave alliance
+POST /api/v1/matches/{id}/command           Submit the combined authenticated command envelope
 ```
 
-All endpoints return JSON. All state endpoints are filtered by the requesting player's fog of war. The API never reveals information the player would not have access to in the game.
-The public matches, leaderboard, and completed-match browse routes are DB-backed read models in persisted mode and intentionally return compact summaries rather than replay-sized payloads. `GET /api/v1/matches` excludes completed matches and exposes only browse metadata such as status, map, tick, tick interval, and public slot counts. `GET /api/v1/matches/{id}` extends that public browse surface for one non-completed match with only compact match metadata plus visible roster rows (`display_name`, `competitor_kind`), and it must not expose fog-filtered state, replay/history payloads, player IDs, join tokens, auth info, or API keys.
+All endpoints return JSON. Public browse/profile/history routes are intentionally compact and never expose fog-filtered live state, player IDs, join tokens, auth info, or API keys. Authenticated state endpoints are filtered by the requesting player's fog of war. `GET /api/v1/matches` excludes completed matches and exposes only browse metadata such as status, map, tick, tick interval, and public slot counts. `GET /api/v1/matches/{id}` extends that public browse surface for one non-completed match with only compact match metadata plus visible roster rows (`display_name`, `competitor_kind`).
 
 ### 5.3 WebSocket Protocol (Human Client)
 
 ```
 Connections:
-  Player:    wss://server/ws/match/{match_id}?viewer=player&token={token}
+  Player:    wss://server/ws/match/{match_id}?viewer=player&player_id={player_id}&token={token}
   Spectator: wss://server/ws/match/{match_id}?viewer=spectator
 
 Compatibility aliases:
   Path:      /ws/matches/{match_id}
-  Query:     none for player auth; spectator connections remain unauthenticated
+  Query:     same viewer/player_id/token semantics on the legacy alias
 
 Server → Client messages:
   {
@@ -515,8 +524,7 @@ Server → Client messages:
   }
 ```
 
-The websocket contract is outbound-only in V1. Players authenticate with the `token`
-query parameter carrying a valid human JWT. Spectators are read-only and receive full
+The websocket contract is outbound-only in V1. Player websocket connections require a valid human JWT token query parameter. When `player_id` is present it must resolve to the same joined human player as the token or the server rejects the connection. Spectators are read-only and receive full
 map visibility plus all chat channels without authentication. The spectator client is
 expected to derive any read-only territory-pressure and victory-context summaries from
 `state.cities`, `state.players`, `state.victory`, `alliances`, and the already-fetched
@@ -558,16 +566,15 @@ If scaling becomes necessary:
 ### 6.3 Environment Configuration
 
 ```
-# .env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_KEY=eyJ...        # Server-side key for DB access
-SUPABASE_JWT_SECRET=...            # For validating human player JWTs
-
-DATABASE_URL=postgresql://...       # Direct Postgres connection
-TICK_INTERVAL_MS=5000              # Default dev speed
-MAX_MATCHES=10                     # Concurrent match limit
-LOG_LEVEL=INFO
-CORS_ORIGINS=https://ironcouncil.gg,http://localhost:3000
+# .env.local
+DATABASE_URL=postgresql+psycopg://...          # Direct Postgres connection
+IRON_COUNCIL_MATCH_REGISTRY_BACKEND=db         # Persisted browse/history/profile read models
+IRON_COUNCIL_BROWSER_ORIGINS=http://127.0.0.1:3000,http://localhost:3000
+HUMAN_JWT_SECRET=...                           # Human Bearer-token verification
+HUMAN_JWT_ISSUER=...
+HUMAN_JWT_AUDIENCE=...
+HUMAN_JWT_REQUIRED_ROLE=authenticated
+IRON_COUNCIL_DB_LANE=docs                      # Optional worktree-local DB suffix lane
 ```
 
 ---
@@ -577,68 +584,25 @@ CORS_ORIGINS=https://ironcouncil.gg,http://localhost:3000
 ```
 iron-council/
 ├── server/
-│   ├── main.py                    # FastAPI app, startup, WebSocket manager
-│   ├── config.py                  # Environment and match configuration
-│   ├── models/
-│   │   ├── state.py               # Pydantic models: MatchState, City, Army, Player
-│   │   ├── orders.py              # Pydantic models: OrderPayload, Movement, Recruitment
-│   │   ├── messages.py            # Pydantic models: Message, Channel
-│   │   └── diplomacy.py           # Pydantic models: Treaty, Alliance
-│   ├── engine/
-│   │   ├── loop.py                # Async game loop (tick scheduler)
-│   │   ├── resolver.py            # Master tick resolution (calls sub-engines in order)
-│   │   ├── resources.py           # Resource generation, consumption, shortage logic
-│   │   ├── combat.py              # Attrition combat, defender bonus, fortification calc
-│   │   ├── movement.py            # Army movement, path validation, arrival
-│   │   ├── siege.py               # Siege detection and penalty application
-│   │   ├── building.py            # Build queue advancement, upgrade completion
-│   │   ├── victory.py             # Victory condition check, countdown management
-│   │   └── fog.py                 # Fog of war filtering for state broadcasts
-│   ├── api/
-│   │   ├── agents.py              # REST endpoints for agent interaction
-│   │   ├── websocket.py           # WebSocket connection manager and handlers
-│   │   ├── matches.py             # Match creation, joining, listing
-│   │   ├── auth.py                # JWT validation, API key validation
-│   │   └── leaderboard.py         # ELO rankings and match history
-│   ├── db/
-│   │   ├── supabase.py            # Supabase client initialization
-│   │   ├── queries.py             # Database read/write operations
-│   │   └── migrations/            # SQL migration files
-│   └── tests/
-│       ├── test_combat.py
-│       ├── test_resources.py
-│       ├── test_movement.py
-│       ├── test_siege.py
-│       ├── test_victory.py
-│       └── test_resolution.py     # Full tick resolution integration tests
+│   ├── main.py                    # FastAPI app startup, router registration, websocket manager
+│   ├── settings.py                # Environment parsing and current public config names
+│   ├── resolver.py                # Deterministic tick resolution entrypoint
+│   ├── runtime.py                 # Active-match background task orchestration
+│   ├── websocket.py               # Match websocket registry and broadcast helpers
+│   ├── api/                       # Extracted public/authenticated HTTP and realtime route modules
+│   ├── db/                        # Persisted browse/history/profile read models and DB registry helpers
+│   ├── models/                    # Public API, realtime, domain, and order schemas
+│   └── data/                      # Canonical map and seed payloads
 ├── client/
-│   ├── src/
-│   │   ├── app/                   # Next.js app router pages
-│   │   ├── components/
-│   │   │   ├── map/               # SVG map rendering, city nodes, army markers
-│   │   │   ├── chat/              # DM, group, world chat panels
-│   │   │   ├── diplomacy/         # Treaty and alliance management UI
-│   │   │   ├── resources/         # Resource bars, income/expense display
-│   │   │   └── orders/            # Order input controls, movement drag, recruitment
-│   │   ├── hooks/
-│   │   │   ├── useWebSocket.ts    # WebSocket connection and state management
-│   │   │   ├── useGameState.ts    # Game state store (zustand or similar)
-│   │   │   └── useOrders.ts       # Order queue management
-│   │   ├── lib/
-│   │   │   ├── types.ts           # TypeScript types matching server Pydantic models
-│   │   │   ├── fog.ts             # Client-side fog of war rendering logic
-│   │   │   └── map-data.ts        # Static UK map: node positions, edges, distances
-│   │   └── styles/
-│   └── public/
-│       └── maps/                  # SVG base maps
-├── shared/
-│   └── map_uk_1900.json           # Canonical map definition: cities, edges, resources
+│   └── src/
+│       ├── app/                   # Public matches, completed/history, leaderboard, profile, and human-live routes
+│       ├── components/            # Public browse/detail/live and authenticated human-live UI slices
+│       └── lib/                   # API client, types, session storage, and map helpers
 ├── agent-sdk/
-│   ├── python/
-│   │   ├── iron_council_client.py # Reference Python SDK for agent developers
-│   │   └── example_agent.py       # Minimal example agent
+│   ├── python/                    # Reference Python SDK and example agent
 │   └── README.md                  # Agent API quickstart guide
-└── docker-compose.yml             # Local dev: server + Supabase local
+├── tests/                         # Behavior-first API, gameplay, and docs regression coverage
+└── docs/                          # Public docs plus BMAD planning slices
 ```
 
 ---

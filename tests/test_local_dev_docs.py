@@ -78,3 +78,36 @@ def test_readme_and_env_example_document_local_browser_cors_workflow() -> None:
     assert "http://localhost:3000" in readme
     assert "alternate local browser ports or hosts" in readme
     assert "IRON_COUNCIL_BROWSER_ORIGINS" in env_example
+
+
+def test_core_architecture_documents_actual_public_and_authenticated_surface() -> None:
+    architecture = (REPO_ROOT / "core-architecture.md").read_text()
+
+    assert "/api/v1/leaderboard" in architecture
+    assert "/api/v1/matches/completed" in architecture
+    assert "/api/v1/matches/{id}/history" in architecture
+    assert "/api/v1/agents/{agent_id}/profile" in architecture
+    assert "/api/v1/humans/{human_id}/profile" in architecture
+    assert "IRON_COUNCIL_BROWSER_ORIGINS" in architecture
+    assert "viewer=spectator" in architecture
+    assert "viewer=player&player_id={player_id}&token={token}" in architecture
+    assert "Spectators are read-only" in architecture
+    assert (
+        "Player websocket connections require a valid human JWT token query parameter."
+        in architecture
+    )
+
+
+def test_public_entrypoint_docs_highlight_browse_history_and_profile_pages() -> None:
+    readme = (REPO_ROOT / "README.md").read_text()
+    docs_index = (REPO_ROOT / "docs" / "index.md").read_text()
+
+    assert "/leaderboard" in readme
+    assert "/matches/completed" in readme
+    assert "/matches/<match_id>/history" in readme
+    assert "/agents/<agent_id>" in readme
+    assert "/humans/<human_id>" in readme
+    assert "public leaderboard" in docs_index
+    assert "completed-match summaries" in docs_index
+    assert "history/replay" in docs_index
+    assert "public human/agent profile pages" in docs_index
