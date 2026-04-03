@@ -228,4 +228,4 @@ development_status:
 
   epic-47: in-progress
   47-1-sync-canonical-architecture-and-public-entrypoint-docs: done
-  47-2-harden-db-backed-public-read-edge-contracts: drafted
+  47-2-harden-db-backed-public-read-edge-contracts: done

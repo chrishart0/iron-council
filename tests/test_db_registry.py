@@ -2682,6 +2682,190 @@ def test_get_public_leaderboard_keeps_agent_rows_distinct_when_same_user_has_mul
     assert [row.draws for row in agent_rows] == [1, 0]
 
 
+def test_public_read_surfaces_expose_user_backed_agent_identities_consistently(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-user-backed-agent-public-reads.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+    user_backed_agent_user_id = "00000000-0000-0000-0000-000000000901"
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE players
+                SET user_id = :user_id, display_name = :display_name, api_key_id = NULL
+                WHERE id IN (:winner_id, :draw_id)
+                """
+            ),
+            {
+                "user_id": user_backed_agent_user_id,
+                "display_name": "Shadow Bot",
+                "winner_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000201",
+                    public_player_id="player-2",
+                ),
+                "draw_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000202",
+                    public_player_id="player-1",
+                ),
+            },
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE player_match_settlements
+                SET user_id = :user_id, api_key_id = NULL, display_name = :display_name
+                WHERE player_id IN (:winner_id, :draw_id)
+                """
+            ),
+            {
+                "user_id": user_backed_agent_user_id,
+                "display_name": "Shadow Bot",
+                "winner_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000201",
+                    public_player_id="player-2",
+                ),
+                "draw_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000202",
+                    public_player_id="player-1",
+                ),
+            },
+        )
+
+    leaderboard = get_public_leaderboard(database_url=database_url)
+    summaries = get_completed_match_summaries(database_url=database_url)
+    history = get_match_history(
+        database_url=database_url,
+        match_id="00000000-0000-0000-0000-000000000201",
+    )
+
+    assert leaderboard.model_dump(mode="json") == {
+        "leaderboard": [
+            {
+                "rank": 1,
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
+                "elo": 1234,
+                "provisional": False,
+                "matches_played": 1,
+                "wins": 1,
+                "losses": 0,
+                "draws": 0,
+            },
+            {
+                "rank": 2,
+                "display_name": "Shadow Bot",
+                "competitor_kind": "agent",
+                "agent_id": build_user_backed_agent_id(user_backed_agent_user_id),
+                "human_id": None,
+                "elo": 1211,
+                "provisional": False,
+                "matches_played": 2,
+                "wins": 1,
+                "losses": 0,
+                "draws": 1,
+            },
+            {
+                "rank": 3,
+                "display_name": "Bedivere",
+                "competitor_kind": "human",
+                "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000304",
+                "elo": 1190,
+                "provisional": False,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 0,
+                "draws": 1,
+            },
+            {
+                "rank": 4,
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+                "human_id": None,
+                "elo": 1163,
+                "provisional": False,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 1,
+                "draws": 0,
+            },
+        ]
+    }
+    assert summaries.model_dump(mode="json") == {
+        "matches": [
+            {
+                "match_id": "00000000-0000-0000-0000-000000000202",
+                "map": "mediterranean",
+                "final_tick": 200,
+                "tick_interval_seconds": 45,
+                "player_count": 2,
+                "completed_at": "2026-03-29T12:15:00Z",
+                "winning_alliance_name": None,
+                "winning_player_display_names": [],
+                "winning_competitors": [],
+            },
+            {
+                "match_id": "00000000-0000-0000-0000-000000000201",
+                "map": "britain",
+                "final_tick": 155,
+                "tick_interval_seconds": 30,
+                "player_count": 3,
+                "completed_at": "2026-03-29T08:30:00Z",
+                "winning_alliance_name": "Iron Crown",
+                "winning_player_display_names": ["Arthur", "Shadow Bot"],
+                "winning_competitors": [
+                    {
+                        "display_name": "Arthur",
+                        "competitor_kind": "human",
+                        "agent_id": None,
+                        "human_id": "human:00000000-0000-0000-0000-000000000301",
+                    },
+                    {
+                        "display_name": "Shadow Bot",
+                        "competitor_kind": "agent",
+                        "agent_id": build_user_backed_agent_id(user_backed_agent_user_id),
+                        "human_id": None,
+                    },
+                ],
+            },
+        ]
+    }
+    assert history.model_dump(mode="json") == {
+        "match_id": "00000000-0000-0000-0000-000000000201",
+        "status": "completed",
+        "current_tick": 155,
+        "tick_interval_seconds": 30,
+        "competitors": [
+            {
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
+            },
+            {
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+                "human_id": None,
+            },
+            {
+                "display_name": "Shadow Bot",
+                "competitor_kind": "agent",
+                "agent_id": build_user_backed_agent_id(user_backed_agent_user_id),
+                "human_id": None,
+            },
+        ],
+        "history": [],
+    }
+
+
 def test_get_completed_match_summaries_returns_compact_browse_rows_only_for_completed_matches(
     tmp_path: Path,
 ) -> None:
@@ -2773,6 +2957,242 @@ def test_get_completed_match_summaries_keeps_winner_player_names_when_alliance_r
                 "human_id": None,
             },
         ],
+    }
+
+
+def test_public_read_surfaces_keep_winner_fallback_metadata_honest_without_alliance_rows(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-winner-fallback-public-reads.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        seed_state = json.loads(
+            connection.execute(
+                text("SELECT state FROM matches WHERE id = :match_id"),
+                {"match_id": "00000000-0000-0000-0000-000000000101"},
+            ).scalar_one()
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO matches (
+                    id, config, status, current_tick, state, winner_alliance, created_at, updated_at
+                ) VALUES (
+                    :id, :config, :status, :current_tick, :state, :winner_alliance,
+                    :created_at, :updated_at
+                )
+                """
+            ),
+            [
+                {
+                    "id": "00000000-0000-0000-0000-000000000901",
+                    "config": json.dumps({"map": "britain", "max_players": 4, "turn_seconds": 30}),
+                    "status": "completed",
+                    "current_tick": 88,
+                    "state": json.dumps({**seed_state, "tick": 88}),
+                    "winner_alliance": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000901",
+                        public_player_id="player-1",
+                    ),
+                    "created_at": "2026-04-03 07:00:00+00:00",
+                    "updated_at": "2026-04-03 07:05:00+00:00",
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000902",
+                    "config": json.dumps({"map": "britain", "max_players": 4, "turn_seconds": 30}),
+                    "status": "completed",
+                    "current_tick": 89,
+                    "state": json.dumps({**seed_state, "tick": 89}),
+                    "winner_alliance": "00000000-0000-0000-0000-000000000999",
+                    "created_at": "2026-04-03 07:10:00+00:00",
+                    "updated_at": "2026-04-03 07:15:00+00:00",
+                },
+            ],
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO players (
+                    id, user_id, match_id, display_name, is_agent, api_key_id, elo_rating,
+                    alliance_id, alliance_joined_tick, eliminated_at
+                ) VALUES (
+                    :id, :user_id, :match_id, :display_name, :is_agent, :api_key_id, :elo_rating,
+                    :alliance_id, :alliance_joined_tick, :eliminated_at
+                )
+                """
+            ),
+            [
+                {
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000901",
+                        public_player_id="player-1",
+                    ),
+                    "user_id": "00000000-0000-0000-0000-000000000301",
+                    "match_id": "00000000-0000-0000-0000-000000000901",
+                    "display_name": "Arthur",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1210,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000901",
+                        public_player_id="player-2",
+                    ),
+                    "user_id": "00000000-0000-0000-0000-000000000304",
+                    "match_id": "00000000-0000-0000-0000-000000000901",
+                    "display_name": "Bedivere",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1190,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000902",
+                        public_player_id="player-1",
+                    ),
+                    "user_id": "00000000-0000-0000-0000-000000000301",
+                    "match_id": "00000000-0000-0000-0000-000000000902",
+                    "display_name": "Arthur",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1210,
+                    "alliance_id": "00000000-0000-0000-0000-000000000999",
+                    "alliance_joined_tick": 12,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000902",
+                        public_player_id="player-2",
+                    ),
+                    "user_id": "00000000-0000-0000-0000-000000000304",
+                    "match_id": "00000000-0000-0000-0000-000000000902",
+                    "display_name": "Bedivere",
+                    "is_agent": False,
+                    "api_key_id": None,
+                    "elo_rating": 1190,
+                    "alliance_id": "00000000-0000-0000-0000-000000000999",
+                    "alliance_joined_tick": 12,
+                    "eliminated_at": None,
+                },
+                {
+                    "id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000902",
+                        public_player_id="player-3",
+                    ),
+                    "user_id": "00000000-0000-0000-0000-000000000303",
+                    "match_id": "00000000-0000-0000-0000-000000000902",
+                    "display_name": "Gawain",
+                    "is_agent": True,
+                    "api_key_id": "00000000-0000-0000-0000-000000000203",
+                    "elo_rating": 1175,
+                    "alliance_id": None,
+                    "alliance_joined_tick": None,
+                    "eliminated_at": None,
+                },
+            ],
+        )
+
+    leaderboard = get_public_leaderboard(database_url=database_url)
+    summaries = get_completed_match_summaries(database_url=database_url)
+
+    assert leaderboard.model_dump(mode="json") == {
+        "leaderboard": [
+            {
+                "rank": 1,
+                "display_name": "Arthur",
+                "competitor_kind": "human",
+                "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
+                "elo": 1210,
+                "provisional": True,
+                "matches_played": 2,
+                "wins": 2,
+                "losses": 0,
+                "draws": 0,
+            },
+            {
+                "rank": 2,
+                "display_name": "Bedivere",
+                "competitor_kind": "human",
+                "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000304",
+                "elo": 1190,
+                "provisional": True,
+                "matches_played": 2,
+                "wins": 1,
+                "losses": 1,
+                "draws": 0,
+            },
+            {
+                "rank": 3,
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+                "human_id": None,
+                "elo": 1175,
+                "provisional": True,
+                "matches_played": 1,
+                "wins": 0,
+                "losses": 1,
+                "draws": 0,
+            },
+        ]
+    }
+    assert summaries.model_dump(mode="json") == {
+        "matches": [
+            {
+                "match_id": "00000000-0000-0000-0000-000000000902",
+                "map": "britain",
+                "final_tick": 89,
+                "tick_interval_seconds": 30,
+                "player_count": 3,
+                "completed_at": "2026-04-03T07:15:00Z",
+                "winning_alliance_name": None,
+                "winning_player_display_names": ["Arthur", "Bedivere"],
+                "winning_competitors": [
+                    {
+                        "display_name": "Arthur",
+                        "competitor_kind": "human",
+                        "agent_id": None,
+                        "human_id": "human:00000000-0000-0000-0000-000000000301",
+                    },
+                    {
+                        "display_name": "Bedivere",
+                        "competitor_kind": "human",
+                        "agent_id": None,
+                        "human_id": "human:00000000-0000-0000-0000-000000000304",
+                    },
+                ],
+            },
+            {
+                "match_id": "00000000-0000-0000-0000-000000000901",
+                "map": "britain",
+                "final_tick": 88,
+                "tick_interval_seconds": 30,
+                "player_count": 2,
+                "completed_at": "2026-04-03T07:05:00Z",
+                "winning_alliance_name": None,
+                "winning_player_display_names": ["Arthur"],
+                "winning_competitors": [
+                    {
+                        "display_name": "Arthur",
+                        "competitor_kind": "human",
+                        "agent_id": None,
+                        "human_id": "human:00000000-0000-0000-0000-000000000301",
+                    },
+                ],
+            },
+        ]
     }
 
 
