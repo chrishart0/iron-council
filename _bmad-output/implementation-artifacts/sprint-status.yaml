@@ -1,9 +1,9 @@
-generated: 2026-04-02 21:45 UTC
+generated: 2026-04-03 04:19 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 44-1-add-local-browser-to-api-cors-support
+next_story: null
 
 development_status:
   public-readiness-epic: done
@@ -217,5 +217,5 @@ development_status:
   epic-43: done
   43-1-add-public-treaty-reputation-to-competitor-profiles: done
 
-  epic-44: drafted
-  44-1-add-local-browser-to-api-cors-support: drafted
+  epic-44: done
+  44-1-add-local-browser-to-api-cors-support: done
