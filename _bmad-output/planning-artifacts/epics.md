@@ -2208,3 +2208,151 @@ So that public read surfaces remain trustworthy even when persisted data is not 
 **And Given** this story is contract hardening rather than a new feature
 **When** the fix lands
 **Then** the implementation stays local to the public read seam plus tests and the repo remains in a simple coherent state.
+
+## Epic 48: Self-Serve Agent Onboarding and API Key Lifecycle
+
+Turn the already-shipped seeded/dev agent authentication path into an honest self-serve BYOA onboarding surface. Keep the first phase narrow: authenticated humans should be able to create, list, and revoke their own agent API keys safely, then use a small browser settings surface to manage those keys before later entitlement and billing work arrives.
+
+### Story 48.1: Add authenticated API key lifecycle endpoints for owned agent identities
+
+As an authenticated human player,
+I want to create, list, and revoke my own agent API keys through the shipped API,
+So that I can onboard and manage my own agents without relying on seeded local fixtures or direct database edits.
+
+**Acceptance Criteria:**
+
+**Given** an authenticated human bearer token
+**When** the caller requests their owned agent API keys
+**Then** the server returns a compact list of owned key summaries that includes stable key ids, rating metadata, active state, and created timestamps without exposing raw key material.
+
+**And Given** the same authenticated human wants to create a new agent key
+**When** the creation route succeeds
+**Then** the response returns a one-time raw secret plus the persisted key summary while the database stores only the hashed secret and future reads never reveal it again.
+
+**And Given** an owned key is revoked
+**When** that key is later presented through the existing `X-API-Key` contract
+**Then** agent-authenticated routes reject it as inactive and the lifecycle endpoints continue to show the key as inactive rather than deleting history.
+
+**And Given** this is the first self-serve BYOA slice
+**When** the story ships
+**Then** focused API/process/docs verification plus the repo quality gate pass and the README/BMAD artifacts explain the new onboarding path honestly.
+
+### Story 48.2: Add a browser agent-key management surface for BYOA onboarding
+
+As an authenticated human player,
+I want a small settings surface in the web client for creating and revoking my agent API keys,
+So that I can complete BYOA onboarding from the shipped product without reaching for curl or direct DB tooling.
+
+**Acceptance Criteria:**
+
+**Given** the lifecycle endpoints from Story 48.1 already exist
+**When** an authenticated human opens the browser settings surface
+**Then** the UI lists owned keys, their active state, rating metadata, and creation time using the existing bearer-token session without inventing a parallel auth flow.
+
+**And Given** the user creates a new key in the browser
+**When** the request succeeds
+**Then** the UI reveals the raw secret exactly once, explains that it will not be shown again, and keeps the durable list view free of raw secrets afterward.
+
+**And Given** the user revokes an owned key
+**When** the action completes
+**Then** the UI updates deterministically, preserves the rest of the settings surface, and reflects the new inactive state without pretending the key still works.
+
+### Story 48.3: Enforce per-API-key concurrent match occupancy with honest join errors
+
+As the platform operator,
+I want each agent API key to respect a deterministic concurrent-match occupancy limit,
+So that BYOA onboarding is safe against obvious abuse before billing is added.
+
+**Acceptance Criteria:**
+
+**Given** an agent API key already occupies its allowed number of active matches
+**When** that key tries to create or join another active lobby or match
+**Then** the API rejects the request with a structured domain error that names occupancy rather than a misleading auth or not-found failure.
+
+**And Given** the same key later leaves or finishes a match
+**When** occupancy is recomputed
+**Then** the key can join another allowed match without manual cleanup or hidden state drift.
+
+### Story 48.4: Add a billing-ready agent entitlement seam with manual/dev grants
+
+As a maintainer of the BYOA platform,
+I want API-key issuance and occupancy rules to read from a narrow entitlement seam,
+So that later billing integration can plug in without rewriting the agent-auth contract.
+
+**Acceptance Criteria:**
+
+**Given** the repo is not yet integrating Stripe checkout
+**When** the first entitlement seam lands
+**Then** API-key lifecycle and occupancy rules read from a small entitlement model that supports manual/dev grants and keeps the billing dependency out of the request path.
+
+**And Given** future billing work will extend this seam
+**When** the story finishes
+**Then** the initial implementation stays small, typed, and well-covered without promising a full payment system yet.
+
+## Epic 49: Guided Agent Mode
+
+Build the product's intended sweet spot after self-serve BYOA exists: a human can own an agent, see what it plans to do, whisper strategic guidance, and override the next-tick actions without splitting the product into separate human and agent games. Keep the phase sequential and contract-first so runtime semantics stay honest.
+
+### Story 49.1: Add an owned-agent guided-session read model
+
+As an authenticated human player who owns an agent,
+I want a guided-session read surface for that agent in a live match,
+So that I can see the current visible state, queued actions, and recent agent activity before intervening.
+
+**Acceptance Criteria:**
+
+**Given** the authenticated human owns an agent participant in a match
+**When** the guided-session route is requested
+**Then** it returns a player-safe snapshot, the current queued orders/messages, and concise recent activity for that owned agent without widening visibility beyond the agent's normal fog-of-war envelope.
+
+**And Given** the caller does not own the target agent or the agent is not in the requested match
+**When** the same route is requested
+**Then** the API returns a structured auth or ownership error rather than leaking cross-account guided state.
+
+### Story 49.2: Deliver private human-to-agent guidance through the briefing path
+
+As an authenticated human player guiding my agent,
+I want to send private strategic guidance that reaches the agent on its next briefing,
+So that guided play can influence behavior without impersonating public game messages.
+
+**Acceptance Criteria:**
+
+**Given** an owned agent and a guidance message from its owner
+**When** the agent requests its next briefing
+**Then** the response includes the new private guidance in a deterministic dedicated field or channel that is not confused with world, DM, or group chat traffic.
+
+**And Given** no new guidance exists
+**When** the briefing is requested
+**Then** the existing briefing contract remains stable and the new guidance field stays empty rather than inventing placeholder content.
+
+### Story 49.3: Add pre-tick human override semantics for guided agents
+
+As an authenticated human player guiding my agent,
+I want to override the next-tick orders or messages before they lock,
+So that guided mode supports meaningful intervention instead of passive observation only.
+
+**Acceptance Criteria:**
+
+**Given** an owned agent has queued next-tick actions
+**When** the owner submits a guided override before resolution
+**Then** the system records deterministic precedence and audit metadata so the resulting queued action set is unambiguous at tick time.
+
+**And Given** the override arrives too late or targets a non-owned agent
+**When** the request is processed
+**Then** the API rejects it with a structured guided-mode error and leaves the existing queued action set unchanged.
+
+### Story 49.4: Add guided-agent controls to the live web client
+
+As an authenticated human player,
+I want browser controls for whispering guidance and overriding my agent's queued next-tick actions,
+So that guided mode is usable from the shipped web client rather than only via raw API calls.
+
+**Acceptance Criteria:**
+
+**Given** the guided-session, guidance, and override contracts already exist
+**When** the owner opens the live browser flow for their guided agent
+**Then** the UI shows the current queued actions, guidance history, and override controls without leaking hidden data or bypassing the existing authenticated session model.
+
+**And Given** a guidance or override action succeeds or fails
+**When** the browser updates
+**Then** the result is rendered clearly with deterministic success/error states and no pretend optimistic state that outruns the authoritative server contract.
