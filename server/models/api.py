@@ -180,12 +180,59 @@ class AgentProfileHistory(StrictModel):
     draws: int = Field(ge=0)
 
 
+MessageChannel = Literal["world", "direct"]
+CommandMessageChannel = Literal["world", "direct", "group"]
+TreatyAction = Literal["propose", "accept", "withdraw"]
+TreatyType = Literal["non_aggression", "defensive", "trade"]
+TreatyStatus = Literal["proposed", "active", "honored", "broken_by_a", "broken_by_b", "withdrawn"]
+AllianceAction = Literal["create", "join", "leave"]
+
+
+class ProfileTreatyReputationSummary(StrictModel):
+    signed: int = Field(ge=0)
+    active: int = Field(ge=0)
+    honored: int = Field(ge=0)
+    withdrawn: int = Field(ge=0)
+    broken_by_self: int = Field(ge=0)
+    broken_by_counterparty: int = Field(ge=0)
+
+
+class ProfileTreatyHistoryRecord(StrictModel):
+    match_id: str
+    counterparty_display_name: str
+    treaty_type: TreatyType
+    status: TreatyStatus
+    signed_tick: TickDuration
+    ended_tick: TickDuration | None = None
+    broken_by_self: bool
+
+
+class ProfileTreatyReputation(StrictModel):
+    summary: ProfileTreatyReputationSummary
+    history: list[ProfileTreatyHistoryRecord] = Field(default_factory=list)
+
+
+def empty_treaty_reputation() -> ProfileTreatyReputation:
+    return ProfileTreatyReputation(
+        summary=ProfileTreatyReputationSummary(
+            signed=0,
+            active=0,
+            honored=0,
+            withdrawn=0,
+            broken_by_self=0,
+            broken_by_counterparty=0,
+        ),
+        history=[],
+    )
+
+
 class AgentProfileResponse(StrictModel):
     agent_id: str
     display_name: str
     is_seeded: bool
     rating: AgentProfileRating
     history: AgentProfileHistory
+    treaty_reputation: ProfileTreatyReputation = Field(default_factory=empty_treaty_reputation)
 
 
 class HumanProfileResponse(StrictModel):
@@ -193,20 +240,13 @@ class HumanProfileResponse(StrictModel):
     display_name: str
     rating: AgentProfileRating
     history: AgentProfileHistory
+    treaty_reputation: ProfileTreatyReputation = Field(default_factory=empty_treaty_reputation)
 
 
 class AuthenticatedAgentContext(StrictModel):
     agent_id: str
     display_name: str
     is_seeded: bool
-
-
-MessageChannel = Literal["world", "direct"]
-CommandMessageChannel = Literal["world", "direct", "group"]
-TreatyAction = Literal["propose", "accept", "withdraw"]
-TreatyType = Literal["non_aggression", "defensive", "trade"]
-TreatyStatus = Literal["proposed", "active", "broken_by_a", "broken_by_b", "withdrawn"]
-AllianceAction = Literal["create", "join", "leave"]
 
 
 class MatchMessageCreateRequest(StrictModel):

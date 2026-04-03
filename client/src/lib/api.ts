@@ -52,7 +52,10 @@ import type {
   SpectatorPlayerState,
   TreatyActionAcceptanceResponse,
   TreatyActionRequest,
+  TreatyHistoryRecord,
   TreatyRecord,
+  TreatyReputation,
+  TreatyReputationSummary,
   VictoryState,
   WorldMessageRecord,
   LeaderboardEntry
@@ -1056,7 +1059,8 @@ function isPublicAgentProfileResponse(payload: unknown): payload is PublicAgentP
     typeof payload.display_name === "string" &&
     typeof payload.is_seeded === "boolean" &&
     isAgentProfileRating(payload.rating) &&
-    isAgentProfileHistory(payload.history)
+    isAgentProfileHistory(payload.history) &&
+    isTreatyReputation(payload.treaty_reputation)
   );
 }
 
@@ -1066,7 +1070,53 @@ function isPublicHumanProfileResponse(payload: unknown): payload is PublicHumanP
     typeof payload.human_id === "string" &&
     typeof payload.display_name === "string" &&
     isAgentProfileRating(payload.rating) &&
-    isAgentProfileHistory(payload.history)
+    isAgentProfileHistory(payload.history) &&
+    isTreatyReputation(payload.treaty_reputation)
+  );
+}
+
+function isTreatyReputation(payload: unknown): payload is TreatyReputation {
+  return (
+    isRecord(payload) &&
+    isTreatyReputationSummary(payload.summary) &&
+    Array.isArray(payload.history) &&
+    payload.history.every(isTreatyHistoryRecord)
+  );
+}
+
+function isTreatyReputationSummary(payload: unknown): payload is TreatyReputationSummary {
+  return (
+    isRecord(payload) &&
+    typeof payload.signed === "number" &&
+    typeof payload.active === "number" &&
+    typeof payload.honored === "number" &&
+    typeof payload.withdrawn === "number" &&
+    typeof payload.broken_by_self === "number" &&
+    typeof payload.broken_by_counterparty === "number"
+  );
+}
+
+function isTreatyHistoryRecord(payload: unknown): payload is TreatyHistoryRecord {
+  return (
+    isRecord(payload) &&
+    typeof payload.match_id === "string" &&
+    typeof payload.counterparty_display_name === "string" &&
+    typeof payload.treaty_type === "string" &&
+    isTreatyHistoryStatus(payload.status) &&
+    typeof payload.signed_tick === "number" &&
+    (payload.ended_tick === null || typeof payload.ended_tick === "number") &&
+    typeof payload.broken_by_self === "boolean"
+  );
+}
+
+function isTreatyHistoryStatus(payload: unknown): payload is TreatyHistoryRecord["status"] {
+  return (
+    payload === "proposed" ||
+    payload === "active" ||
+    payload === "honored" ||
+    payload === "broken_by_a" ||
+    payload === "broken_by_b" ||
+    payload === "withdrawn"
   );
 }
 

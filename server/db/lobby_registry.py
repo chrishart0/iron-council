@@ -39,6 +39,7 @@ from server.models.api import (
     MatchLobbyCreateRequest,
     MatchLobbyCreateResponse,
     MatchLobbyStartResponse,
+    empty_treaty_reputation,
 )
 from server.models.domain import MatchStatus
 from server.models.state import ResourceState
@@ -203,6 +204,7 @@ def create_match_lobby(
             else True,
             rating=AgentProfileRating(elo=creator_elo_rating, provisional=True),
             history=AgentProfileHistory(matches_played=0, wins=0, losses=0, draws=0),
+            treaty_reputation=empty_treaty_reputation(),
         )
 
     return CreatedMatchLobby(

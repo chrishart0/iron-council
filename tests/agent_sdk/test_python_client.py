@@ -113,11 +113,49 @@ def test_sdk_profile_and_match_methods_return_typed_authenticated_contracts(
     assert matches.matches[1].status == "paused"
     assert profile.agent_id == "agent-player-2"
     assert profile.display_name == "Morgana"
+    assert profile.treaty_reputation.summary.honored == 0
+    assert profile.treaty_reputation.history == []
     assert join.status == "accepted"
     assert join.match_id == "match-beta"
     assert join.player_id == "player-1"
     assert state.match_id == "match-beta"
     assert state.player_id == "player-1"
+
+
+def test_sdk_profile_models_accept_honored_treaty_history_status(sdk_module: Any) -> None:
+    profile = sdk_module.AgentProfileResponse.model_validate(
+        {
+            "agent_id": "agent-player-2",
+            "display_name": "Morgana",
+            "is_seeded": True,
+            "rating": {"elo": 1211, "provisional": False},
+            "history": {"matches_played": 2, "wins": 1, "losses": 0, "draws": 1},
+            "treaty_reputation": {
+                "summary": {
+                    "signed": 1,
+                    "active": 0,
+                    "honored": 1,
+                    "withdrawn": 0,
+                    "broken_by_self": 0,
+                    "broken_by_counterparty": 0,
+                },
+                "history": [
+                    {
+                        "match_id": "match-completed",
+                        "counterparty_display_name": "Arthur",
+                        "treaty_type": "trade",
+                        "status": "honored",
+                        "signed_tick": 141,
+                        "ended_tick": None,
+                        "broken_by_self": False,
+                    }
+                ],
+            },
+        }
+    )
+
+    assert profile.treaty_reputation.summary.honored == 1
+    assert profile.treaty_reputation.history[0].status == "honored"
 
 
 def test_sdk_create_match_lobby_returns_typed_authenticated_contract(

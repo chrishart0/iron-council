@@ -7,6 +7,7 @@ from server.models.api import (
     AgentProfileHistory,
     AgentProfileRating,
     AgentProfileResponse,
+    empty_treaty_reputation,
 )
 from server.models.domain import MatchStatus
 from server.models.state import MatchState
@@ -88,6 +89,7 @@ def build_seeded_agent_profiles() -> list[AgentProfileResponse]:
                 losses=0,
                 draws=0,
             ),
+            treaty_reputation=empty_treaty_reputation(),
         )
         for player_id, display_name, elo_rating in seeded_profile_specs
     ]

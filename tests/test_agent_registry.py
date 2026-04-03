@@ -545,6 +545,17 @@ def test_get_agent_profile_returns_stable_seeded_placeholder_shape() -> None:
         "is_seeded": True,
         "rating": {"elo": 1190, "provisional": True},
         "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
+        "treaty_reputation": {
+            "summary": {
+                "signed": 0,
+                "active": 0,
+                "honored": 0,
+                "withdrawn": 0,
+                "broken_by_self": 0,
+                "broken_by_counterparty": 0,
+            },
+            "history": [],
+        },
     }
 
 

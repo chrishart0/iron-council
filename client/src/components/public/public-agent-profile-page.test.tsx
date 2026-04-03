@@ -43,6 +43,27 @@ describe("PublicAgentProfilePage", () => {
           wins: 1,
           losses: 0,
           draws: 1
+        },
+        treaty_reputation: {
+          summary: {
+            signed: 3,
+            active: 1,
+            honored: 0,
+            withdrawn: 1,
+            broken_by_self: 1,
+            broken_by_counterparty: 0
+          },
+          history: [
+            {
+              match_id: "match-alpha",
+              counterparty_display_name: "Arthur",
+              treaty_type: "trade",
+              status: "withdrawn",
+              signed_tick: 141,
+              ended_tick: 142,
+              broken_by_self: false
+            }
+          ]
         }
       })
     });
@@ -55,9 +76,78 @@ describe("PublicAgentProfilePage", () => {
     expect(screen.getAllByText("Seeded")).toHaveLength(2);
     expect(screen.getByText("ELO 1211")).toBeVisible();
     expect(screen.getByText("Settled")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Treaty reputation" })).toBeVisible();
+    expect(screen.getByText("Broken by self")).toBeVisible();
+    expect(screen.getByText("Withdrawn")).toBeVisible();
+    expect(screen.getByText("Arthur")).toBeVisible();
+    expect(screen.getByRole("list", { name: "Agent treaty history" })).toHaveTextContent(
+      "match-alpha"
+    );
     expect(screen.getByRole("link", { name: "Back to leaderboard" })).toHaveAttribute(
       "href",
       "/leaderboard"
+    );
+  });
+
+  it("renders honored treaties as visibly final in the treaty history list", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          agent_id: "agent-player-2",
+          display_name: "Morgana",
+          is_seeded: true,
+          rating: {
+            elo: 1211,
+            provisional: false
+          },
+          history: {
+            matches_played: 2,
+            wins: 1,
+            losses: 0,
+            draws: 1
+          },
+          treaty_reputation: {
+            summary: {
+              signed: 1,
+              active: 0,
+              honored: 1,
+              withdrawn: 0,
+              broken_by_self: 0,
+              broken_by_counterparty: 0
+            },
+            history: [
+              {
+                match_id: "match-completed",
+                counterparty_display_name: "Arthur",
+                treaty_type: "trade",
+                status: "honored",
+                signed_tick: 141,
+                ended_tick: null,
+                broken_by_self: false
+              }
+            ]
+          }
+        })
+      })
+    );
+
+    render(
+      <SessionProvider>
+        <PublicAgentProfilePage agentId="agent-player-2" />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Morgana" })).toBeVisible();
+    });
+
+    expect(screen.getByRole("list", { name: "Agent treaty history" })).toHaveTextContent(
+      "honored"
+    );
+    expect(screen.getByRole("list", { name: "Agent treaty history" })).not.toHaveTextContent(
+      "still active"
     );
   });
 
@@ -85,6 +175,17 @@ describe("PublicAgentProfilePage", () => {
           wins: 1,
           losses: 0,
           draws: 1
+        },
+        treaty_reputation: {
+          summary: {
+            signed: 0,
+            active: 0,
+            honored: 0,
+            withdrawn: 0,
+            broken_by_self: 0,
+            broken_by_counterparty: 0
+          },
+          history: []
         }
       })
     });
@@ -100,6 +201,7 @@ describe("PublicAgentProfilePage", () => {
       expect(screen.getByRole("heading", { name: "Morgana" })).toBeVisible();
     });
 
+    expect(screen.getByText("No public treaty history has been recorded yet.")).toBeVisible();
     expect(fetchSpy).toHaveBeenCalledWith(
       "https://hydrated.example/api/v1/agents/agent-player-2/profile",
       {

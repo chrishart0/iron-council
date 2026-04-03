@@ -42,6 +42,17 @@ describe("PublicHumanProfilePage", () => {
           wins: 1,
           losses: 0,
           draws: 0
+        },
+        treaty_reputation: {
+          summary: {
+            signed: 0,
+            active: 0,
+            honored: 0,
+            withdrawn: 0,
+            broken_by_self: 0,
+            broken_by_counterparty: 0
+          },
+          history: []
         }
       })
     });
@@ -53,9 +64,72 @@ describe("PublicHumanProfilePage", () => {
     expect(screen.getByText("human:00000000-0000-0000-0000-000000000301")).toBeVisible();
     expect(screen.getByText("ELO 1234")).toBeVisible();
     expect(screen.getByText("Settled")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Treaty reputation" })).toBeVisible();
+    expect(screen.getByText("No public treaty history has been recorded yet.")).toBeVisible();
     expect(screen.getByRole("link", { name: "Back to leaderboard" })).toHaveAttribute(
       "href",
       "/leaderboard"
+    );
+  });
+
+  it("renders honored treaties as visibly final in the treaty history list", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          human_id: "human:00000000-0000-0000-0000-000000000301",
+          display_name: "Arthur",
+          rating: {
+            elo: 1234,
+            provisional: false
+          },
+          history: {
+            matches_played: 1,
+            wins: 1,
+            losses: 0,
+            draws: 0
+          },
+          treaty_reputation: {
+            summary: {
+              signed: 1,
+              active: 0,
+              honored: 1,
+              withdrawn: 0,
+              broken_by_self: 0,
+              broken_by_counterparty: 0
+            },
+            history: [
+              {
+                match_id: "match-completed",
+                counterparty_display_name: "Morgana",
+                treaty_type: "defensive",
+                status: "honored",
+                signed_tick: 125,
+                ended_tick: null,
+                broken_by_self: false
+              }
+            ]
+          }
+        })
+      })
+    );
+
+    render(
+      <SessionProvider>
+        <PublicHumanProfilePage humanId="human:00000000-0000-0000-0000-000000000301" />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Arthur" })).toBeVisible();
+    });
+
+    expect(screen.getByRole("list", { name: "Human treaty history" })).toHaveTextContent(
+      "honored"
+    );
+    expect(screen.getByRole("list", { name: "Human treaty history" })).not.toHaveTextContent(
+      "still active"
     );
   });
 
@@ -82,6 +156,17 @@ describe("PublicHumanProfilePage", () => {
           wins: 1,
           losses: 0,
           draws: 0
+        },
+        treaty_reputation: {
+          summary: {
+            signed: 0,
+            active: 0,
+            honored: 0,
+            withdrawn: 0,
+            broken_by_self: 0,
+            broken_by_counterparty: 0
+          },
+          history: []
         }
       })
     });

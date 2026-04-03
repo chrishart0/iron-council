@@ -234,6 +234,20 @@ def _auth_headers_for_human(user_id: str, *, role: str = "authenticated") -> dic
     return {"Authorization": f"Bearer {_human_jwt_token(user_id=user_id, role=role)}"}
 
 
+def _empty_treaty_reputation_payload() -> dict[str, Any]:
+    return {
+        "summary": {
+            "signed": 0,
+            "active": 0,
+            "honored": 0,
+            "withdrawn": 0,
+            "broken_by_self": 0,
+            "broken_by_counterparty": 0,
+        },
+        "history": [],
+    }
+
+
 @pytest.fixture
 def seeded_registry() -> InMemoryMatchRegistry:
     registry = InMemoryMatchRegistry()
@@ -1014,6 +1028,40 @@ async def test_db_backed_human_profile_route_returns_stable_public_contract(
     database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-human-profile.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
     insert_completed_match_fixture(database_url)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO treaties (
+                    id, match_id, player_a_id, player_b_id, treaty_type, status, signed_tick,
+                    broken_tick, created_at
+                ) VALUES (
+                    :id, :match_id, :player_a_id, :player_b_id, :treaty_type, :status,
+                    :signed_tick, :broken_tick, :created_at
+                )
+                """
+            ),
+            {
+                "id": "00000000-0000-0000-0000-000000000799",
+                "match_id": "00000000-0000-0000-0000-000000000201",
+                "player_a_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000201",
+                    public_player_id="player-1",
+                ),
+                "player_b_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000201",
+                    public_player_id="player-2",
+                ),
+                "treaty_type": "defensive",
+                "status": "active",
+                "signed_tick": 125,
+                "broken_tick": None,
+                "created_at": "2026-03-29 08:02:00+00:00",
+            },
+        )
+
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -1033,6 +1081,36 @@ async def test_db_backed_human_profile_route_returns_stable_public_contract(
         "display_name": "Arthur",
         "rating": {"elo": 1234, "provisional": False},
         "history": {"matches_played": 1, "wins": 1, "losses": 0, "draws": 0},
+        "treaty_reputation": {
+            "summary": {
+                "signed": 2,
+                "active": 1,
+                "honored": 1,
+                "withdrawn": 0,
+                "broken_by_self": 0,
+                "broken_by_counterparty": 0,
+            },
+            "history": [
+                {
+                    "match_id": "00000000-0000-0000-0000-000000000201",
+                    "counterparty_display_name": "Morgana",
+                    "treaty_type": "defensive",
+                    "status": "honored",
+                    "signed_tick": 125,
+                    "ended_tick": None,
+                    "broken_by_self": False,
+                },
+                {
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "counterparty_display_name": "Gawain",
+                    "treaty_type": "trade",
+                    "status": "active",
+                    "signed_tick": 141,
+                    "ended_tick": None,
+                    "broken_by_self": False,
+                },
+            ],
+        },
     }
 
 
@@ -1129,6 +1207,7 @@ async def test_db_backed_agent_profile_routes_return_finalized_settlement_result
         "is_seeded": True,
         "rating": {"elo": 1211, "provisional": False},
         "history": {"matches_played": 2, "wins": 1, "losses": 0, "draws": 1},
+        "treaty_reputation": _empty_treaty_reputation_payload(),
     }
     assert public_profile_response.status_code == HTTPStatus.OK
     assert public_profile_response.json() == expected_profile
@@ -1304,6 +1383,7 @@ async def test_public_and_authenticated_agent_profile_routes_return_stable_shape
         "is_seeded": True,
         "rating": {"elo": 1190, "provisional": True},
         "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
+        "treaty_reputation": _empty_treaty_reputation_payload(),
     }
     assert public_profile_response.status_code == HTTPStatus.OK
     assert public_profile_response.json() == expected_profile

@@ -62,12 +62,45 @@ export type AgentProfileHistory = {
   draws: number;
 };
 
+export type TreatyReputationSummary = {
+  signed: number;
+  active: number;
+  honored: number;
+  withdrawn: number;
+  broken_by_self: number;
+  broken_by_counterparty: number;
+};
+
+export type TreatyHistoryStatus =
+  | "proposed"
+  | "active"
+  | "honored"
+  | "broken_by_a"
+  | "broken_by_b"
+  | "withdrawn";
+
+export type TreatyHistoryRecord = {
+  match_id: string;
+  counterparty_display_name: string;
+  treaty_type: TreatyType;
+  status: TreatyHistoryStatus;
+  signed_tick: number;
+  ended_tick: number | null;
+  broken_by_self: boolean;
+};
+
+export type TreatyReputation = {
+  summary: TreatyReputationSummary;
+  history: TreatyHistoryRecord[];
+};
+
 export type PublicAgentProfileResponse = {
   agent_id: string;
   display_name: string;
   is_seeded: boolean;
   rating: AgentProfileRating;
   history: AgentProfileHistory;
+  treaty_reputation: TreatyReputation;
 };
 
 export type PublicHumanProfileResponse = {
@@ -75,6 +108,7 @@ export type PublicHumanProfileResponse = {
   display_name: string;
   rating: AgentProfileRating;
   history: AgentProfileHistory;
+  treaty_reputation: TreatyReputation;
 };
 
 export type CompletedMatchSummary = {

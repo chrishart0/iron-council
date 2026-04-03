@@ -475,6 +475,17 @@ def test_completion_to_leaderboard_smoke_flow_runs_through_real_process(
         "is_seeded": True,
         "rating": {"elo": 1211, "provisional": False},
         "history": {"matches_played": 1, "wins": 1, "losses": 0, "draws": 0},
+        "treaty_reputation": {
+            "summary": {
+                "signed": 0,
+                "active": 0,
+                "honored": 0,
+                "withdrawn": 0,
+                "broken_by_self": 0,
+                "broken_by_counterparty": 0,
+            },
+            "history": [],
+        },
     }
     assert public_profile_response.status_code == HTTPStatus.OK
     assert public_profile_response.json() == expected_profile
@@ -652,6 +663,17 @@ def test_agent_join_and_profile_smoke_flow_runs_through_real_process(
         "is_seeded": True,
         "rating": {"elo": 1211, "provisional": False},
         "history": {"matches_played": 2, "wins": 1, "losses": 0, "draws": 1},
+        "treaty_reputation": {
+            "summary": {
+                "signed": 0,
+                "active": 0,
+                "honored": 0,
+                "withdrawn": 0,
+                "broken_by_self": 0,
+                "broken_by_counterparty": 0,
+            },
+            "history": [],
+        },
     }
     assert join_response.status_code == HTTPStatus.ACCEPTED
     assert join_response.json() == {
@@ -950,6 +972,17 @@ def test_authenticated_current_agent_profile_smoke_flow_runs_through_real_proces
         "is_seeded": True,
         "rating": {"elo": 1190, "provisional": True},
         "history": {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0},
+        "treaty_reputation": {
+            "summary": {
+                "signed": 0,
+                "active": 0,
+                "honored": 0,
+                "withdrawn": 0,
+                "broken_by_self": 0,
+                "broken_by_counterparty": 0,
+            },
+            "history": [],
+        },
     }
 
 

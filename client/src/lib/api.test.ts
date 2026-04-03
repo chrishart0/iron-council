@@ -583,6 +583,27 @@ describe("fetchPublicAgentProfile", () => {
           wins: 1,
           losses: 0,
           draws: 1
+        },
+        treaty_reputation: {
+          summary: {
+            signed: 3,
+            active: 1,
+            honored: 0,
+            withdrawn: 1,
+            broken_by_self: 1,
+            broken_by_counterparty: 0
+          },
+          history: [
+            {
+              match_id: "match-alpha",
+              counterparty_display_name: "Arthur",
+              treaty_type: "trade",
+              status: "withdrawn",
+              signed_tick: 141,
+              ended_tick: 142,
+              broken_by_self: false
+            }
+          ]
         }
       })
     });
@@ -602,6 +623,27 @@ describe("fetchPublicAgentProfile", () => {
         wins: 1,
         losses: 0,
         draws: 1
+      },
+      treaty_reputation: {
+        summary: {
+          signed: 3,
+          active: 1,
+          honored: 0,
+          withdrawn: 1,
+          broken_by_self: 1,
+          broken_by_counterparty: 0
+        },
+        history: [
+          {
+            match_id: "match-alpha",
+            counterparty_display_name: "Arthur",
+            treaty_type: "trade",
+            status: "withdrawn",
+            signed_tick: 141,
+            ended_tick: 142,
+            broken_by_self: false
+          }
+        ]
       }
     });
 
@@ -653,6 +695,54 @@ describe("fetchPublicAgentProfile", () => {
       new PublicAgentProfileError("Unable to load this agent profile right now.", "unavailable")
     );
   });
+
+  it("rejects treaty history statuses outside the shipped literal contract", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        agent_id: "agent-player-2",
+        display_name: "Morgana",
+        is_seeded: true,
+        rating: {
+          elo: 1211,
+          provisional: false
+        },
+        history: {
+          matches_played: 2,
+          wins: 1,
+          losses: 0,
+          draws: 1
+        },
+        treaty_reputation: {
+          summary: {
+            signed: 1,
+            active: 0,
+            honored: 1,
+            withdrawn: 0,
+            broken_by_self: 0,
+            broken_by_counterparty: 0
+          },
+          history: [
+            {
+              match_id: "match-alpha",
+              counterparty_display_name: "Arthur",
+              treaty_type: "trade",
+              status: "expired",
+              signed_tick: 141,
+              ended_tick: null,
+              broken_by_self: false
+            }
+          ]
+        }
+      })
+    });
+
+    await expect(
+      fetchPublicAgentProfile("agent-player-2", fetchImpl as unknown as typeof fetch)
+    ).rejects.toEqual(
+      new PublicAgentProfileError("Unable to load this agent profile right now.", "unavailable")
+    );
+  });
 });
 
 describe("fetchPublicHumanProfile", () => {
@@ -671,6 +761,27 @@ describe("fetchPublicHumanProfile", () => {
           wins: 1,
           losses: 0,
           draws: 0
+        },
+        treaty_reputation: {
+          summary: {
+            signed: 1,
+            active: 0,
+            honored: 1,
+            withdrawn: 0,
+            broken_by_self: 0,
+            broken_by_counterparty: 0
+          },
+          history: [
+            {
+              match_id: "match-completed",
+              counterparty_display_name: "Morgana",
+              treaty_type: "defensive",
+              status: "honored",
+              signed_tick: 125,
+              ended_tick: null,
+              broken_by_self: false
+            }
+          ]
         }
       })
     });
@@ -692,6 +803,27 @@ describe("fetchPublicHumanProfile", () => {
         wins: 1,
         losses: 0,
         draws: 0
+      },
+      treaty_reputation: {
+        summary: {
+          signed: 1,
+          active: 0,
+          honored: 1,
+          withdrawn: 0,
+          broken_by_self: 0,
+          broken_by_counterparty: 0
+        },
+        history: [
+          {
+            match_id: "match-completed",
+            counterparty_display_name: "Morgana",
+            treaty_type: "defensive",
+            status: "honored",
+            signed_tick: 125,
+            ended_tick: null,
+            broken_by_self: false
+          }
+        ]
       }
     });
   });

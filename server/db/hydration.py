@@ -131,6 +131,7 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
             player_rows=player_rows,
             api_key_rows=api_key_rows,
             settlement_rows=settlement_rows,
+            treaty_rows=treaty_rows,
         )
         authenticated_keys_by_match = load_authenticated_agent_keys_by_match(
             matches=matches,
@@ -243,6 +244,7 @@ def load_match_record_from_session(*, session: Session, match: Match) -> MatchRe
         player_rows=player_rows,
         api_key_rows=api_key_rows,
         settlement_rows=settlement_rows,
+        treaty_rows=treaty_rows,
     ).get(match_id, [])
     authenticated_agent_keys = load_authenticated_agent_keys_by_match(
         matches=[match],

@@ -534,6 +534,17 @@ def test_load_match_record_from_session_includes_user_backed_agent_settlement_hi
         "is_seeded": False,
         "rating": {"elo": 1144, "provisional": False},
         "history": {"matches_played": 1, "wins": 1, "losses": 0, "draws": 0},
+        "treaty_reputation": {
+            "summary": {
+                "signed": 0,
+                "active": 0,
+                "honored": 0,
+                "withdrawn": 0,
+                "broken_by_self": 0,
+                "broken_by_counterparty": 0,
+            },
+            "history": [],
+        },
     }
 
 
@@ -2722,6 +2733,39 @@ def test_get_human_profile_from_db_returns_settled_public_profile_without_agent_
     provision_seeded_database(database_url=database_url, reset=True)
     insert_completed_match_fixture(database_url)
 
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO treaties (
+                    id, match_id, player_a_id, player_b_id, treaty_type, status, signed_tick,
+                    broken_tick, created_at
+                ) VALUES (
+                    :id, :match_id, :player_a_id, :player_b_id, :treaty_type, :status,
+                    :signed_tick, :broken_tick, :created_at
+                )
+                """
+            ),
+            {
+                "id": "00000000-0000-0000-0000-000000000799",
+                "match_id": "00000000-0000-0000-0000-000000000201",
+                "player_a_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000201",
+                    public_player_id="player-1",
+                ),
+                "player_b_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000201",
+                    public_player_id="player-2",
+                ),
+                "treaty_type": "defensive",
+                "status": "active",
+                "signed_tick": 125,
+                "broken_tick": None,
+                "created_at": "2026-03-29 08:02:00+00:00",
+            },
+        )
+
     profile = get_human_profile_from_db(
         database_url=database_url,
         human_id="human:00000000-0000-0000-0000-000000000301",
@@ -2733,6 +2777,185 @@ def test_get_human_profile_from_db_returns_settled_public_profile_without_agent_
         "display_name": "Arthur",
         "rating": {"elo": 1234, "provisional": False},
         "history": {"matches_played": 1, "wins": 1, "losses": 0, "draws": 0},
+        "treaty_reputation": {
+            "summary": {
+                "signed": 2,
+                "active": 1,
+                "honored": 1,
+                "withdrawn": 0,
+                "broken_by_self": 0,
+                "broken_by_counterparty": 0,
+            },
+            "history": [
+                {
+                    "match_id": "00000000-0000-0000-0000-000000000201",
+                    "counterparty_display_name": "Morgana",
+                    "treaty_type": "defensive",
+                    "status": "honored",
+                    "signed_tick": 125,
+                    "ended_tick": None,
+                    "broken_by_self": False,
+                },
+                {
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "counterparty_display_name": "Gawain",
+                    "treaty_type": "trade",
+                    "status": "active",
+                    "signed_tick": 141,
+                    "ended_tick": None,
+                    "broken_by_self": False,
+                },
+            ],
+        },
+    }
+
+
+def test_get_agent_profile_from_db_aggregates_identity_relative_treaty_reputation(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-agent-treaty-profile.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO treaties (
+                    id, match_id, player_a_id, player_b_id, treaty_type, status, signed_tick,
+                    broken_tick, created_at
+                ) VALUES (
+                    :id, :match_id, :player_a_id, :player_b_id, :treaty_type, :status,
+                    :signed_tick, :broken_tick, :created_at
+                )
+                """
+            ),
+            [
+                {
+                    "id": "00000000-0000-0000-0000-000000000702",
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "player_a_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-2",
+                    ),
+                    "player_b_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-1",
+                    ),
+                    "treaty_type": "defensive",
+                    "status": "broken_by_a",
+                    "signed_tick": 150,
+                    "broken_tick": 151,
+                    "created_at": "2026-03-29 08:31:00+00:00",
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000703",
+                    "match_id": "00000000-0000-0000-0000-000000000101",
+                    "player_a_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-1",
+                    ),
+                    "player_b_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000101",
+                        public_player_id="player-2",
+                    ),
+                    "treaty_type": "non_aggression",
+                    "status": "broken_by_a",
+                    "signed_tick": 160,
+                    "broken_tick": 161,
+                    "created_at": "2026-03-29 08:32:00+00:00",
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000704",
+                    "match_id": "00000000-0000-0000-0000-000000000201",
+                    "player_a_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000201",
+                        public_player_id="player-2",
+                    ),
+                    "player_b_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000201",
+                        public_player_id="player-1",
+                    ),
+                    "treaty_type": "trade",
+                    "status": "withdrawn",
+                    "signed_tick": 130,
+                    "broken_tick": 133,
+                    "created_at": "2026-03-29 08:05:00+00:00",
+                },
+                {
+                    "id": "00000000-0000-0000-0000-000000000705",
+                    "match_id": "00000000-0000-0000-0000-000000000201",
+                    "player_a_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000201",
+                        public_player_id="player-2",
+                    ),
+                    "player_b_id": build_persisted_player_id(
+                        match_id="00000000-0000-0000-0000-000000000201",
+                        public_player_id="player-3",
+                    ),
+                    "treaty_type": "trade",
+                    "status": "active",
+                    "signed_tick": 140,
+                    "broken_tick": None,
+                    "created_at": "2026-03-29 08:10:00+00:00",
+                },
+            ],
+        )
+
+    profile = db_identity_hydration_module.get_agent_profile_from_db(
+        database_url=database_url,
+        agent_id="agent-player-2",
+    )
+
+    assert profile is not None
+    assert profile.treaty_reputation.model_dump(mode="json") == {
+        "summary": {
+            "signed": 4,
+            "active": 0,
+            "honored": 1,
+            "withdrawn": 1,
+            "broken_by_self": 1,
+            "broken_by_counterparty": 1,
+        },
+        "history": [
+            {
+                "match_id": "00000000-0000-0000-0000-000000000201",
+                "counterparty_display_name": "Arthur",
+                "treaty_type": "trade",
+                "status": "withdrawn",
+                "signed_tick": 130,
+                "ended_tick": 133,
+                "broken_by_self": False,
+            },
+            {
+                "match_id": "00000000-0000-0000-0000-000000000201",
+                "counterparty_display_name": "Gawain",
+                "treaty_type": "trade",
+                "status": "honored",
+                "signed_tick": 140,
+                "ended_tick": None,
+                "broken_by_self": False,
+            },
+            {
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "counterparty_display_name": "Arthur",
+                "treaty_type": "defensive",
+                "status": "broken_by_a",
+                "signed_tick": 150,
+                "ended_tick": 151,
+                "broken_by_self": True,
+            },
+            {
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "counterparty_display_name": "Arthur",
+                "treaty_type": "non_aggression",
+                "status": "broken_by_a",
+                "signed_tick": 160,
+                "ended_tick": 161,
+                "broken_by_self": False,
+            },
+        ],
     }
 
 

@@ -159,6 +159,17 @@ def test_running_app_serves_authenticated_current_agent_profile_from_db_registry
         "is_seeded": True,
         "rating": {"elo": 1211, "provisional": False},
         "history": {"matches_played": 2, "wins": 1, "losses": 0, "draws": 1},
+        "treaty_reputation": {
+            "summary": {
+                "signed": 0,
+                "active": 0,
+                "honored": 0,
+                "withdrawn": 0,
+                "broken_by_self": 0,
+                "broken_by_counterparty": 0,
+            },
+            "history": [],
+        },
     }
 
 
