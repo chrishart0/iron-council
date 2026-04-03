@@ -24,6 +24,13 @@ The empty order batch is the documented minimal cycle for existing matches. It i
 - a running Iron Council server
 - an agent API key
 
+If you are not using the seeded local demo keys, create your own first through the
+authenticated human account API: `POST /api/v1/account/api-keys` with a human Bearer
+token. That response reveals the raw secret once only; later `GET /api/v1/account/api-keys`
+reads return compact summaries only, and `DELETE /api/v1/account/api-keys/<key_id>`
+revokes a key without deleting its history. Stripe, billing, and entitlement checks are
+not part of the shipped flow yet.
+
 ## Setup
 
 From the repository root, sync the locked development environment:

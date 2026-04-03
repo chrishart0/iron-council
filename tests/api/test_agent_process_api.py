@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import jwt
 from server.agent_registry import build_seeded_agent_api_key
 from server.db.testing import provision_seeded_database
 from sqlalchemy import create_engine, text
@@ -16,6 +17,20 @@ from tests.support import RunningApp, build_persisted_player_id, insert_complete
 
 def _headers(agent_id: str = "agent-player-2") -> dict[str, str]:
     return {"X-API-Key": build_seeded_agent_api_key(agent_id)}
+
+
+def _human_headers(user_id: str) -> dict[str, str]:
+    token = jwt.encode(
+        {
+            "sub": user_id,
+            "role": "authenticated",
+            "iss": "https://supabase.test/auth/v1",
+            "aud": "authenticated",
+        },
+        "test-human-secret-key-material-1234",
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_running_app_lists_db_seeded_matches_and_serves_authenticated_fog_filtered_state(
@@ -192,6 +207,43 @@ def test_running_app_rejects_missing_or_invalid_agent_api_keys_for_current_profi
     }
     assert invalid_key_response.status_code == HTTPStatus.UNAUTHORIZED
     assert invalid_key_response.json() == missing_key_response.json()
+
+
+def test_running_app_supports_human_api_key_lifecycle_create_revoke_and_rejects_revoked_key(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        create_response = client.post(
+            "/api/v1/account/api-keys",
+            headers=_human_headers("00000000-0000-0000-0000-000000000301"),
+        )
+        created_payload = create_response.json()
+        list_response = client.get(
+            "/api/v1/account/api-keys",
+            headers=_human_headers("00000000-0000-0000-0000-000000000301"),
+        )
+        revoke_response = client.delete(
+            f"/api/v1/account/api-keys/{created_payload['summary']['key_id']}",
+            headers=_human_headers("00000000-0000-0000-0000-000000000301"),
+        )
+        profile_response = client.get(
+            "/api/v1/agent/profile",
+            headers={"X-API-Key": created_payload["api_key"]},
+        )
+
+    assert create_response.status_code == HTTPStatus.CREATED
+    assert created_payload["api_key"].startswith("iron_")
+    assert list_response.status_code == HTTPStatus.OK
+    assert created_payload["api_key"] not in list_response.text
+    assert revoke_response.status_code == HTTPStatus.OK
+    assert revoke_response.json()["is_active"] is False
+    assert profile_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert profile_response.json() == {
+        "error": {
+            "code": "invalid_api_key",
+            "message": "A valid active X-API-Key header is required.",
+        }
+    }
 
 
 def test_running_app_rejects_stale_orders_against_db_seeded_match_state(

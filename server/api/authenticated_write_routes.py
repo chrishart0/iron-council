@@ -8,12 +8,15 @@ from fastapi import APIRouter, Depends
 
 from server.agent_registry import InMemoryMatchRegistry, MatchJoinError
 from server.auth import hash_api_key
+from server.db.api_key_lifecycle import create_owned_api_key, revoke_owned_api_key
 from server.db.registry import join_match as join_db_match
 from server.models.api import (
     AuthenticatedOrderSubmissionRequest,
     MatchJoinRequest,
     MatchJoinResponse,
     OrderAcceptanceResponse,
+    OwnedApiKeyCreateResponse,
+    OwnedApiKeySummary,
 )
 from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
@@ -41,6 +44,66 @@ def build_authenticated_write_router(
     router = APIRouter()
     registry_dependency = Depends(match_registry_provider)
     history_database_url = app_services.history_database_url
+
+    @router.post(
+        "/account/api-keys",
+        response_model=OwnedApiKeyCreateResponse,
+        status_code=HTTPStatus.CREATED,
+        responses={
+            int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
+            int(HTTPStatus.SERVICE_UNAVAILABLE): API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def create_authenticated_human_api_key(
+        authorization: AuthorizationHeader = None,
+    ) -> OwnedApiKeyCreateResponse:
+        if history_database_url is None:
+            raise ApiError(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                code="api_key_lifecycle_unavailable",
+                message="Owned API key lifecycle routes are only available in DB-backed mode.",
+            )
+
+        user_id = app_services.require_authenticated_human_user_id(authorization=authorization)
+        raw_key, summary = create_owned_api_key(
+            database_url=history_database_url,
+            user_id=user_id,
+        )
+        return OwnedApiKeyCreateResponse(api_key=raw_key, summary=summary)
+
+    @router.delete(
+        "/account/api-keys/{key_id}",
+        response_model=OwnedApiKeySummary,
+        responses={
+            int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
+            int(HTTPStatus.NOT_FOUND): API_ERROR_RESPONSE_SCHEMA,
+            int(HTTPStatus.SERVICE_UNAVAILABLE): API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def revoke_authenticated_human_api_key(
+        key_id: str,
+        authorization: AuthorizationHeader = None,
+    ) -> OwnedApiKeySummary:
+        if history_database_url is None:
+            raise ApiError(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                code="api_key_lifecycle_unavailable",
+                message="Owned API key lifecycle routes are only available in DB-backed mode.",
+            )
+
+        user_id = app_services.require_authenticated_human_user_id(authorization=authorization)
+        summary = revoke_owned_api_key(
+            database_url=history_database_url,
+            user_id=user_id,
+            key_id=key_id,
+        )
+        if summary is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="api_key_not_found",
+                message=f"API key '{key_id}' was not found.",
+            )
+        return summary
 
     @router.post(
         "/matches/{match_id}/join",

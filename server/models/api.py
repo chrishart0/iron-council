@@ -243,6 +243,22 @@ class HumanProfileResponse(StrictModel):
     treaty_reputation: ProfileTreatyReputation = Field(default_factory=empty_treaty_reputation)
 
 
+class OwnedApiKeySummary(StrictModel):
+    key_id: str
+    elo_rating: int = Field(ge=0)
+    is_active: bool
+    created_at: datetime
+
+
+class OwnedApiKeyListResponse(StrictModel):
+    items: list[OwnedApiKeySummary] = Field(default_factory=list)
+
+
+class OwnedApiKeyCreateResponse(StrictModel):
+    api_key: str
+    summary: OwnedApiKeySummary
+
+
 class AuthenticatedAgentContext(StrictModel):
     agent_id: str
     display_name: str

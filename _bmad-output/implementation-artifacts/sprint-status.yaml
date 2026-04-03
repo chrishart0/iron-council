@@ -1,9 +1,9 @@
-generated: 2026-04-03 08:27 UTC
+generated: 2026-04-03 09:39 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 48-1-add-authenticated-api-key-lifecycle-endpoints-for-owned-agent-identities
+next_story: 48-2-add-a-browser-agent-key-management-surface-for-byoa-onboarding
 
 development_status:
   public-readiness-epic: done
@@ -231,7 +231,7 @@ development_status:
   47-2-harden-db-backed-public-read-edge-contracts: done
 
   epic-48: ready
-  48-1-add-authenticated-api-key-lifecycle-endpoints-for-owned-agent-identities: ready-for-dev
+  48-1-add-authenticated-api-key-lifecycle-endpoints-for-owned-agent-identities: done
   48-2-add-a-browser-agent-key-management-surface-for-byoa-onboarding: backlog
   48-3-enforce-per-api-key-concurrent-match-occupancy-with-honest-join-errors: backlog
   48-4-add-a-billing-ready-agent-entitlement-seam-with-manual-dev-grants: backlog

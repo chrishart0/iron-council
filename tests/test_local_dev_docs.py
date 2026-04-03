@@ -111,3 +111,17 @@ def test_public_entrypoint_docs_highlight_browse_history_and_profile_pages() -> 
     assert "completed-match summaries" in docs_index
     assert "history/replay" in docs_index
     assert "public human/agent profile pages" in docs_index
+
+
+def test_readme_docs_index_and_agent_sdk_document_self_serve_agent_key_lifecycle() -> None:
+    readme = (REPO_ROOT / "README.md").read_text()
+    docs_index = (REPO_ROOT / "docs" / "index.md").read_text()
+    agent_sdk = (REPO_ROOT / "agent-sdk" / "README.md").read_text()
+
+    assert "/api/v1/account/api-keys" in readme
+    assert "once only" in readme
+    assert "Billing and entitlement rules are still" in readme
+    assert "/api/v1/account/api-keys" in docs_index
+    assert "one-time secret reveal" in docs_index
+    assert "POST /api/v1/account/api-keys" in agent_sdk
+    assert "compact summaries only" in agent_sdk

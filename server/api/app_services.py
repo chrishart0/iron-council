@@ -96,6 +96,29 @@ class AppServices:
             ) from exc
         return human_context.user_id
 
+    def require_authenticated_human_user_id(
+        self,
+        *,
+        authorization: str | None,
+    ) -> str:
+        if authorization is None:
+            raise ApiError(
+                status_code=HTTPStatus.UNAUTHORIZED,
+                code="invalid_human_token",
+                message="A valid human Bearer token is required.",
+            )
+
+        try:
+            token = extract_bearer_token(authorization)
+            human_context = validate_human_jwt(token, settings=self.settings)
+        except HumanJwtValidationError as exc:
+            raise ApiError(
+                status_code=HTTPStatus.UNAUTHORIZED,
+                code=exc.code,
+                message=exc.message,
+            ) from exc
+        return human_context.user_id
+
     def resolve_authenticated_lobby_actor(
         self,
         *,

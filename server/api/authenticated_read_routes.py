@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 
 from server.agent_registry import InMemoryMatchRegistry
+from server.db.api_key_lifecycle import list_owned_api_keys
 from server.db.identity_hydration import get_agent_profile_from_db, get_human_profile_from_db
 from server.fog import project_agent_state
 from server.models.api import (
@@ -14,6 +15,7 @@ from server.models.api import (
     AgentProfileResponse,
     AuthenticatedAgentContext,
     HumanProfileResponse,
+    OwnedApiKeyListResponse,
 )
 from server.models.fog import AgentStateProjection
 
@@ -130,6 +132,32 @@ def build_authenticated_read_router(
                 message=f"Human '{human_id}' was not found.",
             )
         return profile
+
+    @router.get(
+        "/account/api-keys",
+        response_model=OwnedApiKeyListResponse,
+        responses={
+            int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
+            int(HTTPStatus.SERVICE_UNAVAILABLE): API_ERROR_RESPONSE_SCHEMA,
+        },
+    )
+    async def list_authenticated_human_api_keys(
+        authorization: AuthorizationHeader = None,
+    ) -> OwnedApiKeyListResponse:
+        if app_services.history_database_url is None:
+            raise ApiError(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                code="api_key_lifecycle_unavailable",
+                message="Owned API key lifecycle routes are only available in DB-backed mode.",
+            )
+
+        user_id = app_services.require_authenticated_human_user_id(authorization=authorization)
+        return OwnedApiKeyListResponse(
+            items=list_owned_api_keys(
+                database_url=app_services.history_database_url,
+                user_id=user_id,
+            )
+        )
 
     @router.get(
         "/matches/{match_id}/state",

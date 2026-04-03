@@ -1282,6 +1282,156 @@ async def test_db_backed_agent_profile_routes_return_finalized_settlement_result
 
 
 @pytest.mark.asyncio
+async def test_authenticated_human_api_key_lifecycle_can_list_owned_keys_without_echoing_raw_key_material(  # noqa: E501
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-key-list.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/api/v1/account/api-keys",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    assert payload == {
+        "items": [
+            {
+                "key_id": "00000000-0000-0000-0000-000000000202",
+                "elo_rating": 1211,
+                "is_active": True,
+                "created_at": "2026-03-29T00:00:00Z",
+            }
+        ]
+    }
+    assert "api_key" not in response.text
+    assert "key_hash" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_authenticated_human_api_key_lifecycle_can_create_and_revoke_owned_key_with_one_time_secret(  # noqa: E501
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-key-lifecycle.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+    human_headers = _auth_headers_for_human("00000000-0000-0000-0000-000000000301")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        create_response = await client.post("/api/v1/account/api-keys", headers=human_headers)
+        list_response = await client.get("/api/v1/account/api-keys", headers=human_headers)
+
+        created_payload = create_response.json()
+        revoke_response = await client.delete(
+            f"/api/v1/account/api-keys/{created_payload['summary']['key_id']}",
+            headers=human_headers,
+        )
+        revoked_profile_response = await client.get(
+            "/api/v1/agent/profile",
+            headers={"X-API-Key": created_payload["api_key"]},
+        )
+
+    assert create_response.status_code == HTTPStatus.CREATED
+    assert created_payload["api_key"].startswith("iron_")
+    assert created_payload["summary"]["elo_rating"] == 1210
+    assert created_payload["summary"]["is_active"] is True
+    assert "key_hash" not in str(created_payload)
+
+    assert list_response.status_code == HTTPStatus.OK
+    list_payload = list_response.json()
+    assert {
+        "key_id": created_payload["summary"]["key_id"],
+        "elo_rating": 1210,
+        "is_active": True,
+        "created_at": created_payload["summary"]["created_at"],
+    } in list_payload["items"]
+    assert created_payload["api_key"] not in list_response.text
+
+    assert revoke_response.status_code == HTTPStatus.OK
+    assert revoke_response.json() == {
+        "key_id": created_payload["summary"]["key_id"],
+        "elo_rating": 1210,
+        "is_active": False,
+        "created_at": created_payload["summary"]["created_at"],
+    }
+    assert revoked_profile_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert revoked_profile_response.json() == {
+        "error": {
+            "code": "invalid_api_key",
+            "message": "A valid active X-API-Key header is required.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_authenticated_human_api_key_lifecycle_routes_require_bearer_and_hide_other_users_keys(  # noqa: E501
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-key-lifecycle-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        missing_auth_response = await client.get("/api/v1/account/api-keys")
+        missing_owner_revoke_response = await client.delete(
+            "/api/v1/account/api-keys/00000000-0000-0000-0000-000000000202",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000301"),
+        )
+
+    assert missing_auth_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_auth_response.json() == {
+        "error": {
+            "code": "invalid_human_token",
+            "message": "A valid human Bearer token is required.",
+        }
+    }
+    assert missing_owner_revoke_response.status_code == HTTPStatus.NOT_FOUND
+    assert missing_owner_revoke_response.json() == {
+        "error": {
+            "code": "api_key_not_found",
+            "message": "API key '00000000-0000-0000-0000-000000000202' was not found.",
+        }
+    }
+
+
+@pytest.mark.asyncio
 async def test_public_leaderboard_and_completed_match_routes_return_structured_unavailable_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

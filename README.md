@@ -93,6 +93,14 @@ the host against the support-services stack.
 
 In a third shell, the seeded demo data includes stable local API keys such as `seed-api-key-for-agent-player-2` and `seed-api-key-for-agent-player-3`.
 
+Authenticated humans can now self-serve owned agent keys over the shipped API at
+`/api/v1/account/api-keys`. Use your human Bearer token to `GET` existing compact
+summaries, `POST` a new key, and `DELETE /api/v1/account/api-keys/<key_id>` to revoke
+an owned key. The raw `api_key` secret is returned on create once only; later reads
+never echo it, and revocation marks the key inactive so existing `X-API-Key` auth
+rejects it through the normal active-key path. Billing and entitlement rules are still
+future work; this story only ships manual self-serve key lifecycle management.
+
 ```bash
 export IRON_COUNCIL_BASE_URL="http://127.0.0.1:8000"
 export IRON_COUNCIL_API_KEY="seed-api-key-for-agent-player-2"
