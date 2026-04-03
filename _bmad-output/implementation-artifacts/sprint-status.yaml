@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 49-2-deliver-private-human-to-agent-guidance-through-the-briefing-path
+next_story: 49-3-add-pre-tick-human-override-semantics-for-guided-agents
 
 development_status:
   public-readiness-epic: done
@@ -239,7 +239,7 @@ development_status:
 
   epic-49: in-progress
   49-1-add-an-owned-agent-guided-session-read-model: done
-  49-2-deliver-private-human-to-agent-guidance-through-the-briefing-path: in-progress
+  49-2-deliver-private-human-to-agent-guidance-through-the-briefing-path: done
   49-3-add-pre-tick-human-override-semantics-for-guided-agents: backlog
   49-4-add-guided-agent-controls-to-the-live-web-client: backlog
   epic-49-retrospective: optional

@@ -1,6 +1,6 @@
 # Story 49.2: Deliver private human-to-agent guidance through the briefing path
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -20,10 +20,10 @@ So that guided play can influence behavior without impersonating public game mes
 
 ## Tasks / Subtasks
 
-- [ ] Add a small typed guidance contract and persistence/read seams so private owner-to-agent guidance is stored separately from public/direct/group chat traffic.
-- [ ] Add a human-authenticated owned-agent guidance write route that enforces ownership, match membership, and deterministic tick semantics without widening access.
-- [ ] Extend the agent briefing contract, SDK types, and focused smoke/contract coverage so new guidance appears in a dedicated field while the empty-state response remains additive and stable.
-- [ ] Re-run focused verification plus the repo quality gate, then update BMAD closeout artifacts with the real final commands and outcomes.
+- [x] Add a small typed guidance contract and persistence/read seams so private owner-to-agent guidance is stored separately from public/direct/group chat traffic.
+- [x] Add a human-authenticated owned-agent guidance write route that enforces ownership, match membership, and deterministic tick semantics without widening access.
+- [x] Extend the agent briefing contract, SDK types, and focused smoke/contract coverage so new guidance appears in a dedicated field while the empty-state response remains additive and stable.
+- [x] Re-run focused verification plus the repo quality gate, then update BMAD closeout artifacts with the real final commands and outcomes.
 
 ## Dev Notes
 
@@ -45,21 +45,27 @@ So that guided play can influence behavior without impersonating public game mes
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
+- [x] Engineering / Architecture
 - [ ] Product Owner
 
 ## Change Log
 
 - 2026-04-03: Drafted Story 49.2 to add private guided-agent whispers as a dedicated briefing surface after Story 49.1 established owned-agent guided-session reads.
+- 2026-04-03: Added focused route-level regression coverage for owned-agent guidance fallback/error branches and re-ran the full repository quality gate to restore Python coverage above the 95.00% requirement.
 
 ## Debug Log References
 
-- Pending implementation.
+- `source .venv/bin/activate && pytest tests/api/test_agent_api.py -k 'guidance_write_returns_not_found_mismatch_and_unavailable_errors or keeps_guidance_empty_when_agent_owner_cannot_be_resolved_from_db or support_db_url_fallback_without_session_factory' --no-cov`
+- `source .venv/bin/activate && make quality`
 
 ## Completion Notes
 
-- Pending implementation.
+- Added focused public-boundary API tests for Story 49.2 guidance behavior without changing production code.
+- Covered briefing empty-guidance fallback when owner lookup cannot resolve DB guidance for an authenticated agent.
+- Covered owned-agent guidance write error contracts for DB-unavailable, missing-match, and route/payload match-id mismatch branches.
+- Covered the DB-backed URL fallback path without a session factory by exercising owned-agent guidance write/read flows through the authenticated access router.
+- `make quality` passed end to end; Python coverage finished at 95.13%.
 
 ## File List
 
-- Pending implementation.
+- `tests/api/test_agent_api.py`

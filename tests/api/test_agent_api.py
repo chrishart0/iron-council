@@ -19,7 +19,12 @@ from server.agent_registry import (
     build_seeded_agent_api_key,
     build_seeded_match_records,
 )
-from server.api import AppServices, build_authenticated_match_router, register_error_handlers
+from server.api import (
+    AppServices,
+    build_authenticated_access_router,
+    build_authenticated_match_router,
+    register_error_handlers,
+)
 from server.auth import hash_api_key
 from server.db import tick_persistence as db_tick_persistence_module
 from server.db.identity import build_non_seeded_display_name
@@ -39,6 +44,7 @@ from server.models.orders import OrderEnvelope
 from server.settings import get_settings
 from server.websocket import MatchWebSocketManager, build_match_realtime_envelope
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
 from starlette.websockets import WebSocketDisconnect
 from tests.support import (
     build_persisted_player_id,
@@ -253,6 +259,51 @@ def _human_jwt_token(
 
 def _auth_headers_for_human(user_id: str, *, role: str = "authenticated") -> dict[str, str]:
     return {"Authorization": f"Bearer {_human_jwt_token(user_id=user_id, role=role)}"}
+
+
+def _build_authenticated_access_test_app(
+    *,
+    registry: InMemoryMatchRegistry,
+    history_database_url: str | None,
+    include_session_factory: bool,
+) -> FastAPI:
+    settings = get_settings(
+        env={
+            "DATABASE_URL": history_database_url or "sqlite+pysqlite:///unused-test.db",
+            "IRON_COUNCIL_MATCH_REGISTRY_BACKEND": "db" if history_database_url else "memory",
+            "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+            "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+            "HUMAN_JWT_AUDIENCE": "authenticated",
+            "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+        }
+    )
+    engine = create_engine(history_database_url) if history_database_url is not None else None
+    app_services = AppServices(
+        settings=settings,
+        history_database_url=history_database_url,
+        history_db_session_factory=(
+            sessionmaker(engine, class_=Session)
+            if include_session_factory and engine is not None
+            else None
+        ),
+    )
+    app = FastAPI()
+    register_error_handlers(app)
+
+    async def ensure_match_running(match_id: str) -> None:
+        del match_id
+
+    def get_registry() -> InMemoryMatchRegistry:
+        return registry
+
+    app.include_router(
+        build_authenticated_access_router(
+            match_registry_provider=get_registry,
+            app_services=app_services,
+            ensure_match_running=ensure_match_running,
+        )
+    )
+    return app
 
 
 def _empty_treaty_reputation_payload() -> dict[str, Any]:
@@ -2345,6 +2396,86 @@ async def test_owned_agent_guidance_write_enforces_auth_ownership_match_and_tick
 
 
 @pytest.mark.asyncio
+async def test_owned_agent_guidance_write_returns_not_found_mismatch_and_unavailable_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'owned-agent-guidance-write-route-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    db_app = create_app()
+    memory_app = create_app(
+        match_registry=seeded_registry,
+        settings_override={
+            "IRON_COUNCIL_MATCH_REGISTRY_BACKEND": "memory",
+            "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+            "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+            "HUMAN_JWT_AUDIENCE": "authenticated",
+            "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+        },
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=db_app),
+        base_url="http://testserver",
+    ) as client:
+        missing_match_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-00000000ffff/agents/agent-player-2/guidance",
+            json=_owned_agent_guidance_payload(
+                match_id="00000000-0000-0000-0000-00000000ffff",
+            ),
+        )
+        mismatch_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/guidance",
+            json=_owned_agent_guidance_payload(
+                match_id="00000000-0000-0000-0000-000000000102",
+            ),
+        )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=memory_app),
+        base_url="http://testserver",
+    ) as client:
+        unavailable_response = await client.post(
+            "/api/v1/matches/match-alpha/agents/agent-player-2/guidance",
+            json=_owned_agent_guidance_payload(match_id="match-alpha"),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert missing_match_response.status_code == HTTPStatus.NOT_FOUND
+    assert missing_match_response.json() == {
+        "error": {
+            "code": "match_not_found",
+            "message": "Match '00000000-0000-0000-0000-00000000ffff' was not found.",
+        }
+    }
+    assert mismatch_response.status_code == HTTPStatus.BAD_REQUEST
+    assert mismatch_response.json() == {
+        "error": {
+            "code": "match_id_mismatch",
+            "message": (
+                "Guidance payload match_id '00000000-0000-0000-0000-000000000102' does "
+                "not match route match '00000000-0000-0000-0000-000000000101'."
+            ),
+        }
+    }
+    assert unavailable_response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert unavailable_response.json() == {
+        "error": {
+            "code": "guided_session_unavailable",
+            "message": "Owned agent guidance writes are only available in DB-backed mode.",
+        }
+    }
+
+
+@pytest.mark.asyncio
 async def test_submit_orders_accepts_human_bearer_auth_from_public_boundary(
     app_client: AsyncClient,
     seeded_registry: InMemoryMatchRegistry,
@@ -4088,6 +4219,71 @@ async def test_agent_briefing_returns_owned_guidance_separately_from_message_buc
     assert _briefing_message_contents(payload, "direct") == []
     assert _briefing_message_contents(payload, "group") == []
     assert _briefing_message_contents(payload, "world") == []
+
+
+@pytest.mark.asyncio
+async def test_agent_briefing_keeps_guidance_empty_when_agent_owner_cannot_be_resolved_from_db(
+    tmp_path: Path,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-briefing-no-owner-guidance.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    app = _build_authenticated_access_test_app(
+        registry=seeded_registry,
+        history_database_url=database_url,
+        include_session_factory=False,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        briefing_read = await client.get(
+            "/api/v1/matches/match-alpha/agent-briefing?since_tick=142",
+            headers=_auth_headers_for_player("player-1"),
+        )
+
+    assert briefing_read.status_code == HTTPStatus.OK
+    assert briefing_read.json()["guidance"] == []
+
+
+@pytest.mark.asyncio
+async def test_owned_agent_routes_support_db_url_fallback_without_session_factory(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'owned-agent-db-url-fallback.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    registry = load_match_registry_from_database(database_url)
+    app = _build_authenticated_access_test_app(
+        registry=registry,
+        history_database_url=database_url,
+        include_session_factory=False,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        guidance_write = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/guidance",
+            json=_owned_agent_guidance_payload(
+                match_id="00000000-0000-0000-0000-000000000101",
+                tick=142,
+                content="Fallback session factory path still persists owner guidance.",
+            ),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+        briefing_read = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agent-briefing?since_tick=142",
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+    assert guidance_write.status_code == HTTPStatus.ACCEPTED
+    assert guidance_write.json()["player_id"] == "player-2"
+    assert briefing_read.status_code == HTTPStatus.OK
+    assert _briefing_guidance_contents(briefing_read.json()) == [
+        "Fallback session factory path still persists owner guidance."
+    ]
 
 
 @pytest.mark.asyncio
