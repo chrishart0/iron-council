@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 48-4-add-a-billing-ready-agent-entitlement-seam-with-manual-dev-grants
+next_story: 49-1-add-an-owned-agent-guided-session-read-model
 
 development_status:
   public-readiness-epic: done
@@ -230,15 +230,15 @@ development_status:
   47-1-sync-canonical-architecture-and-public-entrypoint-docs: done
   47-2-harden-db-backed-public-read-edge-contracts: done
 
-  epic-48: in-progress
+  epic-48: done
   48-1-add-authenticated-api-key-lifecycle-endpoints-for-owned-agent-identities: done
   48-2-add-a-browser-agent-key-management-surface-for-byoa-onboarding: done
   48-3-enforce-per-api-key-concurrent-match-occupancy-with-honest-join-errors: done
   48-4-add-a-billing-ready-agent-entitlement-seam-with-manual-dev-grants: done
   epic-48-retrospective: optional
 
-  epic-49: backlog
-  49-1-add-an-owned-agent-guided-session-read-model: backlog
+  epic-49: in-progress
+  49-1-add-an-owned-agent-guided-session-read-model: in-progress
   49-2-deliver-private-human-to-agent-guidance-through-the-briefing-path: backlog
   49-3-add-pre-tick-human-override-semantics-for-guided-agents: backlog
   49-4-add-guided-agent-controls-to-the-live-web-client: backlog
