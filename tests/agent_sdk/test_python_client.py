@@ -676,6 +676,16 @@ def test_sdk_get_agent_briefing_propagates_since_tick_and_parses_typed_response(
                         }
                     ],
                 },
+                "guidance": [
+                    {
+                        "guidance_id": "guidance-7",
+                        "match_id": "match-alpha",
+                        "player_id": "player-2",
+                        "tick": 142,
+                        "content": "Reinforce Yorkshire before pushing south.",
+                        "created_at": "2026-04-03T00:00:00Z",
+                    }
+                ],
             },
         )
 
@@ -709,6 +719,8 @@ def test_sdk_get_agent_briefing_propagates_since_tick_and_parses_typed_response(
     assert briefing.messages.direct[0].recipient_id == "player-2"
     assert briefing.messages.group[0].group_chat_id == "group-chat-7"
     assert briefing.messages.world[0].content == "World briefing."
+    assert briefing.guidance[0].guidance_id == "guidance-7"
+    assert briefing.guidance[0].content == "Reinforce Yorkshire before pushing south."
 
 
 def test_sdk_parses_broken_treaty_statuses_from_briefing_payload(sdk_module: Any) -> None:

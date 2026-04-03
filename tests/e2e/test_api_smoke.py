@@ -1129,6 +1129,15 @@ def test_agent_briefing_smoke_flow_runs_through_real_process(
     running_seeded_app: RunningApp,
 ) -> None:
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        guidance_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/agents/agent-player-2/guidance",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "content": "Smoke guidance hold the north while the fleet probes east.",
+            },
+            headers=_human_headers("00000000-0000-0000-0000-000000000302"),
+        )
         create_group_chat_response = client.post(
             f"/api/v1/matches/{running_seeded_app.primary_match_id}/group-chats",
             json={
@@ -1185,6 +1194,7 @@ def test_agent_briefing_smoke_flow_runs_through_real_process(
             headers=_headers(),
         )
 
+    assert guidance_response.status_code == HTTPStatus.ACCEPTED
     assert create_group_chat_response.status_code == HTTPStatus.ACCEPTED
     assert group_message_response.status_code == HTTPStatus.ACCEPTED
     assert treaty_response.status_code == HTTPStatus.ACCEPTED
@@ -1203,6 +1213,9 @@ def test_agent_briefing_smoke_flow_runs_through_real_process(
     ]
     assert [message["content"] for message in briefing_response.json()["messages"]["world"]] == [
         "Smoke world briefing."
+    ]
+    assert [item["content"] for item in briefing_response.json()["guidance"]] == [
+        "Smoke guidance hold the north while the fleet probes east."
     ]
 
 

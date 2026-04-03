@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 from enum import IntEnum, StrEnum
 from http import HTTPStatus
 from typing import Annotated, Any, Literal, Protocol, Self, TypeVar
@@ -487,6 +488,15 @@ class AgentBriefingMessageBuckets(StrictModel):
     world: list[MatchMessageRecord] = Field(default_factory=list)
 
 
+class AgentBriefingGuidanceRecord(StrictModel):
+    guidance_id: str
+    match_id: str
+    player_id: str
+    tick: TickDuration
+    content: str
+    created_at: datetime
+
+
 class AgentBriefingResponse(StrictModel):
     match_id: str
     player_id: str
@@ -495,6 +505,7 @@ class AgentBriefingResponse(StrictModel):
     treaties: list[TreatyRecord] = Field(default_factory=list)
     group_chats: list[GroupChatRecord] = Field(default_factory=list)
     messages: AgentBriefingMessageBuckets
+    guidance: list[AgentBriefingGuidanceRecord] = Field(default_factory=list)
 
 
 class SyncRequestSession(Protocol):

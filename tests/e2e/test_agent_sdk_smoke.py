@@ -3,14 +3,35 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import httpx
+import jwt
 from server.agent_registry import build_seeded_agent_api_key
 from tests.support import (
     RunningApp,
     insert_api_key_with_manual_entitlement,
     load_python_agent_sdk_module,
 )
+
+
+def _human_jwt_token(user_id: str) -> str:
+    return jwt.encode(
+        {
+            "sub": user_id,
+            "role": "authenticated",
+            "iss": "https://supabase.test/auth/v1",
+            "aud": "authenticated",
+            "exp": datetime.now(tz=UTC) + timedelta(minutes=5),
+        },
+        "test-human-secret-key-material-1234",
+        algorithm="HS256",
+    )
+
+
+def _human_headers(user_id: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {_human_jwt_token(user_id)}"}
 
 
 def test_agent_sdk_smoke_flow_runs_through_real_process(
@@ -97,6 +118,17 @@ def test_agent_sdk_briefing_smoke_flow_runs_through_real_process(
         api_key=build_seeded_agent_api_key("agent-player-3"),
     )
 
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        guidance_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/agents/agent-player-2/guidance",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "content": "SDK guidance fortify the center before any coastal raid.",
+            },
+            headers=_human_headers("00000000-0000-0000-0000-000000000302"),
+        )
+
     sender_client.send_message(
         running_seeded_app.primary_match_id,
         tick=142,
@@ -109,11 +141,15 @@ def test_agent_sdk_briefing_smoke_flow_runs_through_real_process(
         since_tick=142,
     )
 
+    assert guidance_response.status_code == 202
     assert briefing.match_id == running_seeded_app.primary_match_id
     assert briefing.player_id == "player-2"
     assert briefing.state.player_id == "player-2"
     assert briefing.alliances[0].alliance_id == "alliance-red"
     assert briefing.messages.direct[0].content == "SDK briefing direct."
+    assert (
+        briefing.guidance[0].content == "SDK guidance fortify the center before any coastal raid."
+    )
 
 
 def test_agent_sdk_lobby_lifecycle_smoke_flow_runs_through_real_process(

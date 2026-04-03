@@ -516,6 +516,15 @@ class AgentBriefingMessageBuckets(StrictModel):
     world: list[MatchMessageRecord] = Field(default_factory=list)
 
 
+class AgentBriefingGuidanceRecord(StrictModel):
+    guidance_id: str
+    match_id: str
+    player_id: str
+    tick: TickDuration
+    content: str
+    created_at: datetime
+
+
 class AgentBriefingResponse(StrictModel):
     match_id: str
     player_id: str
@@ -524,6 +533,7 @@ class AgentBriefingResponse(StrictModel):
     treaties: list[TreatyRecord] = Field(default_factory=list)
     group_chats: list[GroupChatRecord] = Field(default_factory=list)
     messages: AgentBriefingMessageBuckets
+    guidance: list[AgentBriefingGuidanceRecord] = Field(default_factory=list)
 
 
 class OwnedAgentGuidedSessionRecentActivity(StrictModel):

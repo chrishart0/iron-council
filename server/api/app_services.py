@@ -12,11 +12,13 @@ from server.agent_registry import InMemoryMatchRegistry, MatchAccessError
 from server.auth import (
     HumanJwtValidationError,
     extract_bearer_token,
+    hash_api_key,
     validate_human_jwt,
 )
 from server.db.identity import (
     resolve_authenticated_agent_context,
     resolve_authenticated_agent_context_from_db,
+    resolve_authenticated_agent_from_db_key_hash,
     resolve_human_player_id,
     resolve_human_player_id_from_db,
     resolve_owned_agent_context,
@@ -226,6 +228,42 @@ class AppServices:
                 message=f"Agent '{agent_id}' has not joined match '{match_id}' as a player.",
             )
         return persisted_player_id
+
+    def require_persisted_match_player_id(
+        self,
+        *,
+        match_id: str,
+        canonical_player_id: str,
+        agent_id: str,
+    ) -> str:
+        return self._require_persisted_match_player_id(
+            match_id=match_id,
+            canonical_player_id=canonical_player_id,
+            agent_id=agent_id,
+        )
+
+    def resolve_authenticated_agent_owner_user_id(self, *, api_key: str | None) -> str | None:
+        if api_key is None:
+            return None
+
+        resolved_agent = None
+        if self.history_db_session_factory is not None:
+            with self.history_db_session_factory() as session:
+                resolved_agent = resolve_authenticated_agent_from_db_key_hash(
+                    session=session,
+                    key_hash=hash_api_key(api_key),
+                )
+        elif self.history_database_url is not None:
+            engine = create_engine(self.history_database_url)
+            with Session(engine) as session:
+                resolved_agent = resolve_authenticated_agent_from_db_key_hash(
+                    session=session,
+                    key_hash=hash_api_key(api_key),
+                )
+
+        if resolved_agent is None:
+            return None
+        return resolved_agent.user_id
 
     def resolve_authenticated_lobby_actor(
         self,

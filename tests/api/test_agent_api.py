@@ -214,6 +214,10 @@ def _briefing_message_contents(payload: dict[str, Any], bucket: str) -> list[str
     return [message["content"] for message in payload["messages"][bucket]]
 
 
+def _briefing_guidance_contents(payload: dict[str, Any]) -> list[str]:
+    return [guidance["content"] for guidance in payload["guidance"]]
+
+
 def _agent_id_for_player(player_id: str) -> str:
     return f"agent-{player_id}"
 
@@ -4036,6 +4040,54 @@ async def test_agent_briefing_returns_current_state_and_incremental_message_and_
         "Fresh world intel.",
         "Treaty signed: player-2 and player-3 entered a trade treaty.",
     ]
+    assert payload["guidance"] == []
+
+
+@pytest.mark.asyncio
+async def test_agent_briefing_returns_owned_guidance_separately_from_message_buckets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-briefing-guidance.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        guidance_write = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/guidance",
+            json=_owned_agent_guidance_payload(
+                match_id="00000000-0000-0000-0000-000000000101",
+                tick=142,
+                content="Guard Edinburgh while the southern army rotates west.",
+            ),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+        briefing_read = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agent-briefing?since_tick=142",
+            headers=_auth_headers_for_player("player-2"),
+        )
+
+    assert guidance_write.status_code == HTTPStatus.ACCEPTED
+    assert briefing_read.status_code == HTTPStatus.OK
+    payload = briefing_read.json()
+    assert _briefing_guidance_contents(payload) == [
+        "Guard Edinburgh while the southern army rotates west."
+    ]
+    assert payload["guidance"][0]["tick"] == 142
+    assert payload["guidance"][0]["created_at"]
+    assert _briefing_message_contents(payload, "direct") == []
+    assert _briefing_message_contents(payload, "group") == []
+    assert _briefing_message_contents(payload, "world") == []
 
 
 @pytest.mark.asyncio

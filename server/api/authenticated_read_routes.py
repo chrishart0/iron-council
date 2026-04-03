@@ -9,9 +9,11 @@ from fastapi import APIRouter, Depends, Query
 from server.agent_registry import InMemoryMatchRegistry
 from server.agent_registry_commands import combine_submissions_by_player
 from server.db.api_key_lifecycle import list_owned_api_keys
+from server.db.guidance import list_owned_agent_guidance
 from server.db.identity_hydration import get_agent_profile_from_db, get_human_profile_from_db
 from server.fog import project_agent_state
 from server.models.api import (
+    AgentBriefingGuidanceRecord,
     AgentBriefingResponse,
     AgentProfileResponse,
     AllianceRecord,
@@ -230,6 +232,7 @@ def build_authenticated_read_router(
         match_id: str,
         authenticated_agent: AuthenticatedAgentContext = authenticated_agent_dependency,
         registry: InMemoryMatchRegistry = registry_dependency,
+        api_key: ApiKeyHeader = None,
         since_tick: Annotated[int | None, Query(ge=0)] = None,
     ) -> AgentBriefingResponse:
         record = registry.get_match(match_id)
@@ -244,6 +247,31 @@ def build_authenticated_read_router(
             match_id=match_id,
             authenticated_agent=authenticated_agent,
         )
+        guidance: list[AgentBriefingGuidanceRecord] = []
+        owner_user_id = app_services.resolve_authenticated_agent_owner_user_id(api_key=api_key)
+        if owner_user_id is not None and app_services.history_database_url is not None:
+            persisted_player_id = app_services.require_persisted_match_player_id(
+                match_id=match_id,
+                canonical_player_id=resolved_player_id,
+                agent_id=authenticated_agent.agent_id,
+            )
+            guidance = [
+                AgentBriefingGuidanceRecord(
+                    guidance_id=entry.id,
+                    match_id=entry.match_id,
+                    player_id=resolved_player_id,
+                    tick=entry.tick,
+                    content=entry.content,
+                    created_at=entry.created_at,
+                )
+                for entry in list_owned_agent_guidance(
+                    database_url=app_services.history_database_url,
+                    match_id=match_id,
+                    owner_user_id=owner_user_id,
+                    agent_player_id=persisted_player_id,
+                )
+                if since_tick is None or entry.tick >= since_tick
+            ]
         return AgentBriefingResponse(
             match_id=match_id,
             player_id=resolved_player_id,
@@ -263,6 +291,7 @@ def build_authenticated_read_router(
                 player_id=resolved_player_id,
                 since_tick=since_tick,
             ),
+            guidance=guidance,
         )
 
     @router.get(
