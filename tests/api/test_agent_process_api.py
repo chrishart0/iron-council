@@ -209,6 +209,71 @@ def test_running_app_rejects_missing_or_invalid_agent_api_keys_for_current_profi
     assert invalid_key_response.json() == missing_key_response.json()
 
 
+def test_running_app_recomputes_api_key_occupancy_after_match_completion(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        create_response = client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_human_headers("00000000-0000-0000-0000-000000000304"),
+        )
+        created_payload = create_response.json()
+        blocked_join_response = client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json={"match_id": created_payload["match_id"]},
+            headers=_headers("agent-player-2"),
+        )
+
+    engine = create_engine(running_seeded_app.database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE matches
+                SET status = 'completed'
+                WHERE id = :match_id
+                """
+            ),
+            {"match_id": running_seeded_app.primary_match_id},
+        )
+
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        recovered_join_response = client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json={"match_id": created_payload["match_id"]},
+            headers=_headers("agent-player-2"),
+        )
+        state_response = client.get(
+            f"/api/v1/matches/{created_payload['match_id']}/state",
+            headers=_headers("agent-player-2"),
+        )
+
+    assert create_response.status_code == HTTPStatus.CREATED
+    assert blocked_join_response.status_code == HTTPStatus.CONFLICT
+    assert blocked_join_response.json() == {
+        "error": {
+            "code": "api_key_match_occupancy_limit_reached",
+            "message": "API key already occupies the maximum number of lobby or active matches.",
+        }
+    }
+    assert recovered_join_response.status_code == HTTPStatus.ACCEPTED
+    assert recovered_join_response.json() == {
+        "status": "accepted",
+        "match_id": created_payload["match_id"],
+        "agent_id": "agent-player-2",
+        "player_id": "player-2",
+    }
+    assert state_response.status_code == HTTPStatus.OK
+    assert state_response.json()["player_id"] == "player-2"
+
+
 def test_running_app_supports_human_api_key_lifecycle_create_revoke_and_rejects_revoked_key(
     running_seeded_app: RunningApp,
 ) -> None:

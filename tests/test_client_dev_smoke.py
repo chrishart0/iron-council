@@ -5,9 +5,12 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CLIENT_ROOT = REPO_ROOT / "client"
 NEXT_ENV = CLIENT_ROOT / "next-env.d.ts"
+NEXT_BIN = CLIENT_ROOT / "node_modules/next/dist/bin/next"
 WORKSPACE_WARNING = "inferred your workspace root"
 EXPECTED_NEXT_ENV_IMPORT = 'import "./.next/types/routes.d.ts";'
 
@@ -58,12 +61,13 @@ def _collect_dev_output(port: int) -> str:
 
             time.sleep(0.1)
     finally:
-        os.killpg(process.pid, signal.SIGINT)
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=10)
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGINT)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=10)
 
     output = "".join(lines)
     if process.returncode not in (0, None, 130, -2):
@@ -73,6 +77,9 @@ def _collect_dev_output(port: int) -> str:
 
 
 def test_next_dev_uses_client_workspace_without_warning_or_generated_type_drift() -> None:
+    if not NEXT_BIN.exists():
+        pytest.skip("client Next.js dependencies are not installed in this worktree")
+
     before = _read_next_env()
     assert EXPECTED_NEXT_ENV_IMPORT in before
 

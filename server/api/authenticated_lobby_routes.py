@@ -52,6 +52,7 @@ def build_authenticated_lobby_router(
         status_code=HTTPStatus.CREATED,
         responses=_authenticated_lobby_route_responses(
             HTTPStatus.BAD_REQUEST,
+            HTTPStatus.CONFLICT,
             HTTPStatus.SERVICE_UNAVAILABLE,
         ),
     )
@@ -100,12 +101,13 @@ def build_authenticated_lobby_router(
                 request=create_request,
             )
         except MatchLobbyCreationError as exc:
+            status_code = HTTPStatus.BAD_REQUEST
+            if exc.code in {"invalid_api_key", "invalid_player_auth"}:
+                status_code = HTTPStatus.UNAUTHORIZED
+            elif exc.code == "api_key_match_occupancy_limit_reached":
+                status_code = HTTPStatus.CONFLICT
             raise ApiError(
-                status_code=(
-                    HTTPStatus.UNAUTHORIZED
-                    if exc.code in {"invalid_api_key", "invalid_player_auth"}
-                    else HTTPStatus.BAD_REQUEST
-                ),
+                status_code=status_code,
                 code=exc.code,
                 message=exc.message,
             ) from exc

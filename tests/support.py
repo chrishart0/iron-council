@@ -6,6 +6,7 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import ModuleType
 
+from server.auth import hash_api_key
 from server.db import registry as db_registry_module
 from sqlalchemy import create_engine, text
 
@@ -125,6 +126,37 @@ def insert_seeded_human_player(
                 "alliance_id": None,
                 "alliance_joined_tick": None,
                 "eliminated_at": None,
+            },
+        )
+
+
+def insert_api_key(
+    *,
+    database_url: str,
+    api_key_id: str,
+    user_id: str,
+    raw_api_key: str,
+    elo_rating: int,
+    is_active: bool = True,
+) -> None:
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO api_keys (
+                    id, user_id, key_hash, elo_rating, is_active, created_at
+                ) VALUES (
+                    :id, :user_id, :key_hash, :elo_rating, :is_active, CURRENT_TIMESTAMP
+                )
+                """
+            ),
+            {
+                "id": api_key_id,
+                "user_id": user_id,
+                "key_hash": hash_api_key(raw_api_key),
+                "elo_rating": elo_rating,
+                "is_active": is_active,
             },
         )
 

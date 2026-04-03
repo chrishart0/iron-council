@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from server.agent_registry import build_seeded_profiles_by_key_hash
@@ -11,7 +11,10 @@ from server.db.models import ApiKey, Match, Player
 from server.db.player_ids import build_human_actor_id, build_persisted_player_mapping
 from server.db.rating_settlement import latest_human_settled_elo
 from server.models.api import AgentProfileResponse, AuthenticatedAgentContext
+from server.models.domain import MatchStatus
 from server.models.state import MatchState
+
+MAX_CONCURRENT_MATCH_OCCUPANCY_PER_API_KEY = 1
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,30 @@ class ResolvedAuthenticatedDbAgent:
     user_id: str
     elo_rating: int
     key_hash: str
+
+
+def count_active_match_occupancy_for_api_key(*, session: Session, api_key_id: str) -> int:
+    occupancy = session.scalar(
+        select(func.count(func.distinct(Match.id)))
+        .select_from(Player)
+        .join(Match, Match.id == Player.match_id)
+        .where(Player.api_key_id == api_key_id)
+        .where(Player.is_agent.is_(True))
+        .where(Match.status.in_((MatchStatus.LOBBY.value, MatchStatus.ACTIVE.value)))
+    )
+    return int(occupancy or 0)
+
+
+def api_key_has_match_occupancy_capacity(
+    *,
+    session: Session,
+    api_key_id: str,
+    occupancy_limit: int = MAX_CONCURRENT_MATCH_OCCUPANCY_PER_API_KEY,
+) -> bool:
+    return (
+        count_active_match_occupancy_for_api_key(session=session, api_key_id=api_key_id)
+        < occupancy_limit
+    )
 
 
 def resolve_human_display_name(*, session: Session, user_id: str) -> str:
@@ -186,11 +213,14 @@ def parse_human_actor_id(human_id: str) -> str | None:
 
 __all__ = [
     "LoadedAgentIdentity",
+    "MAX_CONCURRENT_MATCH_OCCUPANCY_PER_API_KEY",
     "ResolvedAuthenticatedDbAgent",
+    "api_key_has_match_occupancy_capacity",
     "build_human_actor_id",
     "build_non_seeded_agent_id",
     "build_non_seeded_display_name",
     "build_user_backed_agent_id",
+    "count_active_match_occupancy_for_api_key",
     "parse_human_actor_id",
     "resolve_authenticated_agent_context_from_db",
     "resolve_authenticated_agent_from_db_key_hash",

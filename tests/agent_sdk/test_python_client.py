@@ -17,7 +17,7 @@ from server.agent_registry import (
     build_seeded_match_records,
 )
 from server.main import create_app
-from tests.support import load_python_agent_sdk_module
+from tests.support import insert_api_key, load_python_agent_sdk_module
 
 
 def _message_payload(
@@ -167,6 +167,14 @@ def test_sdk_create_match_lobby_returns_typed_authenticated_contract(
     from server.db.testing import provision_seeded_database
 
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key = "sdk-fresh-creator-key"
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="11111111-1111-1111-1111-111111111111",
+        user_id="11111111-1111-1111-1111-111111111301",
+        raw_api_key=creator_api_key,
+        elo_rating=1111,
+    )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -174,7 +182,7 @@ def test_sdk_create_match_lobby_returns_typed_authenticated_contract(
     with TestClient(app, base_url="http://testserver") as session:
         client = sdk_module.IronCouncilClient(
             base_url="http://testserver",
-            api_key=build_seeded_agent_api_key("agent-player-2"),
+            api_key=creator_api_key,
             session=session,
         )
         created = client.create_match_lobby(
@@ -203,6 +211,22 @@ def test_sdk_start_match_lobby_returns_typed_compact_active_contract(
     from server.db.testing import provision_seeded_database
 
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key = "sdk-start-creator-key"
+    competitor_api_key = "sdk-start-competitor-key"
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="11111111-1111-1111-1111-111111111112",
+        user_id="11111111-1111-1111-1111-111111111302",
+        raw_api_key=creator_api_key,
+        elo_rating=1111,
+    )
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="22222222-2222-2222-2222-222222222222",
+        user_id="22222222-2222-2222-2222-222222222302",
+        raw_api_key=competitor_api_key,
+        elo_rating=1099,
+    )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -210,12 +234,12 @@ def test_sdk_start_match_lobby_returns_typed_compact_active_contract(
     with TestClient(app, base_url="http://testserver") as session:
         creator_client = sdk_module.IronCouncilClient(
             base_url="http://testserver",
-            api_key=build_seeded_agent_api_key("agent-player-2"),
+            api_key=creator_api_key,
             session=session,
         )
         competitor_client = sdk_module.IronCouncilClient(
             base_url="http://testserver",
-            api_key=build_seeded_agent_api_key("agent-player-3"),
+            api_key=competitor_api_key,
             session=session,
         )
 
@@ -251,6 +275,30 @@ def test_sdk_start_match_lobby_wraps_creator_only_and_not_ready_errors(
     from server.db.testing import provision_seeded_database
 
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key = "sdk-error-creator-key"
+    second_creator_api_key = "sdk-error-creator-key-2"
+    competitor_api_key = "sdk-error-competitor-key"
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="11111111-1111-1111-1111-111111111113",
+        user_id="11111111-1111-1111-1111-111111111303",
+        raw_api_key=creator_api_key,
+        elo_rating=1111,
+    )
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="11111111-1111-1111-1111-111111111114",
+        user_id="11111111-1111-1111-1111-111111111304",
+        raw_api_key=second_creator_api_key,
+        elo_rating=1111,
+    )
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="22222222-2222-2222-2222-222222222223",
+        user_id="22222222-2222-2222-2222-222222222303",
+        raw_api_key=competitor_api_key,
+        elo_rating=1099,
+    )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -258,12 +306,17 @@ def test_sdk_start_match_lobby_wraps_creator_only_and_not_ready_errors(
     with TestClient(app, base_url="http://testserver") as session:
         creator_client = sdk_module.IronCouncilClient(
             base_url="http://testserver",
-            api_key=build_seeded_agent_api_key("agent-player-2"),
+            api_key=creator_api_key,
+            session=session,
+        )
+        second_creator_client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key=second_creator_api_key,
             session=session,
         )
         competitor_client = sdk_module.IronCouncilClient(
             base_url="http://testserver",
-            api_key=build_seeded_agent_api_key("agent-player-3"),
+            api_key=competitor_api_key,
             session=session,
         )
 
@@ -277,7 +330,7 @@ def test_sdk_start_match_lobby_wraps_creator_only_and_not_ready_errors(
         with pytest.raises(sdk_module.IronCouncilApiError) as not_ready_exc_info:
             creator_client.start_match_lobby(not_ready.match_id)
 
-        ready_forbidden = creator_client.create_match_lobby(
+        ready_forbidden = second_creator_client.create_match_lobby(
             map="britain",
             tick_interval_seconds=20,
             max_players=4,

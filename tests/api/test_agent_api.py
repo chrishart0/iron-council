@@ -22,6 +22,7 @@ from server.agent_registry import (
 from server.api import AppServices, build_authenticated_match_router, register_error_handlers
 from server.auth import hash_api_key
 from server.db import tick_persistence as db_tick_persistence_module
+from server.db.identity import build_non_seeded_display_name
 from server.db.registry import load_match_registry_from_database, persist_advanced_match_tick
 from server.db.testing import provision_seeded_database
 from server.main import create_app
@@ -40,6 +41,7 @@ from sqlalchemy import create_engine, text
 from starlette.websockets import WebSocketDisconnect
 from tests.support import (
     build_persisted_player_id,
+    insert_api_key,
     insert_completed_match_fixture,
     insert_seeded_agent_player,
 )
@@ -3618,6 +3620,28 @@ async def test_create_match_lobby_route_creates_browseable_lobby_and_creator_mem
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-create-match-lobby.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    engine = create_engine(database_url)
+    fresh_api_key = "fresh-create-lobby-key"
+    fresh_api_key_id = "11111111-1111-1111-1111-111111111198"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO api_keys (
+                    id, user_id, key_hash, elo_rating, is_active, created_at
+                ) VALUES (
+                    :id, :user_id, :key_hash, :elo_rating, :is_active, CURRENT_TIMESTAMP
+                )
+                """
+            ),
+            {
+                "id": fresh_api_key_id,
+                "user_id": "11111111-1111-1111-1111-111111111398",
+                "key_hash": hash_api_key(fresh_api_key),
+                "elo_rating": 1111,
+                "is_active": True,
+            },
+        )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -3635,7 +3659,7 @@ async def test_create_match_lobby_route_creates_browseable_lobby_and_creator_mem
                 "victory_city_threshold": 13,
                 "starting_cities_per_player": 2,
             },
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": fresh_api_key},
         )
 
         assert create_response.status_code == HTTPStatus.CREATED
@@ -3645,7 +3669,7 @@ async def test_create_match_lobby_route_creates_browseable_lobby_and_creator_mem
         detail_response = await client.get(f"/api/v1/matches/{created_payload['match_id']}")
         state_response = await client.get(
             f"/api/v1/matches/{created_payload['match_id']}/state",
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": fresh_api_key},
         )
 
     reloaded_app = create_app()
@@ -3655,9 +3679,10 @@ async def test_create_match_lobby_route_creates_browseable_lobby_and_creator_mem
     ) as client:
         reloaded_state_response = await client.get(
             f"/api/v1/matches/{created_payload['match_id']}/state",
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": fresh_api_key},
         )
 
+    expected_agent_id = f"agent-api-key-{fresh_api_key_id}"
     assert created_payload == {
         "match_id": created_payload["match_id"],
         "status": "lobby",
@@ -3691,7 +3716,7 @@ async def test_create_match_lobby_route_creates_browseable_lobby_and_creator_mem
         "max_player_count": 4,
         "open_slot_count": 3,
         "roster": [
-            {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"}
+            {"player_id": "player-1", "display_name": "Agent 11111111", "competitor_kind": "agent"}
         ],
     }
     assert "api_key" not in detail_response.text.lower()
@@ -3703,10 +3728,10 @@ async def test_create_match_lobby_route_creates_browseable_lobby_and_creator_mem
     assert reloaded_state_response.json()["player_id"] == "player-1"
     reloaded_match = reloaded_app.state.match_registry.get_match(created_payload["match_id"])
     assert reloaded_match is not None
-    assert reloaded_match.joined_agents == {"agent-player-2": "player-1"}
-    reloaded_profile = reloaded_app.state.match_registry.get_agent_profile("agent-player-2")
+    assert reloaded_match.joined_agents == {expected_agent_id: "player-1"}
+    reloaded_profile = reloaded_app.state.match_registry.get_agent_profile(expected_agent_id)
     assert reloaded_profile is not None
-    assert reloaded_profile.display_name == "Morgana"
+    assert reloaded_profile.display_name == "Agent 11111111"
 
 
 @pytest.mark.asyncio
@@ -3774,6 +3799,44 @@ async def test_create_match_lobby_route_allows_first_time_valid_db_api_key(
     assert (
         profile_response.json()["agent_id"] == "agent-api-key-00000000-0000-0000-0000-000000000299"
     )
+
+
+@pytest.mark.asyncio
+async def test_create_match_lobby_route_rejects_agent_api_key_at_occupancy_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-create-occupancy-limit.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        create_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+        browse_response = await client.get("/api/v1/matches")
+
+    assert create_response.status_code == HTTPStatus.CONFLICT
+    assert create_response.json() == {
+        "error": {
+            "code": "api_key_match_occupancy_limit_reached",
+            "message": "API key already occupies the maximum number of lobby or active matches.",
+        }
+    }
+    assert len(browse_response.json()["matches"]) == 2
 
 
 @pytest.mark.asyncio
@@ -3988,6 +4051,15 @@ async def test_start_match_lobby_route_transitions_ready_creator_lobby_to_active
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-start-match-lobby.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key = "api-route-start-creator-key"
+    creator_api_key_id = "11111111-1111-1111-1111-111111111118"
+    insert_api_key(
+        database_url=database_url,
+        api_key_id=creator_api_key_id,
+        user_id="11111111-1111-1111-1111-111111111308",
+        raw_api_key=creator_api_key,
+        elo_rating=1111,
+    )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -4005,7 +4077,7 @@ async def test_start_match_lobby_route_transitions_ready_creator_lobby_to_active
                 "victory_city_threshold": 13,
                 "starting_cities_per_player": 2,
             },
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": creator_api_key},
         )
         created_payload = create_response.json()
 
@@ -4021,13 +4093,13 @@ async def test_start_match_lobby_route_transitions_ready_creator_lobby_to_active
 
         start_response = await client.post(
             f"/api/v1/matches/{created_payload['match_id']}/start",
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": creator_api_key},
         )
         browse_response = await client.get("/api/v1/matches")
         detail_response = await client.get(f"/api/v1/matches/{created_payload['match_id']}")
         state_response = await client.get(
             f"/api/v1/matches/{created_payload['match_id']}/state",
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": creator_api_key},
         )
 
     assert create_response.status_code == HTTPStatus.CREATED
@@ -4048,8 +4120,12 @@ async def test_start_match_lobby_route_transitions_ready_creator_lobby_to_active
     assert detail_response.json() == {
         **start_response.json(),
         "roster": [
+            {
+                "player_id": "player-1",
+                "display_name": build_non_seeded_display_name(creator_api_key_id),
+                "competitor_kind": "agent",
+            },
             {"player_id": "player-2", "display_name": "Gawain", "competitor_kind": "agent"},
-            {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"},
         ],
     }
     assert state_response.status_code == HTTPStatus.OK
@@ -4102,6 +4178,38 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-start-match-lobby-errors.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key = "api-route-start-errors-key"
+    second_creator_api_key = "api-route-start-errors-key-2"
+    third_creator_api_key = "api-route-start-errors-key-3"
+    fourth_creator_api_key = "api-route-start-errors-key-4"
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="11111111-1111-1111-1111-111111111119",
+        user_id="11111111-1111-1111-1111-111111111309",
+        raw_api_key=creator_api_key,
+        elo_rating=1111,
+    )
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="11111111-1111-1111-1111-111111111121",
+        user_id="11111111-1111-1111-1111-111111111321",
+        raw_api_key=second_creator_api_key,
+        elo_rating=1111,
+    )
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="11111111-1111-1111-1111-111111111122",
+        user_id="11111111-1111-1111-1111-111111111322",
+        raw_api_key=third_creator_api_key,
+        elo_rating=1111,
+    )
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="11111111-1111-1111-1111-111111111123",
+        user_id="11111111-1111-1111-1111-111111111323",
+        raw_api_key=fourth_creator_api_key,
+        elo_rating=1111,
+    )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -4120,11 +4228,11 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
                 "victory_city_threshold": 13,
                 "starting_cities_per_player": 2,
             },
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": second_creator_api_key},
         )
         not_ready_start = await client.post(
             f"/api/v1/matches/{not_ready_response.json()['match_id']}/start",
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": second_creator_api_key},
         )
 
         outsider_response = await client.post(
@@ -4136,7 +4244,7 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
                 "victory_city_threshold": 13,
                 "starting_cities_per_player": 2,
             },
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": third_creator_api_key},
         )
         insert_seeded_agent_player(
             database_url=database_url,
@@ -4165,7 +4273,7 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
                 ),
                 {
                     "id": "00000000-0000-0000-0000-000000000298",
-                    "user_id": "00000000-0000-0000-0000-000000000302",
+                    "user_id": "11111111-1111-1111-1111-111111111322",
                     "key_hash": hash_api_key("sibling-morgana-key"),
                     "elo_rating": 1190,
                     "is_active": True,
@@ -4185,7 +4293,7 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
                 "victory_city_threshold": 13,
                 "starting_cities_per_player": 2,
             },
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": creator_api_key},
         )
         insert_seeded_agent_player(
             database_url=database_url,
@@ -4203,7 +4311,7 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
             )
         active_start = await client.post(
             f"/api/v1/matches/{active_response.json()['match_id']}/start",
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": creator_api_key},
         )
 
         completed_response = await client.post(
@@ -4215,7 +4323,7 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
                 "victory_city_threshold": 13,
                 "starting_cities_per_player": 2,
             },
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": fourth_creator_api_key},
         )
         insert_seeded_agent_player(
             database_url=database_url,
@@ -4233,7 +4341,7 @@ async def test_start_match_lobby_route_rejects_non_creator_not_ready_and_termina
             )
         completed_start = await client.post(
             f"/api/v1/matches/{completed_response.json()['match_id']}/start",
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": fourth_creator_api_key},
         )
 
     assert not_ready_start.status_code == HTTPStatus.CONFLICT
@@ -4280,6 +4388,14 @@ async def test_start_match_lobby_route_rejects_missing_match_and_paused_lobby(
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-start-match-lobby-extra-errors.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key = "api-route-start-paused-key"
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="11111111-1111-1111-1111-111111111120",
+        user_id="11111111-1111-1111-1111-111111111310",
+        raw_api_key=creator_api_key,
+        elo_rating=1111,
+    )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -4302,7 +4418,7 @@ async def test_start_match_lobby_route_rejects_missing_match_and_paused_lobby(
                 "victory_city_threshold": 13,
                 "starting_cities_per_player": 2,
             },
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": creator_api_key},
         )
         created_payload = create_response.json()
         insert_seeded_agent_player(
@@ -4321,7 +4437,7 @@ async def test_start_match_lobby_route_rejects_missing_match_and_paused_lobby(
             )
         paused_match_response = await client.post(
             f"/api/v1/matches/{created_payload['match_id']}/start",
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": creator_api_key},
         )
 
     assert missing_match_response.status_code == HTTPStatus.NOT_FOUND
@@ -4539,6 +4655,39 @@ async def test_join_match_persists_db_backed_lobby_membership_and_remains_idempo
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-join-match-lobby.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    engine = create_engine(database_url)
+    creator_api_key = "fresh-join-creator-key"
+    joiner_api_key = "fresh-join-member-key"
+    creator_api_key_id = "22222222-2222-2222-2222-222222222201"
+    joiner_api_key_id = "33333333-3333-3333-3333-333333333201"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO api_keys (
+                    id, user_id, key_hash, elo_rating, is_active, created_at
+                ) VALUES (
+                    :id, :user_id, :key_hash, :elo_rating, :is_active, CURRENT_TIMESTAMP
+                )
+                """
+            ),
+            [
+                {
+                    "id": creator_api_key_id,
+                    "user_id": "22222222-2222-2222-2222-222222222301",
+                    "key_hash": hash_api_key(creator_api_key),
+                    "elo_rating": 1111,
+                    "is_active": True,
+                },
+                {
+                    "id": joiner_api_key_id,
+                    "user_id": "33333333-3333-3333-3333-333333333301",
+                    "key_hash": hash_api_key(joiner_api_key),
+                    "elo_rating": 1222,
+                    "is_active": True,
+                },
+            ],
+        )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
 
@@ -4556,23 +4705,23 @@ async def test_join_match_persists_db_backed_lobby_membership_and_remains_idempo
                 "victory_city_threshold": 13,
                 "starting_cities_per_player": 2,
             },
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": creator_api_key},
         )
         created_payload = create_response.json()
 
         join_response = await client.post(
             f"/api/v1/matches/{created_payload['match_id']}/join",
             json=_join_payload(match_id=created_payload["match_id"]),
-            headers=_auth_headers_for_agent("agent-player-3"),
+            headers={"X-API-Key": joiner_api_key},
         )
         repeat_join_response = await client.post(
             f"/api/v1/matches/{created_payload['match_id']}/join",
             json=_join_payload(match_id=created_payload["match_id"]),
-            headers=_auth_headers_for_agent("agent-player-3"),
+            headers={"X-API-Key": joiner_api_key},
         )
         start_response = await client.post(
             f"/api/v1/matches/{created_payload['match_id']}/start",
-            headers=_auth_headers_for_agent("agent-player-2"),
+            headers={"X-API-Key": creator_api_key},
         )
 
     reloaded_app = create_app()
@@ -4582,7 +4731,7 @@ async def test_join_match_persists_db_backed_lobby_membership_and_remains_idempo
     ) as client:
         joined_state_response = await client.get(
             f"/api/v1/matches/{created_payload['match_id']}/state",
-            headers=_auth_headers_for_agent("agent-player-3"),
+            headers={"X-API-Key": joiner_api_key},
         )
 
     assert create_response.status_code == HTTPStatus.CREATED
@@ -4590,7 +4739,7 @@ async def test_join_match_persists_db_backed_lobby_membership_and_remains_idempo
     assert join_response.json() == {
         "status": "accepted",
         "match_id": created_payload["match_id"],
-        "agent_id": "agent-player-3",
+        "agent_id": f"agent-api-key-{joiner_api_key_id}",
         "player_id": "player-2",
     }
     assert repeat_join_response.status_code == HTTPStatus.ACCEPTED
@@ -4600,6 +4749,91 @@ async def test_join_match_persists_db_backed_lobby_membership_and_remains_idempo
     assert start_response.json()["current_player_count"] == 2
     assert joined_state_response.status_code == HTTPStatus.OK
     assert joined_state_response.json()["player_id"] == "player-2"
+
+
+@pytest.mark.asyncio
+async def test_join_match_rejects_agent_api_key_at_occupancy_limit_and_recovers_after_completion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'agent-api-join-occupancy-limit.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        create_response = await client.post(
+            "/api/v1/matches",
+            json={
+                "map": "britain",
+                "tick_interval_seconds": 20,
+                "max_players": 4,
+                "victory_city_threshold": 13,
+                "starting_cities_per_player": 2,
+            },
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000304"),
+        )
+        created_payload = create_response.json()
+
+        blocked_join_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json=_join_payload(match_id=created_payload["match_id"]),
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE matches
+                SET status = 'completed'
+                WHERE id = :match_id
+                """
+            ),
+            {"match_id": "00000000-0000-0000-0000-000000000101"},
+        )
+
+    reloaded_app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=reloaded_app),
+        base_url="http://testserver",
+    ) as client:
+        recovered_join_response = await client.post(
+            f"/api/v1/matches/{created_payload['match_id']}/join",
+            json=_join_payload(match_id=created_payload["match_id"]),
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+        state_response = await client.get(
+            f"/api/v1/matches/{created_payload['match_id']}/state",
+            headers=_auth_headers_for_agent("agent-player-2"),
+        )
+
+    assert create_response.status_code == HTTPStatus.CREATED
+    assert blocked_join_response.status_code == HTTPStatus.CONFLICT
+    assert blocked_join_response.json() == {
+        "error": {
+            "code": "api_key_match_occupancy_limit_reached",
+            "message": "API key already occupies the maximum number of lobby or active matches.",
+        }
+    }
+    assert recovered_join_response.status_code == HTTPStatus.ACCEPTED
+    assert recovered_join_response.json() == {
+        "status": "accepted",
+        "match_id": created_payload["match_id"],
+        "agent_id": "agent-player-2",
+        "player_id": "player-2",
+    }
+    assert state_response.status_code == HTTPStatus.OK
+    assert state_response.json()["player_id"] == "player-2"
 
 
 @pytest.mark.asyncio

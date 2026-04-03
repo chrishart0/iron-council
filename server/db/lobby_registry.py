@@ -18,6 +18,7 @@ from server.db.hydration import (
 )
 from server.db.identity import (
     ResolvedAuthenticatedDbAgent,
+    api_key_has_match_occupancy_capacity,
     resolve_authenticated_agent_from_db_key_hash,
     resolve_human_display_name,
     resolve_human_elo_rating,
@@ -77,6 +78,20 @@ class JoinedMatch:
     record: MatchRecord
 
 
+def _raise_match_lobby_creation_occupancy_limit_error() -> None:
+    raise MatchLobbyCreationError(
+        code="api_key_match_occupancy_limit_reached",
+        message="API key already occupies the maximum number of lobby or active matches.",
+    )
+
+
+def _raise_match_join_occupancy_limit_error() -> None:
+    raise MatchJoinError(
+        code="api_key_match_occupancy_limit_reached",
+        message="API key already occupies the maximum number of lobby or active matches.",
+    )
+
+
 def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistry:
     return _load_match_registry_from_database(database_url)
 
@@ -127,6 +142,11 @@ def create_match_lobby(
                     code="invalid_api_key",
                     message="A valid active X-API-Key header is required.",
                 )
+            if not api_key_has_match_occupancy_capacity(
+                session=session,
+                api_key_id=authenticated_agent_resolution.api_key_id,
+            ):
+                _raise_match_lobby_creation_occupancy_limit_error()
             resolved_authenticated_agent = authenticated_agent_resolution.context
             creator_api_key_id = authenticated_agent_resolution.api_key_id
             creator_user_id = authenticated_agent_resolution.user_id
@@ -300,6 +320,15 @@ def join_match(
                     ),
                     record=joined_record,
                 )
+
+            if match.status in {
+                MatchStatus.LOBBY.value,
+                MatchStatus.ACTIVE.value,
+            } and not api_key_has_match_occupancy_capacity(
+                session=session,
+                api_key_id=authenticated_agent_resolution.api_key_id,
+            ):
+                _raise_match_join_occupancy_limit_error()
 
             if assigned_player_id is None:
                 raise MatchJoinError(

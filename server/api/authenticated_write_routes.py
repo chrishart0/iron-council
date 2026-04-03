@@ -111,6 +111,7 @@ def build_authenticated_write_router(
         status_code=HTTPStatus.ACCEPTED,
         responses=_authenticated_write_route_responses(
             HTTPStatus.BAD_REQUEST,
+            HTTPStatus.CONFLICT,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
         ),
@@ -178,6 +179,8 @@ def build_authenticated_write_router(
             status_code = HTTPStatus.BAD_REQUEST
             if exc.code in {"invalid_api_key", "invalid_player_auth"}:
                 status_code = HTTPStatus.UNAUTHORIZED
+            elif exc.code == "api_key_match_occupancy_limit_reached":
+                status_code = HTTPStatus.CONFLICT
             elif exc.code == "match_not_found":
                 status_code = HTTPStatus.NOT_FOUND
             raise ApiError(status_code=status_code, code=exc.code, message=exc.message) from exc

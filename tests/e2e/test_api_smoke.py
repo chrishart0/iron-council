@@ -9,11 +9,13 @@ from typing import Any
 import httpx
 import jwt
 from server.agent_registry import build_seeded_agent_api_key
+from server.db.identity import build_non_seeded_display_name
 from server.db.registry import load_match_registry_from_database
 from server.models.domain import MatchStatus
 from tests.support import (
     RunningApp,
     build_persisted_player_id,
+    insert_api_key,
     insert_completed_match_fixture,
     insert_seeded_agent_player,
     insert_seeded_human_player,
@@ -689,6 +691,15 @@ def test_agent_join_and_profile_smoke_flow_runs_through_real_process(
 def test_create_match_lobby_smoke_flow_runs_through_real_process(
     running_seeded_app: RunningApp,
 ) -> None:
+    creator_api_key = "api-smoke-creator-key"
+    creator_api_key_id = "11111111-1111-1111-1111-111111111116"
+    insert_api_key(
+        database_url=running_seeded_app.database_url,
+        api_key_id=creator_api_key_id,
+        user_id="11111111-1111-1111-1111-111111111306",
+        raw_api_key=creator_api_key,
+        elo_rating=1111,
+    )
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
         create_response = client.post(
             "/api/v1/matches",
@@ -699,7 +710,7 @@ def test_create_match_lobby_smoke_flow_runs_through_real_process(
                 "victory_city_threshold": 13,
                 "starting_cities_per_player": 2,
             },
-            headers=_headers(),
+            headers={"X-API-Key": creator_api_key},
         )
         assert create_response.status_code == HTTPStatus.CREATED
         created_payload = create_response.json()
@@ -708,7 +719,7 @@ def test_create_match_lobby_smoke_flow_runs_through_real_process(
         detail_response = client.get(f"/api/v1/matches/{created_payload['match_id']}")
         state_response = client.get(
             f"/api/v1/matches/{created_payload['match_id']}/state",
-            headers=_headers(),
+            headers={"X-API-Key": creator_api_key},
         )
 
     assert created_payload == {
@@ -728,7 +739,11 @@ def test_create_match_lobby_smoke_flow_runs_through_real_process(
     assert browse_response.json()["matches"][0]["open_slot_count"] == 3
     assert detail_response.status_code == HTTPStatus.OK
     assert detail_response.json()["roster"] == [
-        {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"}
+        {
+            "player_id": "player-1",
+            "display_name": build_non_seeded_display_name(creator_api_key_id),
+            "competitor_kind": "agent",
+        }
     ]
     assert "api_key" not in detail_response.text.lower()
     assert state_response.status_code == HTTPStatus.OK
@@ -738,6 +753,15 @@ def test_create_match_lobby_smoke_flow_runs_through_real_process(
 def test_start_match_lobby_smoke_flow_runs_through_real_process(
     running_seeded_app: RunningApp,
 ) -> None:
+    creator_api_key = "api-start-creator-key"
+    creator_api_key_id = "11111111-1111-1111-1111-111111111117"
+    insert_api_key(
+        database_url=running_seeded_app.database_url,
+        api_key_id=creator_api_key_id,
+        user_id="11111111-1111-1111-1111-111111111307",
+        raw_api_key=creator_api_key,
+        elo_rating=1111,
+    )
     with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
         create_response = client.post(
             "/api/v1/matches",
@@ -748,7 +772,7 @@ def test_start_match_lobby_smoke_flow_runs_through_real_process(
                 "victory_city_threshold": 13,
                 "starting_cities_per_player": 2,
             },
-            headers=_headers(),
+            headers={"X-API-Key": creator_api_key},
         )
         assert create_response.status_code == HTTPStatus.CREATED
         created_payload = create_response.json()
@@ -765,7 +789,7 @@ def test_start_match_lobby_smoke_flow_runs_through_real_process(
 
         start_response = client.post(
             f"/api/v1/matches/{created_payload['match_id']}/start",
-            headers=_headers(),
+            headers={"X-API-Key": creator_api_key},
         )
         browse_response = client.get("/api/v1/matches")
         detail_response = client.get(f"/api/v1/matches/{created_payload['match_id']}")
@@ -775,7 +799,7 @@ def test_start_match_lobby_smoke_flow_runs_through_real_process(
         while time.monotonic() < deadline:
             state_response = client.get(
                 f"/api/v1/matches/{created_payload['match_id']}/state",
-                headers=_headers(),
+                headers={"X-API-Key": creator_api_key},
             )
             assert state_response.status_code == HTTPStatus.OK
             latest_state = state_response.json()
@@ -800,8 +824,12 @@ def test_start_match_lobby_smoke_flow_runs_through_real_process(
     assert detail_response.json() == {
         **start_response.json(),
         "roster": [
+            {
+                "player_id": "player-1",
+                "display_name": build_non_seeded_display_name(creator_api_key_id),
+                "competitor_kind": "agent",
+            },
             {"player_id": "player-2", "display_name": "Gawain", "competitor_kind": "agent"},
-            {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"},
         ],
     }
     assert latest_state is not None

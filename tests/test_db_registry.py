@@ -27,7 +27,11 @@ from server.db import identity_registry as db_identity_registry_module
 from server.db import lobby_registry as db_lobby_registry_module
 from server.db import public_reads as db_public_reads_module
 from server.db import tick_persistence as db_tick_persistence_module
-from server.db.identity import build_user_backed_agent_id
+from server.db.identity import (
+    build_non_seeded_agent_id,
+    build_non_seeded_display_name,
+    build_user_backed_agent_id,
+)
 from server.db.models import Match, MatchSettlement, Player
 from server.db.rating_settlement import settle_completed_match_if_needed
 from server.db.registry import (
@@ -63,6 +67,7 @@ from sqlalchemy.orm import Session
 
 from tests.support import (
     build_persisted_player_id,
+    insert_api_key,
     insert_completed_match_fixture,
     insert_seeded_agent_player,
     insert_seeded_human_player,
@@ -86,6 +91,25 @@ async def _collect_broadcasted_tick(
     advanced_tick: AdvancedMatchTick,
 ) -> None:
     broadcasted_ticks.append(advanced_tick)
+
+
+def _insert_fresh_lobby_creator_key(
+    database_url: str, *, suffix: str = "111111111121"
+) -> tuple[str, str, str]:
+    api_key = f"fresh-lobby-creator-key-{suffix}"
+    api_key_id = f"11111111-1111-1111-1111-{suffix}"
+    insert_api_key(
+        database_url=database_url,
+        api_key_id=api_key_id,
+        user_id=f"22222222-2222-2222-2222-{suffix}",
+        raw_api_key=api_key,
+        elo_rating=1111,
+    )
+    return (
+        api_key,
+        build_non_seeded_agent_id(api_key_id),
+        build_non_seeded_display_name(api_key_id),
+    )
 
 
 def test_load_match_registry_from_database_preserves_persisted_alliance_metadata(
@@ -285,12 +309,23 @@ def test_load_match_record_from_session_matches_registry_reload_for_lobby_member
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-session-load.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key, creator_agent_id, creator_display_name = _insert_fresh_lobby_creator_key(
+        database_url, suffix="111111111120"
+    )
+    joiner_api_key = "fresh-session-joiner-key"
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="33333333-3333-3333-3333-333333333334",
+        user_id="44444444-4444-4444-4444-444444444334",
+        raw_api_key=joiner_api_key,
+        elo_rating=1099,
+    )
 
     created = create_match_lobby(
         database_url=database_url,
-        authenticated_agent_id="agent-player-2",
-        authenticated_agent_display_name="Morgana",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_agent_id=creator_agent_id,
+        authenticated_agent_display_name=creator_display_name,
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -302,7 +337,7 @@ def test_load_match_record_from_session_matches_registry_reload_for_lobby_member
     join_match(
         database_url=database_url,
         match_id=created.response.match_id,
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-3")),
+        authenticated_api_key_hash=hash_api_key(joiner_api_key),
     )
 
     engine = create_engine(database_url)
@@ -334,11 +369,15 @@ def test_load_match_record_from_session_matches_registry_reload_for_lobby_member
 
     expected_agent_ids = sorted(session_loaded.joined_agents)
     assert [profile.agent_id for profile in session_loaded.agent_profiles] == expected_agent_ids
-    assert all(profile.is_seeded for profile in session_loaded.agent_profiles)
+    assert {profile.agent_id: profile.is_seeded for profile in session_loaded.agent_profiles} == {
+        creator_agent_id: False,
+        "agent-api-key-33333333-3333-3333-3333-333333333334": False,
+    }
     assert [key.agent_id for key in session_loaded.authenticated_agent_keys] == expected_agent_ids
     assert all(key.is_active for key in session_loaded.authenticated_agent_keys)
     assert [key.key_hash for key in session_loaded.authenticated_agent_keys] == [
-        hash_api_key(build_seeded_agent_api_key(agent_id)) for agent_id in expected_agent_ids
+        hash_api_key(creator_api_key),
+        hash_api_key(joiner_api_key),
     ]
 
 
@@ -555,12 +594,15 @@ def test_create_match_lobby_persists_match_and_creator_membership_atomically(
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-create-match-lobby.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key, creator_agent_id, creator_display_name = _insert_fresh_lobby_creator_key(
+        database_url
+    )
 
     created = create_match_lobby(
         database_url=database_url,
-        authenticated_agent_id="agent-player-2",
-        authenticated_agent_display_name="Morgana",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_agent_id=creator_agent_id,
+        authenticated_agent_display_name=creator_display_name,
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -579,7 +621,7 @@ def test_create_match_lobby_persists_match_and_creator_membership_atomically(
     assert created.response.open_slot_count == 3
     assert created.response.creator_player_id == "player-1"
     assert created.record.match_id == created.response.match_id
-    assert created.record.joined_agents == {"agent-player-2": "player-1"}
+    assert created.record.joined_agents == {creator_agent_id: "player-1"}
     assert created.record.joinable_player_ids == ["player-2", "player-3", "player-4"]
     assert created.record.state.tick == 0
     assert set(created.record.state.players) == {"player-1", "player-2", "player-3", "player-4"}
@@ -601,7 +643,11 @@ def test_create_match_lobby_persists_match_and_creator_membership_atomically(
         "max_player_count": 4,
         "open_slot_count": 3,
         "roster": [
-            {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"}
+            {
+                "player_id": "player-1",
+                "display_name": creator_display_name,
+                "competitor_kind": "agent",
+            }
         ],
     }
 
@@ -637,9 +683,9 @@ def test_create_match_lobby_persists_match_and_creator_membership_atomically(
     assert match_rows[0]["status"] == "lobby"
     assert len(player_rows) == 1
     assert player_rows[0] == {
-        "display_name": "Morgana",
+        "display_name": creator_display_name,
         "is_agent": 1,
-        "api_key_id": "00000000-0000-0000-0000-000000000202",
+        "api_key_id": "11111111-1111-1111-1111-111111111121",
     }
 
 
@@ -650,12 +696,13 @@ def test_create_match_lobby_prefers_api_key_auth_over_human_context_in_returned_
         f"sqlite+pysqlite:///{tmp_path / 'registry-create-match-lobby-auth-precedence.db'}"
     )
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key, creator_agent_id, _ = _insert_fresh_lobby_creator_key(database_url)
 
     created = create_match_lobby(
         database_url=database_url,
-        authenticated_agent_id="agent-player-2",
-        authenticated_agent_display_name="Morgana",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_agent_id=creator_agent_id,
+        authenticated_agent_display_name="unused-for-db-resolution",
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
         authenticated_human_user_id="00000000-0000-0000-0000-000000000301",
         request=MatchLobbyCreateRequest(
             map="britain",
@@ -666,14 +713,14 @@ def test_create_match_lobby_prefers_api_key_auth_over_human_context_in_returned_
         ),
     )
 
-    assert created.record.joined_agents == {"agent-player-2": "player-1"}
+    assert created.record.joined_agents == {creator_agent_id: "player-1"}
     assert created.record.joined_humans == {"00000000-0000-0000-0000-000000000301": "player-1"}
     assert created.record.public_competitor_kinds == {"player-1": "agent"}
 
     reloaded_registry = load_match_registry_from_database(database_url)
     reloaded_match = reloaded_registry.get_match(created.response.match_id)
     assert reloaded_match is not None
-    assert reloaded_match.joined_agents == {"agent-player-2": "player-1"}
+    assert reloaded_match.joined_agents == {creator_agent_id: "player-1"}
     assert reloaded_match.joined_humans == {}
 
 
@@ -682,12 +729,15 @@ def test_create_match_lobby_reload_preserves_authenticated_creator_identity(
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-create-match-lobby-reload.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key, creator_agent_id, creator_display_name = _insert_fresh_lobby_creator_key(
+        database_url
+    )
 
     created = create_match_lobby(
         database_url=database_url,
-        authenticated_agent_id="agent-player-2",
-        authenticated_agent_display_name="Morgana",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_agent_id=creator_agent_id,
+        authenticated_agent_display_name=creator_display_name,
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -700,21 +750,19 @@ def test_create_match_lobby_reload_preserves_authenticated_creator_identity(
     reloaded_registry = load_match_registry_from_database(database_url)
     reloaded_match = reloaded_registry.get_match(created.response.match_id)
     assert reloaded_match is not None
-    assert reloaded_match.joined_agents == {"agent-player-2": "player-1"}
-    reloaded_profile = reloaded_registry.get_agent_profile("agent-player-2")
+    assert reloaded_match.joined_agents == {creator_agent_id: "player-1"}
+    reloaded_profile = reloaded_registry.get_agent_profile(creator_agent_id)
     assert reloaded_profile is not None
-    assert reloaded_profile.agent_id == "agent-player-2"
-    assert reloaded_profile.display_name == "Morgana"
-    assert reloaded_profile.is_seeded is True
+    assert reloaded_profile.agent_id == creator_agent_id
+    assert reloaded_profile.display_name == creator_display_name
+    assert reloaded_profile.is_seeded is False
 
-    authenticated_agent = reloaded_registry.resolve_authenticated_agent(
-        build_seeded_agent_api_key("agent-player-2")
-    )
+    authenticated_agent = reloaded_registry.resolve_authenticated_agent(creator_api_key)
     assert authenticated_agent is not None
     assert authenticated_agent.model_dump(mode="json") == {
-        "agent_id": "agent-player-2",
-        "display_name": "Morgana",
-        "is_seeded": True,
+        "agent_id": creator_agent_id,
+        "display_name": creator_display_name,
+        "is_seeded": False,
     }
     assert (
         reloaded_registry.require_joined_player_id(
@@ -730,12 +778,13 @@ def test_create_match_lobby_reload_preserves_persisted_match_metadata(
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-create-match-lobby-metadata.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key, _, _ = _insert_fresh_lobby_creator_key(database_url)
 
     created = create_match_lobby(
         database_url=database_url,
         authenticated_agent_id="***",
         authenticated_agent_display_name="***",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -842,12 +891,15 @@ def test_join_match_persists_membership_idempotently_and_remains_publicly_visibl
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-join-match-lobby.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key, creator_agent_id, creator_display_name = _insert_fresh_lobby_creator_key(
+        database_url
+    )
 
     created = create_match_lobby(
         database_url=database_url,
-        authenticated_agent_id="agent-player-2",
-        authenticated_agent_display_name="Morgana",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_agent_id=creator_agent_id,
+        authenticated_agent_display_name=creator_display_name,
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -856,28 +908,36 @@ def test_join_match_persists_membership_idempotently_and_remains_publicly_visibl
             starting_cities_per_player=2,
         ),
     )
+    joiner_api_key = "fresh-lobby-joiner-key"
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="33333333-3333-3333-3333-333333333333",
+        user_id="44444444-4444-4444-4444-444444444333",
+        raw_api_key=joiner_api_key,
+        elo_rating=1099,
+    )
 
     joined = join_match(
         database_url=database_url,
         match_id=created.response.match_id,
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-3")),
+        authenticated_api_key_hash=hash_api_key(joiner_api_key),
     )
     repeated_join = join_match(
         database_url=database_url,
         match_id=created.response.match_id,
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-3")),
+        authenticated_api_key_hash=hash_api_key(joiner_api_key),
     )
 
     assert joined.response.model_dump(mode="json") == {
         "status": "accepted",
         "match_id": created.response.match_id,
-        "agent_id": "agent-player-3",
+        "agent_id": "agent-api-key-33333333-3333-3333-3333-333333333333",
         "player_id": "player-2",
     }
     assert repeated_join.response.model_dump(mode="json") == joined.response.model_dump(mode="json")
     assert joined.record.joined_agents == {
-        "agent-player-2": "player-1",
-        "agent-player-3": "player-2",
+        creator_agent_id: "player-1",
+        "agent-api-key-33333333-3333-3333-3333-333333333333": "player-2",
     }
     assert repeated_join.record.joined_agents == joined.record.joined_agents
 
@@ -892,8 +952,12 @@ def test_join_match_persists_membership_idempotently_and_remains_publicly_visibl
         "max_player_count": 4,
         "open_slot_count": 2,
         "roster": [
-            {"player_id": "player-2", "display_name": "Gawain", "competitor_kind": "agent"},
-            {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"},
+            {
+                "player_id": "player-1",
+                "display_name": creator_display_name,
+                "competitor_kind": "agent",
+            },
+            {"player_id": "player-2", "display_name": "Agent 33333333", "competitor_kind": "agent"},
         ],
     }
 
@@ -917,14 +981,14 @@ def test_join_match_persists_membership_idempotently_and_remains_publicly_visibl
 
     assert [dict(row) for row in player_rows] == [
         {
-            "display_name": "Morgana",
+            "display_name": creator_display_name,
             "is_agent": 1,
-            "api_key_id": "00000000-0000-0000-0000-000000000202",
+            "api_key_id": "11111111-1111-1111-1111-111111111121",
         },
         {
-            "display_name": "Gawain",
+            "display_name": "Agent 33333333",
             "is_agent": 1,
-            "api_key_id": "00000000-0000-0000-0000-000000000203",
+            "api_key_id": "33333333-3333-3333-3333-333333333333",
         },
     ]
 
@@ -935,7 +999,7 @@ def test_join_match_persists_membership_idempotently_and_remains_publicly_visibl
     assert (
         reloaded_registry.require_joined_player_id(
             match_id=created.response.match_id,
-            agent_id="agent-player-3",
+            agent_id="agent-api-key-33333333-3333-3333-3333-333333333333",
         )
         == "player-2"
     )
@@ -946,12 +1010,15 @@ def test_start_match_lobby_persists_active_transition_and_reloadable_runtime_sta
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-start-match-lobby.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key, creator_agent_id, creator_display_name = _insert_fresh_lobby_creator_key(
+        database_url
+    )
 
     created = create_match_lobby(
         database_url=database_url,
-        authenticated_agent_id="agent-player-2",
-        authenticated_agent_display_name="Morgana",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_agent_id=creator_agent_id,
+        authenticated_agent_display_name=creator_display_name,
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -973,7 +1040,7 @@ def test_start_match_lobby_persists_active_transition_and_reloadable_runtime_sta
     started = start_match_lobby(
         database_url=database_url,
         match_id=created.response.match_id,
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
     )
 
     assert started.response.model_dump(mode="json") == {
@@ -1004,8 +1071,12 @@ def test_start_match_lobby_persists_active_transition_and_reloadable_runtime_sta
         "max_player_count": 4,
         "open_slot_count": 2,
         "roster": [
+            {
+                "player_id": "player-1",
+                "display_name": creator_display_name,
+                "competitor_kind": "agent",
+            },
             {"player_id": "player-2", "display_name": "Gawain", "competitor_kind": "agent"},
-            {"player_id": "player-1", "display_name": "Morgana", "competitor_kind": "agent"},
         ],
     }
 
@@ -1023,7 +1094,7 @@ def test_start_match_lobby_persists_active_transition_and_reloadable_runtime_sta
     assert persisted_match["status"] == "active"
     assert persisted_match["current_tick"] == 0
     assert json.loads(persisted_match["config"])["creator_api_key_id"] == (
-        "00000000-0000-0000-0000-000000000202"
+        "11111111-1111-1111-1111-111111111121"
     )
 
     reloaded_registry = load_match_registry_from_database(database_url)
@@ -1034,7 +1105,7 @@ def test_start_match_lobby_persists_active_transition_and_reloadable_runtime_sta
     assert (
         reloaded_registry.require_joined_player_id(
             match_id=created.response.match_id,
-            agent_id="agent-player-2",
+            agent_id=creator_agent_id,
         )
         == "player-1"
     )
@@ -1051,12 +1122,15 @@ def test_start_match_lobby_rejects_non_creator_not_ready_and_terminal_matches(
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-start-match-lobby-errors.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key, creator_agent_id, creator_display_name = _insert_fresh_lobby_creator_key(
+        database_url, suffix="111111111121"
+    )
 
     not_ready = create_match_lobby(
         database_url=database_url,
-        authenticated_agent_id="agent-player-2",
-        authenticated_agent_display_name="Morgana",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_agent_id=creator_agent_id,
+        authenticated_agent_display_name=creator_display_name,
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -1069,15 +1143,16 @@ def test_start_match_lobby_rejects_non_creator_not_ready_and_terminal_matches(
         start_match_lobby(
             database_url=database_url,
             match_id=not_ready.response.match_id,
-            authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+            authenticated_api_key_hash=hash_api_key(creator_api_key),
         )
     assert not_ready_error.value.code == "match_lobby_not_ready"
 
+    outsider_api_key, _, _ = _insert_fresh_lobby_creator_key(database_url, suffix="111111111122")
     outsider = create_match_lobby(
         database_url=database_url,
-        authenticated_agent_id="agent-player-2",
-        authenticated_agent_display_name="Morgana",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_agent_id=creator_agent_id,
+        authenticated_agent_display_name=creator_display_name,
+        authenticated_api_key_hash=hash_api_key(outsider_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -1103,11 +1178,12 @@ def test_start_match_lobby_rejects_non_creator_not_ready_and_terminal_matches(
         )
     assert outsider_error.value.code == "match_start_forbidden"
 
+    active_api_key, _, _ = _insert_fresh_lobby_creator_key(database_url, suffix="111111111123")
     active = create_match_lobby(
         database_url=database_url,
-        authenticated_agent_id="agent-player-2",
-        authenticated_agent_display_name="Morgana",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_agent_id=creator_agent_id,
+        authenticated_agent_display_name=creator_display_name,
+        authenticated_api_key_hash=hash_api_key(active_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -1135,15 +1211,16 @@ def test_start_match_lobby_rejects_non_creator_not_ready_and_terminal_matches(
         start_match_lobby(
             database_url=database_url,
             match_id=active.response.match_id,
-            authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+            authenticated_api_key_hash=hash_api_key(creator_api_key),
         )
     assert active_error.value.code == "match_already_active"
 
+    completed_api_key, _, _ = _insert_fresh_lobby_creator_key(database_url, suffix="111111111124")
     completed = create_match_lobby(
         database_url=database_url,
-        authenticated_agent_id="agent-player-2",
-        authenticated_agent_display_name="Morgana",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_agent_id=creator_agent_id,
+        authenticated_agent_display_name=creator_display_name,
+        authenticated_api_key_hash=hash_api_key(completed_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -1170,7 +1247,7 @@ def test_start_match_lobby_rejects_non_creator_not_ready_and_terminal_matches(
         start_match_lobby(
             database_url=database_url,
             match_id=completed.response.match_id,
-            authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+            authenticated_api_key_hash=hash_api_key(creator_api_key),
         )
     assert completed_error.value.code == "match_already_completed"
 
@@ -1205,12 +1282,13 @@ def test_start_match_lobby_rejects_same_user_different_api_key(
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-start-match-lobby-sibling-key.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key, _, _ = _insert_fresh_lobby_creator_key(database_url)
 
     created = create_match_lobby(
         database_url=database_url,
         authenticated_agent_id="***",
         authenticated_agent_display_name="***",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -1229,27 +1307,14 @@ def test_start_match_lobby_rejects_same_user_different_api_key(
         ),
     )
 
-    sibling_api_key = "sibling-morgana-key"
-    engine = create_engine(database_url)
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                """
-                INSERT INTO api_keys (
-                    id, user_id, key_hash, elo_rating, is_active, created_at
-                ) VALUES (
-                    :id, :user_id, :key_hash, :elo_rating, :is_active, CURRENT_TIMESTAMP
-                )
-                """
-            ),
-            {
-                "id": "00000000-0000-0000-0000-000000000298",
-                "user_id": "00000000-0000-0000-0000-000000000302",
-                "key_hash": hash_api_key(sibling_api_key),
-                "elo_rating": 1190,
-                "is_active": True,
-            },
-        )
+    sibling_api_key = "sibling-fresh-lobby-key"
+    insert_api_key(
+        database_url=database_url,
+        api_key_id="00000000-0000-0000-0000-000000000298",
+        user_id="22222222-2222-2222-2222-111111111121",
+        raw_api_key=sibling_api_key,
+        elo_rating=1111,
+    )
 
     with pytest.raises(MatchLobbyStartError) as sibling_key_error:
         start_match_lobby(
@@ -1265,6 +1330,9 @@ def test_start_match_lobby_rejects_invalid_api_key_missing_match_and_paused_matc
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-start-match-lobby-extra-errors.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key, creator_agent_id, creator_display_name = _insert_fresh_lobby_creator_key(
+        database_url
+    )
 
     with pytest.raises(MatchLobbyStartError) as invalid_api_key_error:
         start_match_lobby(
@@ -1284,9 +1352,9 @@ def test_start_match_lobby_rejects_invalid_api_key_missing_match_and_paused_matc
 
     created = create_match_lobby(
         database_url=database_url,
-        authenticated_agent_id="agent-player-2",
-        authenticated_agent_display_name="Morgana",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_agent_id=creator_agent_id,
+        authenticated_agent_display_name=creator_display_name,
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -1316,7 +1384,7 @@ def test_start_match_lobby_rejects_invalid_api_key_missing_match_and_paused_matc
         start_match_lobby(
             database_url=database_url,
             match_id=created.response.match_id,
-            authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+            authenticated_api_key_hash=hash_api_key(creator_api_key),
         )
     assert paused_match_error.value.code == "match_not_startable"
 
@@ -1327,12 +1395,13 @@ def test_start_match_lobby_builds_started_record_without_registry_reload(
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-start-match-lobby-no-reload.db'}"
     provision_seeded_database(database_url=database_url, reset=True)
+    creator_api_key, creator_agent_id, _ = _insert_fresh_lobby_creator_key(database_url)
 
     created = create_match_lobby(
         database_url=database_url,
         authenticated_agent_id="***",
         authenticated_agent_display_name="***",
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
         request=MatchLobbyCreateRequest(
             map="britain",
             tick_interval_seconds=20,
@@ -1362,14 +1431,14 @@ def test_start_match_lobby_builds_started_record_without_registry_reload(
     started = start_match_lobby(
         database_url=database_url,
         match_id=created.response.match_id,
-        authenticated_api_key_hash=hash_api_key(build_seeded_agent_api_key("agent-player-2")),
+        authenticated_api_key_hash=hash_api_key(creator_api_key),
     )
 
     assert started.response.match_id == created.response.match_id
     assert started.response.status == MatchStatus.ACTIVE
     assert started.record.status == MatchStatus.ACTIVE
     assert started.record.joined_agents == {
-        "agent-player-2": "player-1",
+        creator_agent_id: "player-1",
         "agent-player-3": "player-2",
     }
 
