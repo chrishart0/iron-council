@@ -11,6 +11,7 @@ from sqlalchemy.engine import make_url
 from server.agent_registry import build_seeded_agent_api_key, build_seeded_match_records
 from server.auth import hash_api_key
 from server.db.config import configure_alembic_database_url
+from server.db.metadata import bind_utc_datetime_params
 from server.db.migrations import reset_database, upgrade_database
 from server.db.registry import _build_match_scoped_player_id
 
@@ -95,8 +96,9 @@ def seed_database(database_url: str) -> None:
             connection.execute(text(f"DELETE FROM {table_name}"))
 
         connection.execute(
-            text(
-                """
+            bind_utc_datetime_params(
+                text(
+                    """
                 INSERT INTO matches (
                     id, config, status, current_tick, state, winner_alliance, created_at, updated_at
                 ) VALUES (
@@ -104,6 +106,9 @@ def seed_database(database_url: str) -> None:
                     :created_at, :updated_at
                 )
                 """
+                ),
+                "created_at",
+                "updated_at",
             ),
             [
                 {
@@ -135,14 +140,17 @@ def seed_database(database_url: str) -> None:
             ],
         )
         connection.execute(
-            text(
-                """
+            bind_utc_datetime_params(
+                text(
+                    """
                 INSERT INTO api_keys (
                     id, user_id, key_hash, elo_rating, is_active, created_at
                 ) VALUES (
                     :id, :user_id, :key_hash, :elo_rating, :is_active, :created_at
                 )
                 """
+                ),
+                "created_at",
             ),
             [
                 {
@@ -256,8 +264,9 @@ def seed_database(database_url: str) -> None:
             ],
         )
         connection.execute(
-            text(
-                """
+            bind_utc_datetime_params(
+                text(
+                    """
                 INSERT INTO messages (
                     id, match_id, sender_id, channel_type, channel_id, recipient_id, content,
                     tick, created_at
@@ -266,6 +275,8 @@ def seed_database(database_url: str) -> None:
                     :content, :tick, :created_at
                 )
                 """
+                ),
+                "created_at",
             ),
             [
                 {
@@ -285,8 +296,9 @@ def seed_database(database_url: str) -> None:
             ],
         )
         connection.execute(
-            text(
-                """
+            bind_utc_datetime_params(
+                text(
+                    """
                 INSERT INTO treaties (
                     id, match_id, player_a_id, player_b_id, treaty_type, status, signed_tick,
                     broken_tick, created_at
@@ -295,6 +307,8 @@ def seed_database(database_url: str) -> None:
                     :signed_tick, :broken_tick, :created_at
                 )
                 """
+                ),
+                "created_at",
             ),
             [
                 {
@@ -317,14 +331,17 @@ def seed_database(database_url: str) -> None:
             ],
         )
         connection.execute(
-            text(
-                """
+            bind_utc_datetime_params(
+                text(
+                    """
                 INSERT INTO tick_log (
                     id, match_id, tick, state_snapshot, orders, events, created_at
                 ) VALUES (
                     :id, :match_id, :tick, :state_snapshot, :orders, :events, :created_at
                 )
                 """
+                ),
+                "created_at",
             ),
             [
                 {

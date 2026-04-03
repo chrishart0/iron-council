@@ -1,9 +1,9 @@
-generated: 2026-04-03 06:03 UTC
+generated: 2026-04-03 06:18 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 46-1-eliminate-python-3-12-sqlite-datetime-adapter-warnings
+next_story: null
 
 development_status:
   public-readiness-epic: done
@@ -223,5 +223,5 @@ development_status:
   epic-45: done
   45-1-stabilize-nextjs-client-dev-root-and-generated-types: done
 
-  epic-46: in_progress
-  46-1-eliminate-python-3-12-sqlite-datetime-adapter-warnings: in_progress
+  epic-46: done
+  46-1-eliminate-python-3-12-sqlite-datetime-adapter-warnings: done

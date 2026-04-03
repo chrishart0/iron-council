@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import warnings
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +10,8 @@ from unittest.mock import Mock
 import pytest
 from alembic.config import Config
 from server.db.config import configure_alembic_database_url
+from server.db.metadata import UTCDateTime
+from server.db.models import Match
 from server.db.testing import (
     ALEMBIC_INI_PATH,
     build_alembic_config,
@@ -16,6 +19,8 @@ from server.db.testing import (
     provision_seeded_database,
 )
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy.orm import Session
 
 
 def test_makefile_exposes_stable_database_setup_and_reset_commands() -> None:
@@ -180,6 +185,68 @@ def test_provision_seeded_database_converges_to_deterministic_data_after_reset(
     provision_seeded_database(database_url=database_url, reset=True)
 
     assert _seeded_database_snapshot(database_url) == baseline
+
+
+def test_provision_seeded_database_avoids_sqlite_datetime_adapter_warnings(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'seeded-warning-free.db'}"
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always", DeprecationWarning)
+        provision_seeded_database(database_url=database_url, reset=True)
+
+    assert not [
+        warning
+        for warning in captured
+        if "default datetime adapter is deprecated" in str(warning.message)
+    ]
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        persisted_match = session.get(Match, "00000000-0000-0000-0000-000000000101")
+
+    assert persisted_match is not None
+    assert persisted_match.created_at == datetime(2026, 3, 29, 0, 0, tzinfo=UTC)
+    assert persisted_match.updated_at == datetime(2026, 3, 29, 0, 0, tzinfo=UTC)
+
+
+def test_utc_datetime_rejects_naive_bind_values() -> None:
+    utc_datetime = UTCDateTime()
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        utc_datetime.process_bind_param(datetime(2026, 3, 29, 0, 0), sqlite.dialect())
+
+
+def test_utc_datetime_normalizes_aware_values_for_sqlite_and_postgres() -> None:
+    utc_datetime = UTCDateTime()
+    aware_value = datetime.fromisoformat("2026-03-29T01:30:00+02:00")
+
+    sqlite_value = utc_datetime.process_bind_param(aware_value, sqlite.dialect())
+    postgres_value = utc_datetime.process_bind_param(
+        aware_value,
+        postgresql.dialect(),  # type: ignore[no-untyped-call]
+    )
+
+    assert sqlite_value == "2026-03-28 23:30:00+00:00"
+    assert postgres_value == datetime(2026, 3, 28, 23, 30, tzinfo=UTC)
+
+
+def test_utc_datetime_normalizes_sqlite_result_values_to_utc() -> None:
+    utc_datetime = UTCDateTime()
+
+    assert utc_datetime.process_result_value("2026-03-29 00:00:00", sqlite.dialect()) == datetime(
+        2026,
+        3,
+        29,
+        0,
+        0,
+        tzinfo=UTC,
+    )
+    assert utc_datetime.process_result_value(
+        "2026-03-29 01:30:00+02:00",
+        sqlite.dialect(),
+    ) == datetime(2026, 3, 28, 23, 30, tzinfo=UTC)
 
 
 def test_seed_database_reuses_stable_tick_log_ids_on_postgres_repeated_runs(

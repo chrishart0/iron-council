@@ -6,7 +6,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.orm import Mapped, mapped_column
 
-from server.db.metadata import Base, json_type, tick_log_id_type, uuid_type
+from server.db.metadata import Base, json_type, tick_log_id_type, utc_datetime_type, uuid_type
 
 MATCH_STATUSES = ("lobby", "active", "paused", "completed")
 MESSAGE_CHANNEL_TYPES = ("dm", "group", "world")
@@ -29,12 +29,12 @@ class Match(Base):
     state: Mapped[dict[str, Any]] = mapped_column(json_type, nullable=False)
     winner_alliance: Mapped[Any | None] = mapped_column(uuid_type, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
+        utc_datetime_type,
         nullable=False,
         server_default=sa.text("CURRENT_TIMESTAMP"),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
+        utc_datetime_type,
         nullable=False,
         server_default=sa.text("CURRENT_TIMESTAMP"),
     )
@@ -49,7 +49,7 @@ class ApiKey(Base):
     elo_rating: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
     is_active: Mapped[bool] = mapped_column(sa.Boolean(), nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
+        utc_datetime_type,
         nullable=False,
         server_default=sa.text("CURRENT_TIMESTAMP"),
     )
@@ -98,7 +98,7 @@ class MatchSettlement(Base):
         primary_key=True,
     )
     settled_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
+        utc_datetime_type,
         nullable=False,
         server_default=sa.text("CURRENT_TIMESTAMP"),
     )
@@ -131,7 +131,7 @@ class PlayerMatchSettlement(Base):
     elo_before: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
     elo_after: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
     settled_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
+        utc_datetime_type,
         nullable=False,
         server_default=sa.text("CURRENT_TIMESTAMP"),
     )
@@ -149,7 +149,7 @@ class Message(Base):
     content: Mapped[str] = mapped_column(sa.Text(), nullable=False)
     tick: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
+        utc_datetime_type,
         nullable=False,
         server_default=sa.text("CURRENT_TIMESTAMP"),
     )
@@ -167,7 +167,7 @@ class Treaty(Base):
     signed_tick: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
     broken_tick: Mapped[int | None] = mapped_column(sa.Integer(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
+        utc_datetime_type,
         nullable=False,
         server_default=sa.text("CURRENT_TIMESTAMP"),
     )
@@ -183,7 +183,7 @@ class TickLog(Base):
     orders: Mapped[dict[str, Any]] = mapped_column(json_type, nullable=False)
     events: Mapped[dict[str, Any]] = mapped_column(json_type, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True),
+        utc_datetime_type,
         nullable=False,
         server_default=sa.text("CURRENT_TIMESTAMP"),
     )

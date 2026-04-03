@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import warnings
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +10,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+import server.db.rating_settlement as db_rating_settlement_module
 import server.db.registry as db_registry_module
 from server.agent_registry import (
     AdvancedMatchTick,
@@ -1946,6 +1948,54 @@ def test_persist_advanced_match_tick_marks_terminal_victory_completed_transactio
     assert reloaded_match is not None
     assert reloaded_match.status == MatchStatus.COMPLETED
     assert reloaded_match.state.tick == 143
+
+
+def test_persist_advanced_match_tick_avoids_sqlite_datetime_adapter_warnings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-warning-free-tick.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    registry = load_match_registry_from_database(database_url)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object | None = None) -> FrozenDateTime:
+            assert tz == UTC
+            return cls(2026, 4, 2, 12, 34, 56, tzinfo=UTC)
+
+    monkeypatch.setattr(db_tick_persistence_module, "datetime", FrozenDateTime)
+    monkeypatch.setattr(db_rating_settlement_module, "datetime", FrozenDateTime)
+
+    terminal_match = registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert terminal_match is not None
+    terminal_match.state.victory.threshold = 2
+    terminal_match.state.victory.countdown_ticks_remaining = 1
+
+    advanced_tick = registry.advance_match_tick("00000000-0000-0000-0000-000000000101")
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always", DeprecationWarning)
+        persist_advanced_match_tick(database_url=database_url, advanced_tick=advanced_tick)
+
+    assert not [
+        warning
+        for warning in captured
+        if "default datetime adapter is deprecated" in str(warning.message)
+    ]
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        persisted_match = session.get(Match, "00000000-0000-0000-0000-000000000101")
+        persisted_settlement = session.get(
+            MatchSettlement,
+            "00000000-0000-0000-0000-000000000101",
+        )
+
+    assert persisted_match is not None
+    assert persisted_match.updated_at == datetime(2026, 4, 2, 12, 34, 56, tzinfo=UTC)
+    assert persisted_settlement is not None
+    assert persisted_settlement.settled_at == datetime(2026, 4, 2, 12, 34, 56, tzinfo=UTC)
 
 
 def test_terminal_persist_syncs_stale_alliance_rows(
