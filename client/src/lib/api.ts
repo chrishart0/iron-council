@@ -31,6 +31,9 @@ import type {
   MatchReplayTickResponse,
   MessageAcceptanceResponse,
   OrderAcceptanceResponse,
+  OwnedApiKeyCreateResponse,
+  OwnedApiKeyListResponse,
+  OwnedApiKeySummary,
   PlayerMatchEnvelope,
   PlayerMatchState,
   PublicMatchHistoryResponse,
@@ -87,6 +90,7 @@ const COMMAND_SUBMISSION_ERROR_MESSAGE = "Unable to submit orders right now.";
 const MESSAGE_SUBMISSION_ERROR_MESSAGE = "Unable to submit message right now.";
 const GROUP_CHAT_CREATE_ERROR_MESSAGE = "Unable to create group chat right now.";
 const DIPLOMACY_SUBMISSION_ERROR_MESSAGE = "Unable to submit diplomacy action right now.";
+const API_KEY_LIFECYCLE_ERROR_MESSAGE = "Unable to manage account API keys right now.";
 const HUMAN_NOT_JOINED_MESSAGE =
   "Join this match as a human player before opening the authenticated live page.";
 const INVALID_WEBSOCKET_AUTH_MESSAGE =
@@ -216,6 +220,17 @@ export class DiplomacySubmissionError extends Error {
   ) {
     super(message);
     this.name = "DiplomacySubmissionError";
+  }
+}
+
+export class ApiKeyLifecycleError extends Error {
+  constructor(
+    message = API_KEY_LIFECYCLE_ERROR_MESSAGE,
+    readonly code: string = "api_key_lifecycle_unavailable",
+    readonly statusCode: number = 500
+  ) {
+    super(message);
+    this.name = "ApiKeyLifecycleError";
   }
 }
 
@@ -491,6 +506,69 @@ export async function createMatchLobby(
   });
 
   return handleLobbyResponse(response, isMatchLobbyCreateResponse);
+}
+
+export async function fetchOwnedApiKeys(
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<OwnedApiKeyListResponse> {
+  const response = await fetchImpl(`${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/account/api-keys`, {
+    cache: "no-store",
+    headers: buildAuthenticatedHeaders(bearerToken)
+  }).catch(() => {
+    throw new ApiKeyLifecycleError(
+      API_KEY_LIFECYCLE_ERROR_MESSAGE,
+      "api_key_lifecycle_unavailable",
+      500
+    );
+  });
+
+  return handleApiKeyLifecycleResponse(response, isOwnedApiKeyListResponse);
+}
+
+export async function createOwnedApiKey(
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<OwnedApiKeyCreateResponse> {
+  const response = await fetchImpl(`${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/account/api-keys`, {
+    method: "POST",
+    cache: "no-store",
+    headers: buildAuthenticatedHeaders(bearerToken)
+  }).catch(() => {
+    throw new ApiKeyLifecycleError(
+      API_KEY_LIFECYCLE_ERROR_MESSAGE,
+      "api_key_lifecycle_unavailable",
+      500
+    );
+  });
+
+  return handleApiKeyLifecycleResponse(response, isOwnedApiKeyCreateResponse);
+}
+
+export async function revokeOwnedApiKey(
+  keyId: string,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<OwnedApiKeySummary> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/account/api-keys/${encodeURIComponent(keyId)}`,
+    {
+      method: "DELETE",
+      cache: "no-store",
+      headers: buildAuthenticatedHeaders(bearerToken)
+    }
+  ).catch(() => {
+    throw new ApiKeyLifecycleError(
+      API_KEY_LIFECYCLE_ERROR_MESSAGE,
+      "api_key_lifecycle_unavailable",
+      500
+    );
+  });
+
+  return handleApiKeyLifecycleResponse(response, isOwnedApiKeySummary);
 }
 
 export async function joinMatchLobby(
@@ -858,6 +936,33 @@ async function handleDiplomacySubmissionResponse<T>(
   return payload;
 }
 
+async function handleApiKeyLifecycleResponse<T>(
+  response: ResponseLike,
+  validator: (payload: unknown) => payload is T
+): Promise<T> {
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    throw toApiKeyLifecycleError(payload, response.status);
+  }
+
+  const payload: unknown = await response.json().catch(() => {
+    throw new ApiKeyLifecycleError(
+      API_KEY_LIFECYCLE_ERROR_MESSAGE,
+      "invalid_api_key_lifecycle_response",
+      response.status
+    );
+  });
+  if (!validator(payload)) {
+    throw new ApiKeyLifecycleError(
+      API_KEY_LIFECYCLE_ERROR_MESSAGE,
+      "invalid_api_key_lifecycle_response",
+      response.status
+    );
+  }
+
+  return payload;
+}
+
 type ResponseLike = {
   ok: boolean;
   status: number;
@@ -915,6 +1020,18 @@ function toDiplomacySubmissionError(payload: unknown, status: number): Diplomacy
   return new DiplomacySubmissionError(
     DIPLOMACY_SUBMISSION_ERROR_MESSAGE,
     "diplomacy_submission_unavailable",
+    status
+  );
+}
+
+function toApiKeyLifecycleError(payload: unknown, status: number): ApiKeyLifecycleError {
+  if (isApiErrorEnvelope(payload)) {
+    return new ApiKeyLifecycleError(payload.error.message, payload.error.code, status);
+  }
+
+  return new ApiKeyLifecycleError(
+    API_KEY_LIFECYCLE_ERROR_MESSAGE,
+    "api_key_lifecycle_unavailable",
     status
   );
 }
@@ -1025,6 +1142,28 @@ function isAllianceActionAcceptanceResponse(
     typeof payload.match_id === "string" &&
     typeof payload.player_id === "string" &&
     isAllianceRecord(payload.alliance)
+  );
+}
+
+function isOwnedApiKeyListResponse(payload: unknown): payload is OwnedApiKeyListResponse {
+  return isRecord(payload) && Array.isArray(payload.items) && payload.items.every(isOwnedApiKeySummary);
+}
+
+function isOwnedApiKeyCreateResponse(payload: unknown): payload is OwnedApiKeyCreateResponse {
+  return (
+    isRecord(payload) &&
+    typeof payload.api_key === "string" &&
+    isOwnedApiKeySummary(payload.summary)
+  );
+}
+
+function isOwnedApiKeySummary(payload: unknown): payload is OwnedApiKeySummary {
+  return (
+    isRecord(payload) &&
+    typeof payload.key_id === "string" &&
+    typeof payload.elo_rating === "number" &&
+    typeof payload.is_active === "boolean" &&
+    typeof payload.created_at === "string"
   );
 }
 

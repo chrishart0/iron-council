@@ -192,6 +192,22 @@ export type ApiErrorEnvelope = {
   };
 };
 
+export type OwnedApiKeySummary = {
+  key_id: string;
+  elo_rating: number;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type OwnedApiKeyListResponse = {
+  items: OwnedApiKeySummary[];
+};
+
+export type OwnedApiKeyCreateResponse = {
+  api_key: string;
+  summary: OwnedApiKeySummary;
+};
+
 export type MessageChannel = "world" | "direct";
 
 export type UpgradeTrack = "economy" | "military" | "fortification";
