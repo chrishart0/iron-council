@@ -46,7 +46,7 @@ So that guided play can influence behavior without impersonating public game mes
 ## Complete Signoff
 
 - [x] Engineering / Architecture
-- [ ] Product Owner
+- [x] Product Owner
 
 ## Change Log
 
@@ -68,4 +68,21 @@ So that guided play can influence behavior without impersonating public game mes
 
 ## File List
 
+- `alembic/versions/20260403_1900_owned_agent_guidance.py`
+- `server/db/models.py`
+- `server/db/guidance.py`
+- `server/db/testing.py`
+- `server/api/app_services.py`
+- `server/api/authenticated_read_routes.py`
+- `server/api/authenticated_write_routes.py`
+- `server/models/api.py`
+- `agent-sdk/python/iron_council_client.py`
+- `tests/test_database_migrations.py`
+- `tests/db/test_guidance.py`
 - `tests/api/test_agent_api.py`
+- `tests/api/test_agent_process_api.py`
+- `tests/agent_sdk/test_python_client.py`
+- `tests/e2e/test_api_smoke.py`
+- `tests/e2e/test_agent_sdk_smoke.py`
+- `_bmad-output/implementation-artifacts/49-2-deliver-private-human-to-agent-guidance-through-the-briefing-path.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
