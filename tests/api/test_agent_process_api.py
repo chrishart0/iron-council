@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any
 
 import httpx
 from server.agent_registry import build_seeded_agent_api_key
-from tests.support import RunningApp, insert_completed_match_fixture
+from server.db.testing import provision_seeded_database
+from sqlalchemy import create_engine, text
+from tests.conftest import _allocate_tcp_port, _wait_for_running_app
+from tests.support import RunningApp, build_persisted_player_id, insert_completed_match_fixture
 
 
 def _headers(agent_id: str = "agent-player-2") -> dict[str, str]:
@@ -326,7 +332,14 @@ def test_running_app_processes_consolidated_command_envelope_without_partial_sid
         "Bundled process direct update.",
     ]
     assert treaties.status_code == HTTPStatus.OK
-    assert [treaty["player_b_id"] for treaty in treaties.json()["treaties"]] == ["player-3"]
+    assert [treaty["player_b_id"] for treaty in treaties.json()["treaties"]] == [
+        "player-3",
+        "player-3",
+    ]
+    assert [treaty["status"] for treaty in treaties.json()["treaties"]] == [
+        "active",
+        "proposed",
+    ]
     assert player_two_state.status_code == HTTPStatus.OK
     assert player_two_state.json()["alliance_id"] is None
     assert player_three_messages.status_code == HTTPStatus.OK
@@ -428,7 +441,7 @@ def test_running_app_processes_treaty_reads_for_authenticated_player(
         "status": "accepted",
         "match_id": running_seeded_app.primary_match_id,
         "treaty": {
-            "treaty_id": 0,
+            "treaty_id": 1,
             "player_a_id": "player-1",
             "player_b_id": "player-2",
             "treaty_type": "trade",
@@ -445,7 +458,7 @@ def test_running_app_processes_treaty_reads_for_authenticated_player(
         "match_id": running_seeded_app.primary_match_id,
         "treaties": [
             {
-                "treaty_id": 0,
+                "treaty_id": 1,
                 "player_a_id": "player-1",
                 "player_b_id": "player-2",
                 "treaty_type": "trade",
@@ -455,9 +468,136 @@ def test_running_app_processes_treaty_reads_for_authenticated_player(
                 "signed_tick": None,
                 "withdrawn_by": None,
                 "withdrawn_tick": None,
-            }
+            },
+            {
+                "treaty_id": 0,
+                "player_a_id": "player-1",
+                "player_b_id": "player-3",
+                "treaty_type": "trade",
+                "status": "active",
+                "proposed_by": "player-1",
+                "proposed_tick": 141,
+                "signed_tick": 141,
+                "withdrawn_by": None,
+                "withdrawn_tick": None,
+            },
         ],
     }
+
+
+def test_running_app_reads_broken_treaty_statuses_for_authenticated_player(tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'process-broken-treaty.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO treaties (
+                    id, match_id, player_a_id, player_b_id, treaty_type, status, signed_tick,
+                    broken_tick, created_at
+                ) VALUES (
+                    :id, :match_id, :player_a_id, :player_b_id, :treaty_type, :status,
+                    :signed_tick, :broken_tick, :created_at
+                )
+                """
+            ),
+            {
+                "id": "00000000-0000-0000-0000-000000000799",
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "player_a_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000101",
+                    public_player_id="player-1",
+                ),
+                "player_b_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000101",
+                    public_player_id="player-2",
+                ),
+                "treaty_type": "trade",
+                "status": "broken_by_a",
+                "signed_tick": 141,
+                "broken_tick": 142,
+                "created_at": "2026-03-29 07:58:00+00:00",
+            },
+        )
+
+    host = "127.0.0.1"
+    port = _allocate_tcp_port()
+    process = subprocess.Popen(
+        [
+            "uv",
+            "run",
+            "uvicorn",
+            "server.main:app",
+            "--host",
+            host,
+            "--port",
+            str(port),
+            "--log-level",
+            "warning",
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        env={
+            **os.environ,
+            "DATABASE_URL": database_url,
+            "IRON_COUNCIL_MATCH_REGISTRY_BACKEND": "db",
+            "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+            "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+            "HUMAN_JWT_AUDIENCE": "authenticated",
+            "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+            "PYTHONUNBUFFERED": "1",
+        },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    base_url = f"http://{host}:{port}"
+    try:
+        _wait_for_running_app(base_url, process)
+        with httpx.Client(base_url=base_url, timeout=5) as client:
+            treaty_read = client.get(
+                "/api/v1/matches/00000000-0000-0000-0000-000000000101/treaties",
+                headers=_headers(),
+            )
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+    assert treaty_read.status_code == HTTPStatus.OK
+    payload = treaty_read.json()
+    assert payload["match_id"] == "00000000-0000-0000-0000-000000000101"
+    assert payload["treaties"] == [
+        {
+            "treaty_id": 0,
+            "player_a_id": "player-1",
+            "player_b_id": "player-2",
+            "treaty_type": "trade",
+            "status": "broken_by_a",
+            "proposed_by": "player-1",
+            "proposed_tick": 141,
+            "signed_tick": 141,
+            "withdrawn_by": "player-1",
+            "withdrawn_tick": 142,
+        },
+        {
+            "treaty_id": 1,
+            "player_a_id": "player-1",
+            "player_b_id": "player-3",
+            "treaty_type": "trade",
+            "status": "active",
+            "proposed_by": "player-1",
+            "proposed_tick": 141,
+            "signed_tick": 141,
+            "withdrawn_by": None,
+            "withdrawn_tick": None,
+        },
+    ]
 
 
 def test_running_app_reads_and_updates_alliance_membership_for_authenticated_player(

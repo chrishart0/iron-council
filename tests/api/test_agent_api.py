@@ -2868,6 +2868,107 @@ async def test_treaty_lifecycle_reads_are_deterministic_and_world_announcements_
 
 
 @pytest.mark.asyncio
+async def test_automatic_treaty_breaks_surface_through_authenticated_reads(
+    app_client: AsyncClient,
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    record = seeded_registry.get_match("match-alpha")
+    assert record is not None
+    record.state.cities["birmingham"].owner = None
+    record.state.players["player-2"].cities_owned = ["manchester"]
+    record.state.players["player-3"].cities_owned = []
+    army_a = next(army for army in record.state.armies if army.id == "army-a")
+    army_a.location = "birmingham"
+    army_a.destination = None
+    army_a.path = None
+    army_a.ticks_remaining = 0
+
+    seeded_registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest.model_validate(_treaty_payload(counterparty_id="player-1")),
+        player_id="player-2",
+    )
+    seeded_registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest.model_validate(
+            _treaty_payload(action="accept", counterparty_id="player-2")
+        ),
+        player_id="player-1",
+    )
+    seeded_registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-1",
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "birmingham"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    seeded_registry.advance_match_tick("match-alpha")
+
+    async with app_client as client:
+        treaty_read = await client.get(
+            "/api/v1/matches/match-alpha/treaties",
+            headers=_auth_headers_for_player("player-1"),
+        )
+        briefing_read = await client.get(
+            "/api/v1/matches/match-alpha/agent-briefing",
+            headers=_auth_headers_for_player("player-2"),
+        )
+        world_messages = await client.get(
+            "/api/v1/matches/match-alpha/messages",
+            headers=_auth_headers_for_player("player-4"),
+        )
+
+    assert treaty_read.status_code == HTTPStatus.OK
+    assert treaty_read.json() == {
+        "match_id": "match-alpha",
+        "treaties": [
+            {
+                "treaty_id": 0,
+                "player_a_id": "player-1",
+                "player_b_id": "player-2",
+                "treaty_type": "trade",
+                "status": "broken_by_a",
+                "proposed_by": "player-2",
+                "proposed_tick": 142,
+                "signed_tick": 142,
+                "withdrawn_by": "player-1",
+                "withdrawn_tick": 142,
+            }
+        ],
+    }
+    assert briefing_read.status_code == HTTPStatus.OK
+    assert briefing_read.json()["treaties"] == treaty_read.json()["treaties"]
+    assert world_messages.status_code == HTTPStatus.OK
+    assert world_messages.json()["messages"] == [
+        {
+            "message_id": 0,
+            "channel": "world",
+            "sender_id": "system",
+            "recipient_id": None,
+            "tick": 142,
+            "content": "Treaty signed: player-1 and player-2 entered a trade treaty.",
+        },
+        {
+            "message_id": 1,
+            "channel": "world",
+            "sender_id": "system",
+            "recipient_id": None,
+            "tick": 142,
+            "content": "Treaty broken: player-1 attacked player-2 and broke their trade treaty.",
+        },
+    ]
+
+
+@pytest.mark.asyncio
 async def test_treaty_actions_reject_invalid_authenticated_requests(
     app_client: AsyncClient,
     seeded_registry: InMemoryMatchRegistry,

@@ -224,7 +224,7 @@ MessageChannel = Literal["world", "direct"]
 CommandMessageChannel = Literal["world", "direct", "group"]
 TreatyAction = Literal["propose", "accept", "withdraw"]
 TreatyType = Literal["non_aggression", "defensive", "trade"]
-TreatyStatus = Literal["proposed", "active", "withdrawn"]
+TreatyStatus = Literal["proposed", "active", "broken_by_a", "broken_by_b", "withdrawn"]
 AllianceAction = Literal["create", "join", "leave"]
 
 

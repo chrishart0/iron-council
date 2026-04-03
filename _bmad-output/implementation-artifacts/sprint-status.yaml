@@ -211,5 +211,5 @@ development_status:
   41-3-add-read-only-public-player-human-profile-scaffolding-once-a-stable-public-identity-contract-exists: done
   epic-41-retrospective: optional
 
-  epic-42: in-progress
-  42-1-break-active-treaties-on-hostile-attacks-and-announce-them: drafted
+  epic-42: done
+  42-1-break-active-treaties-on-hostile-attacks-and-announce-them: done

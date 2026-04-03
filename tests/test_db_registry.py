@@ -107,6 +107,119 @@ def test_load_match_registry_from_database_preserves_persisted_alliance_metadata
     assert primary_match.state.players["player-2"].alliance_id == "alliance-red"
 
 
+def test_load_match_record_and_registry_reload_include_persisted_treaties_compatibly(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-treaties.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO treaties (
+                    id, match_id, player_a_id, player_b_id, treaty_type, status, signed_tick,
+                    broken_tick, created_at
+                ) VALUES (
+                    :id, :match_id, :player_a_id, :player_b_id, :treaty_type, :status,
+                    :signed_tick, :broken_tick, :created_at
+                )
+                """
+            ),
+            {
+                "id": "00000000-0000-0000-0000-000000000799",
+                "match_id": "00000000-0000-0000-0000-000000000101",
+                "player_a_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000101",
+                    public_player_id="player-1",
+                ),
+                "player_b_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000101",
+                    public_player_id="player-2",
+                ),
+                "treaty_type": "trade",
+                "status": "broken_by_a",
+                "signed_tick": 141,
+                "broken_tick": 142,
+                "created_at": "2026-03-29 07:58:00+00:00",
+            },
+        )
+
+    with Session(engine) as session:
+        persisted_match = session.get(Match, "00000000-0000-0000-0000-000000000101")
+        assert persisted_match is not None
+        session_loaded = db_hydration_module.load_match_record_from_session(
+            session=session,
+            match=persisted_match,
+        )
+
+    reloaded_registry = load_match_registry_from_database(database_url)
+    reloaded_match = reloaded_registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert reloaded_match is not None
+
+    # Persisted treaty rows predate proposal-provenance columns, so DB hydration
+    # intentionally reconstructs compatibility values for `proposed_by/proposed_tick`
+    # while preserving the truthful signed/broken status data.
+    expected_treaties = [
+        {
+            "treaty_id": 0,
+            "player_a_id": "player-1",
+            "player_b_id": "player-2",
+            "treaty_type": "trade",
+            "status": "broken_by_a",
+            "proposed_by": "player-1",
+            "proposed_tick": 141,
+            "signed_tick": 141,
+            "withdrawn_by": "player-1",
+            "withdrawn_tick": 142,
+        },
+        {
+            "treaty_id": 1,
+            "player_a_id": "player-1",
+            "player_b_id": "player-3",
+            "treaty_type": "trade",
+            "status": "active",
+            "proposed_by": "player-1",
+            "proposed_tick": 141,
+            "signed_tick": 141,
+            "withdrawn_by": None,
+            "withdrawn_tick": None,
+        },
+    ]
+
+    assert [
+        {
+            "treaty_id": treaty.treaty_id,
+            "player_a_id": treaty.player_a_id,
+            "player_b_id": treaty.player_b_id,
+            "treaty_type": treaty.treaty_type,
+            "status": treaty.status,
+            "proposed_by": treaty.proposed_by,
+            "proposed_tick": treaty.proposed_tick,
+            "signed_tick": treaty.signed_tick,
+            "withdrawn_by": treaty.withdrawn_by,
+            "withdrawn_tick": treaty.withdrawn_tick,
+        }
+        for treaty in session_loaded.treaties
+    ] == expected_treaties
+    assert [
+        {
+            "treaty_id": treaty.treaty_id,
+            "player_a_id": treaty.player_a_id,
+            "player_b_id": treaty.player_b_id,
+            "treaty_type": treaty.treaty_type,
+            "status": treaty.status,
+            "proposed_by": treaty.proposed_by,
+            "proposed_tick": treaty.proposed_tick,
+            "signed_tick": treaty.signed_tick,
+            "withdrawn_by": treaty.withdrawn_by,
+            "withdrawn_tick": treaty.withdrawn_tick,
+        }
+        for treaty in reloaded_match.treaties
+    ] == expected_treaties
+
+
 def test_load_match_registry_from_database_falls_back_to_derived_alliances(
     tmp_path: Path,
 ) -> None:

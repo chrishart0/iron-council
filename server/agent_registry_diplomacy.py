@@ -18,8 +18,10 @@ from server.models.api import (
     AllianceRecord,
     TreatyActionRequest,
     TreatyRecord,
+    TreatyStatus,
     TreatyType,
 )
+from server.models.orders import OrderBatch
 from server.models.state import MatchState
 
 
@@ -181,7 +183,11 @@ def apply_treaty_action(
     )
 
     if action.action == "propose":
-        if latest_treaty is not None and latest_treaty.status != "withdrawn":
+        if latest_treaty is not None and latest_treaty.status not in {
+            "withdrawn",
+            "broken_by_a",
+            "broken_by_b",
+        }:
             raise TreatyTransitionError(
                 code="unsupported_treaty_transition",
                 message=(
@@ -278,6 +284,80 @@ def validate_command_treaty(
         raise MatchAccessError(
             code="self_targeted_treaty",
             message="Treaty actions require two different players.",
+        )
+
+
+def reconcile_hostile_treaty_breaks(
+    *,
+    record: MatchRecord,
+    pre_resolution_state: MatchState,
+    accepted_orders: OrderBatch,
+    match_id: str,
+    record_world_message: WorldMessageRecorder,
+) -> None:
+    armies_by_id = {army.id: army for army in pre_resolution_state.armies}
+    occupying_owners_by_city: dict[str, set[str]] = {}
+    for army in pre_resolution_state.armies:
+        if army.location is None or army.destination is not None:
+            continue
+        occupying_owners_by_city.setdefault(army.location, set()).add(army.owner)
+
+    for order in accepted_orders.movements:
+        attacking_army = armies_by_id.get(order.army_id)
+        if attacking_army is None:
+            continue
+
+        destination_city = pre_resolution_state.cities.get(order.destination)
+        if destination_city is None:
+            continue
+
+        attacker_id = attacking_army.owner
+        defender_ids = set(occupying_owners_by_city.get(order.destination, set()))
+        if destination_city.owner is not None:
+            defender_ids.add(destination_city.owner)
+        defender_ids.discard(attacker_id)
+
+        for defender_id in sorted(defender_ids):
+            break_active_treaties_between_players(
+                record=record,
+                match_id=match_id,
+                attacker_id=attacker_id,
+                defender_id=defender_id,
+                break_tick=pre_resolution_state.tick,
+                record_world_message=record_world_message,
+            )
+
+
+def break_active_treaties_between_players(
+    *,
+    record: MatchRecord,
+    match_id: str,
+    attacker_id: str,
+    defender_id: str,
+    break_tick: int,
+    record_world_message: WorldMessageRecorder,
+) -> None:
+    player_a_id, player_b_id = sorted((attacker_id, defender_id))
+    break_status: TreatyStatus = "broken_by_a" if attacker_id == player_a_id else "broken_by_b"
+
+    for treaty in record.treaties:
+        if (
+            treaty.player_a_id != player_a_id
+            or treaty.player_b_id != player_b_id
+            or treaty.status != "active"
+        ):
+            continue
+
+        treaty.status = break_status
+        treaty.withdrawn_by = attacker_id
+        treaty.withdrawn_tick = break_tick
+        record_world_message(
+            match_id=match_id,
+            tick=break_tick,
+            content=(
+                f"Treaty broken: {attacker_id} attacked {defender_id} and broke their "
+                f"{treaty.treaty_type} treaty."
+            ),
         )
 
 

@@ -21,6 +21,7 @@ from server.models.api import (
     GroupChatMessageCreateRequest,
     MatchMessageCreateRequest,
     TreatyActionRequest,
+    TreatyRecord,
 )
 from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
@@ -1022,6 +1023,218 @@ def test_apply_command_envelope_routes_treaty_acceptance_world_side_effects() ->
         for message in registry.list_visible_messages(match_id="match-alpha", player_id="player-1")
         if message.channel == "world"
     ] == ["Treaty signed: player-2 and player-3 entered a trade treaty."]
+
+
+def test_treaty_record_accepts_broken_statuses() -> None:
+    broken_by_a = TreatyRecord(
+        treaty_id=7,
+        player_a_id="player-1",
+        player_b_id="player-2",
+        treaty_type="non_aggression",
+        status="broken_by_a",
+        proposed_by="player-1",
+        proposed_tick=10,
+        signed_tick=11,
+        withdrawn_by="player-1",
+        withdrawn_tick=12,
+    )
+    broken_by_b = broken_by_a.model_copy(
+        update={"status": "broken_by_b", "withdrawn_by": "player-2"}
+    )
+
+    assert broken_by_a.status == "broken_by_a"
+    assert broken_by_b.status == "broken_by_b"
+
+
+def test_advance_match_tick_breaks_active_treaties_when_attacking_partner_in_neutral_city() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    match = registry.get_match("match-alpha")
+    assert match is not None
+    match.state.cities["birmingham"].owner = None
+    match.state.players["player-2"].cities_owned = ["manchester"]
+    match.state.players["player-3"].cities_owned = []
+    army_a = next(army for army in match.state.armies if army.id == "army-a")
+    army_a.location = "birmingham"
+    army_a.destination = None
+    army_a.path = None
+    army_a.ticks_remaining = 0
+
+    registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-1",
+            action="propose",
+            treaty_type="trade",
+        ),
+        player_id="player-2",
+    )
+    registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-2",
+            action="accept",
+            treaty_type="trade",
+        ),
+        player_id="player-1",
+    )
+    registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-1",
+            action="propose",
+            treaty_type="non_aggression",
+        ),
+        player_id="player-2",
+    )
+    registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-2",
+            action="accept",
+            treaty_type="non_aggression",
+        ),
+        player_id="player-1",
+    )
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-1",
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "birmingham"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+
+    advanced_tick = registry.advance_match_tick("match-alpha")
+
+    treaties = registry.list_treaties(match_id="match-alpha")
+    assert advanced_tick.accepted_orders.model_dump(mode="json") == {
+        "movements": [{"army_id": "army-b", "destination": "birmingham"}],
+        "recruitment": [],
+        "upgrades": [],
+        "transfers": [],
+    }
+    assert treaties == [
+        TreatyRecord(
+            treaty_id=1,
+            player_a_id="player-1",
+            player_b_id="player-2",
+            treaty_type="non_aggression",
+            status="broken_by_a",
+            proposed_by="player-2",
+            proposed_tick=142,
+            signed_tick=142,
+            withdrawn_by="player-1",
+            withdrawn_tick=142,
+        ),
+        TreatyRecord(
+            treaty_id=0,
+            player_a_id="player-1",
+            player_b_id="player-2",
+            treaty_type="trade",
+            status="broken_by_a",
+            proposed_by="player-2",
+            proposed_tick=142,
+            signed_tick=142,
+            withdrawn_by="player-1",
+            withdrawn_tick=142,
+        ),
+    ]
+    assert [
+        message.content
+        for message in registry.list_visible_messages(match_id="match-alpha", player_id="player-3")
+        if message.channel == "world"
+    ] == [
+        "Treaty signed: player-1 and player-2 entered a trade treaty.",
+        "Treaty signed: player-1 and player-2 entered a non_aggression treaty.",
+        "Treaty broken: player-1 attacked player-2 and broke their trade treaty.",
+        "Treaty broken: player-1 attacked player-2 and broke their non_aggression treaty.",
+    ]
+
+
+def test_advance_match_tick_marks_broken_by_b_when_player_b_attacks_partner_city() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    match = registry.get_match("match-alpha")
+    assert match is not None
+    match.state.cities["manchester"].owner = "player-1"
+    match.state.players["player-1"].cities_owned = ["manchester"]
+    match.state.players["player-2"].cities_owned = []
+    army_a = next(army for army in match.state.armies if army.id == "army-a")
+    army_a.location = "birmingham"
+    army_a.destination = None
+    army_a.path = None
+    army_a.ticks_remaining = 0
+
+    registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-1",
+            action="propose",
+            treaty_type="trade",
+        ),
+        player_id="player-2",
+    )
+    registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-2",
+            action="accept",
+            treaty_type="trade",
+        ),
+        player_id="player-1",
+    )
+    registry.record_submission(
+        match_id="match-alpha",
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": "match-alpha",
+                "player_id": "player-2",
+                "tick": 142,
+                "orders": {
+                    "movements": [{"army_id": "army-a", "destination": "manchester"}],
+                    "recruitment": [],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+
+    registry.advance_match_tick("match-alpha")
+
+    assert registry.list_treaties(match_id="match-alpha") == [
+        TreatyRecord(
+            treaty_id=0,
+            player_a_id="player-1",
+            player_b_id="player-2",
+            treaty_type="trade",
+            status="broken_by_b",
+            proposed_by="player-2",
+            proposed_tick=142,
+            signed_tick=142,
+            withdrawn_by="player-2",
+            withdrawn_tick=142,
+        )
+    ]
 
 
 def test_apply_command_envelope_uses_scratch_registry_to_prevent_partial_mutation() -> None:

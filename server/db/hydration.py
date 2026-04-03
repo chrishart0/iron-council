@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import Literal
+from typing import Literal, cast
 
 from sqlalchemy import and_, create_engine, or_, select
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from server.agent_registry import (
     MatchAlliance,
     MatchAllianceMember,
     MatchRecord,
+    MatchTreaty,
     build_seeded_agent_profiles,
 )
 from server.db.identity_hydration import (
@@ -31,9 +32,9 @@ from server.db.identity_hydration import (
 from server.db.identity_hydration import (
     load_public_competitor_kinds_by_match as _load_public_competitor_kinds_by_match,
 )
-from server.db.models import Alliance, ApiKey, Match, Player, PlayerMatchSettlement
+from server.db.models import Alliance, ApiKey, Match, Player, PlayerMatchSettlement, Treaty
 from server.db.player_ids import build_persisted_player_mapping
-from server.models.api import AgentProfileResponse
+from server.models.api import AgentProfileResponse, TreatyStatus, TreatyType
 from server.models.domain import MatchStatus
 from server.models.state import MatchState
 
@@ -48,6 +49,7 @@ def _compose_loaded_match_record(
     public_competitor_kinds: dict[str, Literal["human", "agent"]],
     authenticated_agent_keys: list[AuthenticatedAgentKeyRecord],
     alliances: list[MatchAlliance] | None = None,
+    treaties: list[MatchTreaty] | None = None,
 ) -> MatchRecord:
     return MatchRecord(
         match_id=str(match.id),
@@ -67,6 +69,7 @@ def _compose_loaded_match_record(
         public_competitor_kinds=public_competitor_kinds,
         joined_agents=joined_agents,
         joined_humans=joined_humans,
+        treaties=list(treaties or []),
         alliances=list(alliances or []),
         authenticated_agent_keys=authenticated_agent_keys,
     )
@@ -104,10 +107,23 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
                 PlayerMatchSettlement.player_id,
             )
         ).all()
+        treaty_rows = session.scalars(
+            select(Treaty).order_by(
+                Treaty.match_id,
+                Treaty.signed_tick,
+                Treaty.broken_tick,
+                Treaty.id,
+            )
+        ).all()
 
         alliances_by_match = load_persisted_alliances_by_match(
             matches=matches,
             alliance_rows=alliance_rows,
+            player_rows=player_rows,
+        )
+        treaties_by_match = load_persisted_treaties_by_match(
+            matches=matches,
+            treaty_rows=treaty_rows,
             player_rows=player_rows,
         )
         agent_profiles_by_match = load_agent_profiles_by_match(
@@ -149,6 +165,7 @@ def load_match_registry_from_database(database_url: str) -> InMemoryMatchRegistr
                 agent_profiles=agent_profiles_by_match.get(match_id, build_seeded_agent_profiles()),
                 public_competitor_kinds=public_competitor_kinds_by_match.get(match_id, {}),
                 alliances=persisted_alliances,
+                treaties=treaties_by_match.get(match_id, []),
                 authenticated_agent_keys=authenticated_keys_by_match.get(match_id, []),
             )
             registry.seed_match(record)
@@ -207,6 +224,11 @@ def load_match_record_from_session(*, session: Session, match: Match) -> MatchRe
         else []
     )
     state = MatchState.model_validate(match.state)
+    treaty_rows = session.scalars(
+        select(Treaty)
+        .where(Treaty.match_id == match.id)
+        .order_by(Treaty.signed_tick, Treaty.broken_tick, Treaty.id)
+    ).all()
     joined_agents = load_joined_agents_by_match(
         matches=[match],
         player_rows=player_rows,
@@ -231,6 +253,11 @@ def load_match_record_from_session(*, session: Session, match: Match) -> MatchRe
         matches=[match],
         player_rows=player_rows,
     ).get(match_id, {})
+    treaties = load_persisted_treaties_by_match(
+        matches=[match],
+        treaty_rows=treaty_rows,
+        player_rows=player_rows,
+    ).get(match_id, [])
     return _compose_loaded_match_record(
         match=match,
         state=state,
@@ -238,6 +265,7 @@ def load_match_record_from_session(*, session: Session, match: Match) -> MatchRe
         joined_humans=joined_humans,
         agent_profiles=agent_profiles,
         public_competitor_kinds=public_competitor_kinds,
+        treaties=treaties,
         authenticated_agent_keys=authenticated_agent_keys,
     )
 
@@ -281,6 +309,37 @@ def load_persisted_alliances_by_match(
             alliances_by_match[match_id] = persisted_alliances
 
     return alliances_by_match
+
+
+def load_persisted_treaties_by_match(
+    *,
+    matches: Sequence[Match],
+    treaty_rows: Sequence[Treaty],
+    player_rows: Sequence[Player],
+) -> dict[str, list[MatchTreaty]]:
+    players_by_match: dict[str, list[Player]] = defaultdict(list)
+    treaty_rows_by_match: dict[str, list[Treaty]] = defaultdict(list)
+    for player in player_rows:
+        players_by_match[str(player.match_id)].append(player)
+    for treaty_row in treaty_rows:
+        treaty_rows_by_match[str(treaty_row.match_id)].append(treaty_row)
+
+    treaties_by_match: dict[str, list[MatchTreaty]] = {}
+    for match in matches:
+        match_id = str(match.id)
+        state = MatchState.model_validate(match.state)
+        persisted_player_mapping = build_persisted_player_mapping(
+            canonical_player_ids=sorted(state.players),
+            persisted_players=players_by_match.get(match_id, []),
+        )
+        persisted_treaties = merge_persisted_treaties(
+            persisted_rows=treaty_rows_by_match.get(match_id, []),
+            persisted_player_mapping=persisted_player_mapping,
+        )
+        if persisted_treaties:
+            treaties_by_match[match_id] = persisted_treaties
+
+    return treaties_by_match
 
 
 load_agent_profiles_by_match = _load_agent_profiles_by_match
@@ -365,6 +424,80 @@ def merge_persisted_alliance_metadata(
     return sorted(persisted_alliances, key=lambda alliance: alliance.alliance_id)
 
 
+def merge_persisted_treaties(
+    *,
+    persisted_rows: Sequence[Treaty],
+    persisted_player_mapping: dict[str, str],
+) -> list[MatchTreaty]:
+    """Hydrate DB treaty rows into MatchTreaty compatibility records.
+
+    The persisted schema stores finalized treaty orientation/status and signed/broken ticks,
+    but not proposal provenance fields (`proposed_by`, `proposed_tick`) or an explicit
+    withdrawer for legacy withdrawn rows. To preserve the existing public `TreatyRecord`
+    shape without a migration, DB-backed reads reconstruct the minimum compatibility data:
+    - `proposed_by` falls back to canonical `player_a_id`
+    - `proposed_tick` falls back to `signed_tick`
+    - `withdrawn_by` is only reconstructed for directional broken statuses
+
+    This keeps status/break-tick history honest while making the older persisted shape
+    consumable through current authenticated/read surfaces.
+    """
+    canonical_rows: list[tuple[str, str, Treaty]] = []
+    for persisted_row in persisted_rows:
+        player_a_id = persisted_player_mapping.get(str(persisted_row.player_a_id))
+        player_b_id = persisted_player_mapping.get(str(persisted_row.player_b_id))
+        if player_a_id is None or player_b_id is None:
+            return []
+        canonical_rows.append((player_a_id, player_b_id, persisted_row))
+
+    canonical_rows.sort(
+        key=lambda canonical_row: (
+            canonical_row[0],
+            canonical_row[1],
+            canonical_row[2].treaty_type,
+            int(canonical_row[2].signed_tick),
+            int(canonical_row[2].broken_tick) if canonical_row[2].broken_tick is not None else -1,
+            str(canonical_row[2].id),
+        )
+    )
+
+    persisted_treaties: list[MatchTreaty] = []
+    for treaty_id, (player_a_id, player_b_id, persisted_row) in enumerate(canonical_rows):
+        terminal_actor_id: str | None = None
+        terminal_tick: int | None = None
+        if persisted_row.status == "broken_by_a":
+            terminal_actor_id = player_a_id
+            terminal_tick = (
+                int(persisted_row.broken_tick) if persisted_row.broken_tick is not None else None
+            )
+        elif persisted_row.status == "broken_by_b":
+            terminal_actor_id = player_b_id
+            terminal_tick = (
+                int(persisted_row.broken_tick) if persisted_row.broken_tick is not None else None
+            )
+        elif persisted_row.status == "withdrawn":
+            terminal_tick = (
+                int(persisted_row.broken_tick) if persisted_row.broken_tick is not None else None
+            )
+
+        persisted_treaties.append(
+            MatchTreaty(
+                treaty_id=treaty_id,
+                player_a_id=player_a_id,
+                player_b_id=player_b_id,
+                treaty_type=cast(TreatyType, persisted_row.treaty_type),
+                status=cast(TreatyStatus, persisted_row.status),
+                proposed_by=player_a_id,
+                proposed_tick=int(persisted_row.signed_tick),
+                signed_tick=int(persisted_row.signed_tick),
+                withdrawn_by=terminal_actor_id,
+                withdrawn_tick=terminal_tick,
+            )
+        )
+
+    return persisted_treaties
+
+
 __all__ = [
     "load_agent_profiles_by_match",
     "load_authenticated_agent_keys_by_match",
@@ -373,5 +506,6 @@ __all__ = [
     "load_match_record_from_session",
     "load_match_registry_from_database",
     "load_persisted_alliances_by_match",
+    "load_persisted_treaties_by_match",
     "load_public_competitor_kinds_by_match",
 ]

@@ -611,6 +611,83 @@ def test_sdk_get_agent_briefing_propagates_since_tick_and_parses_typed_response(
     assert briefing.messages.world[0].content == "World briefing."
 
 
+def test_sdk_parses_broken_treaty_statuses_from_briefing_payload(sdk_module: Any) -> None:
+    captured_request: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_request.update(
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "query": dict(request.url.params),
+            }
+        )
+        return httpx.Response(
+            200,
+            json={
+                "match_id": "match-alpha",
+                "player_id": "player-2",
+                "state": {
+                    "match_id": "match-alpha",
+                    "tick": 143,
+                    "player_id": "player-2",
+                    "resources": {"food": 12, "production": 7, "money": 9},
+                    "cities": {},
+                    "visible_armies": [],
+                    "alliance_id": None,
+                    "alliance_members": [],
+                    "victory": {
+                        "leading_alliance": None,
+                        "cities_held": 1,
+                        "threshold": 18,
+                        "countdown_ticks_remaining": None,
+                    },
+                },
+                "alliances": [],
+                "treaties": [
+                    {
+                        "treaty_id": 5,
+                        "player_a_id": "player-1",
+                        "player_b_id": "player-2",
+                        "treaty_type": "trade",
+                        "status": "broken_by_a",
+                        "proposed_by": "player-2",
+                        "proposed_tick": 142,
+                        "signed_tick": 142,
+                        "withdrawn_by": "player-1",
+                        "withdrawn_tick": 142,
+                    }
+                ],
+                "group_chats": [],
+                "messages": {"direct": [], "group": [], "world": []},
+            },
+        )
+
+    session = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="http://testserver",
+    )
+    try:
+        client = sdk_module.IronCouncilClient(
+            base_url="http://testserver",
+            api_key="***",
+            session=session,
+        )
+
+        briefing = client.get_agent_briefing("match-alpha")
+    finally:
+        session.close()
+
+    assert captured_request == {
+        "method": "GET",
+        "path": "/api/v1/matches/match-alpha/agent-briefing",
+        "query": {},
+    }
+    assert briefing.treaties[0].status == "broken_by_a"
+    assert briefing.treaties[0].withdrawn_by == "player-1"
+    assert briefing.treaties[0].withdrawn_tick == 142
+
+
 def test_sdk_group_chat_methods_cover_create_list_read_and_send_workflows(
     sdk_module: Any,
     seeded_registry: InMemoryMatchRegistry,

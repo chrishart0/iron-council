@@ -223,7 +223,18 @@ def apply_command_envelope_mutations(
 
 
 def advance_match_tick(*, record: MatchRecord) -> AdvancedTickResult:
+    def record_world_message(*, match_id: str, tick: int, content: str) -> None:
+        agent_registry_messaging.append_message(
+            record=record,
+            channel="world",
+            sender_id="system",
+            recipient_id=None,
+            tick=tick,
+            content=content,
+        )
+
     current_tick = record.state.tick
+    pre_resolution_state = record.state.model_copy(deep=True)
     queued_for_current_tick = [
         submission.model_copy(deep=True)
         for submission in record.order_submissions
@@ -236,6 +247,13 @@ def advance_match_tick(*, record: MatchRecord) -> AdvancedTickResult:
     validated_orders = validate_queued_orders(
         state=record.state,
         submissions=queued_for_current_tick,
+    )
+    agent_registry_diplomacy.reconcile_hostile_treaty_breaks(
+        record=record,
+        pre_resolution_state=pre_resolution_state,
+        accepted_orders=validated_orders,
+        match_id=record.match_id,
+        record_world_message=record_world_message,
     )
     resolution = resolve_tick(record.state, validated_orders)
     next_state = resolution.next_state.model_copy(update={"tick": current_tick + 1})
