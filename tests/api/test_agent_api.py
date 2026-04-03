@@ -197,6 +197,19 @@ def _join_payload(*, match_id: str = "match-beta") -> dict[str, Any]:
     return {"match_id": match_id}
 
 
+def _owned_agent_guidance_payload(
+    *,
+    match_id: str = "match-alpha",
+    tick: int = 142,
+    content: str = "Hold the northern line.",
+) -> dict[str, Any]:
+    return {
+        "match_id": match_id,
+        "tick": tick,
+        "content": content,
+    }
+
+
 def _briefing_message_contents(payload: dict[str, Any], bucket: str) -> list[str]:
     return [message["content"] for message in payload["messages"][bucket]]
 
@@ -2156,6 +2169,173 @@ async def test_owned_agent_guided_session_route_returns_documented_503_when_app_
         "error": {
             "code": "guided_session_unavailable",
             "message": "Owned agent guided-session reads are only available in DB-backed mode.",
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_owned_agent_guidance_write_stays_out_of_message_channels(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'owned-agent-guidance-write.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+    payload = _owned_agent_guidance_payload(
+        match_id="00000000-0000-0000-0000-000000000101",
+        tick=142,
+        content="Prioritize London if the west opens.",
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/guidance",
+            json=payload,
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert response.status_code == HTTPStatus.ACCEPTED
+    accepted = response.json()
+    assert accepted["status"] == "accepted"
+    assert accepted["match_id"] == "00000000-0000-0000-0000-000000000101"
+    assert accepted["agent_id"] == "agent-player-2"
+    assert accepted["player_id"] == "player-2"
+    assert accepted["tick"] == 142
+    assert accepted["content"] == "Prioritize London if the west opens."
+    assert isinstance(accepted["guidance_id"], str)
+
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        guidance_rows = (
+            connection.execute(
+                text(
+                    """
+                SELECT owner_user_id, agent_player_id, tick, content
+                FROM owned_agent_guidance
+                ORDER BY created_at, id
+                """
+                )
+            )
+            .mappings()
+            .all()
+        )
+        message_rows = (
+            connection.execute(
+                text(
+                    "SELECT channel_type, recipient_id, content "
+                    "FROM messages ORDER BY created_at, id"
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    assert [dict(row) for row in guidance_rows] == [
+        {
+            "owner_user_id": "00000000-0000-0000-0000-000000000302",
+            "agent_player_id": build_persisted_player_id(
+                match_id="00000000-0000-0000-0000-000000000101",
+                public_player_id="player-2",
+            ),
+            "tick": 142,
+            "content": "Prioritize London if the west opens.",
+        }
+    ]
+    assert all(row["content"] != "Prioritize London if the west opens." for row in message_rows)
+
+
+@pytest.mark.asyncio
+async def test_owned_agent_guidance_write_enforces_auth_ownership_match_and_tick(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'owned-agent-guidance-write-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        missing_auth_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/guidance",
+            json=_owned_agent_guidance_payload(
+                match_id="00000000-0000-0000-0000-000000000101",
+            ),
+        )
+        wrong_owner_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/guidance",
+            json=_owned_agent_guidance_payload(
+                match_id="00000000-0000-0000-0000-000000000101",
+            ),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000301"),
+        )
+        unjoined_agent_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000102/agents/agent-player-2/guidance",
+            json=_owned_agent_guidance_payload(
+                match_id="00000000-0000-0000-0000-000000000102",
+                content="Scout the southern coast.",
+            ),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+        tick_mismatch_response = await client.post(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/guidance",
+            json=_owned_agent_guidance_payload(
+                match_id="00000000-0000-0000-0000-000000000101",
+                tick=141,
+            ),
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert missing_auth_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_auth_response.json() == {
+        "error": {
+            "code": "invalid_human_token",
+            "message": "A valid human Bearer token is required.",
+        }
+    }
+    assert wrong_owner_response.status_code == HTTPStatus.FORBIDDEN
+    assert wrong_owner_response.json() == {
+        "error": {
+            "code": "agent_not_owned",
+            "message": (
+                "Authenticated human user '00000000-0000-0000-0000-000000000301' does not "
+                "own agent 'agent-player-2'."
+            ),
+        }
+    }
+    assert unjoined_agent_response.status_code == HTTPStatus.BAD_REQUEST
+    assert unjoined_agent_response.json() == {
+        "error": {
+            "code": "agent_not_joined",
+            "message": (
+                "Agent 'agent-player-2' has not joined match "
+                "'00000000-0000-0000-0000-000000000102' as a player."
+            ),
+        }
+    }
+    assert tick_mismatch_response.status_code == HTTPStatus.BAD_REQUEST
+    assert tick_mismatch_response.json() == {
+        "error": {
+            "code": "tick_mismatch",
+            "message": ("Guidance payload tick '141' does not match current match tick '142'."),
         }
     }
 

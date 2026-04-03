@@ -542,3 +542,19 @@ class OwnedAgentGuidedSessionResponse(StrictModel):
     recent_activity: OwnedAgentGuidedSessionRecentActivity = Field(
         default_factory=OwnedAgentGuidedSessionRecentActivity
     )
+
+
+class OwnedAgentGuidanceCreateRequest(StrictModel):
+    match_id: str
+    tick: TickDuration
+    content: str = Field(min_length=1)
+
+
+class OwnedAgentGuidanceAcceptanceResponse(StrictModel):
+    status: Literal["accepted"]
+    guidance_id: str
+    match_id: str
+    agent_id: str
+    player_id: str
+    tick: TickDuration
+    content: str

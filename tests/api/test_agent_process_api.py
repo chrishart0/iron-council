@@ -551,6 +551,76 @@ def test_running_app_posts_and_filters_visible_messages_for_authenticated_player
     }
 
 
+def test_running_app_guidance_write_stays_out_of_messages(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        guidance_response = client.post(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/agents/agent-player-2/guidance",
+            json={
+                "match_id": running_seeded_app.primary_match_id,
+                "tick": 142,
+                "content": "Commit to the western feint only if Yorkshire holds.",
+            },
+            headers=_human_headers("00000000-0000-0000-0000-000000000302"),
+        )
+        visible_messages = client.get(
+            f"/api/v1/matches/{running_seeded_app.primary_match_id}/messages",
+            headers=_headers(),
+        )
+
+    assert guidance_response.status_code == HTTPStatus.ACCEPTED
+    accepted = guidance_response.json()
+    assert accepted["status"] == "accepted"
+    assert accepted["match_id"] == running_seeded_app.primary_match_id
+    assert accepted["agent_id"] == "agent-player-2"
+    assert accepted["player_id"] == "player-2"
+    assert accepted["tick"] == 142
+    assert accepted["content"] == "Commit to the western feint only if Yorkshire holds."
+    assert isinstance(accepted["guidance_id"], str)
+    assert visible_messages.status_code == HTTPStatus.OK
+    assert visible_messages.json()["messages"] == []
+
+    engine = create_engine(running_seeded_app.database_url)
+    with engine.connect() as connection:
+        guidance_rows = (
+            connection.execute(
+                text(
+                    """
+                SELECT owner_user_id, agent_player_id, tick, content
+                FROM owned_agent_guidance
+                ORDER BY created_at, id
+                """
+                )
+            )
+            .mappings()
+            .all()
+        )
+        message_rows = (
+            connection.execute(
+                text("SELECT channel_type, content FROM messages ORDER BY created_at, id")
+            )
+            .mappings()
+            .all()
+        )
+
+    assert [dict(row) for row in guidance_rows] == [
+        {
+            "owner_user_id": "00000000-0000-0000-0000-000000000302",
+            "agent_player_id": build_persisted_player_id(
+                match_id=running_seeded_app.primary_match_id,
+                public_player_id="player-2",
+            ),
+            "tick": 142,
+            "content": "Commit to the western feint only if Yorkshire holds.",
+        }
+    ]
+    assert all(
+        row["content"] != "Commit to the western feint only if Yorkshire holds."
+        for row in message_rows
+    )
+
+
 def test_running_app_processes_treaty_reads_for_authenticated_player(
     running_seeded_app: RunningApp,
 ) -> None:

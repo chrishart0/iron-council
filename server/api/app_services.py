@@ -5,6 +5,7 @@ from http import HTTPStatus
 from typing import Annotated, Literal
 
 from fastapi import Header
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from server.agent_registry import InMemoryMatchRegistry, MatchAccessError
@@ -21,7 +22,10 @@ from server.db.identity import (
     resolve_owned_agent_context,
     resolve_owned_agent_context_from_db,
 )
+from server.db.models import Match, Player
+from server.db.player_ids import build_persisted_player_mapping
 from server.models.api import AuthenticatedAgentContext
+from server.models.state import MatchState
 from server.settings import Settings
 
 from .errors import ApiError
@@ -166,6 +170,62 @@ class AppServices:
                 message=f"Authenticated human user '{user_id}' does not own agent '{agent_id}'.",
             )
         return user_id, owned_agent
+
+    def require_owned_agent_match_player(
+        self,
+        *,
+        registry: InMemoryMatchRegistry,
+        authorization: str | None,
+        match_id: str,
+        agent_id: str,
+    ) -> tuple[str, AuthenticatedAgentContext, str, str]:
+        user_id, owned_agent = self.require_owned_agent_context(
+            authorization=authorization,
+            agent_id=agent_id,
+        )
+        canonical_player_id = self.require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=owned_agent,
+        )
+        persisted_player_id = self._require_persisted_match_player_id(
+            match_id=match_id,
+            canonical_player_id=canonical_player_id,
+            agent_id=agent_id,
+        )
+        return user_id, owned_agent, canonical_player_id, persisted_player_id
+
+    def _require_persisted_match_player_id(
+        self,
+        *,
+        match_id: str,
+        canonical_player_id: str,
+        agent_id: str,
+    ) -> str:
+        if self.history_db_session_factory is not None:
+            with self.history_db_session_factory() as session:
+                persisted_player_id = _resolve_persisted_match_player_id(
+                    session=session,
+                    match_id=match_id,
+                    canonical_player_id=canonical_player_id,
+                )
+        elif self.history_database_url is not None:
+            engine = create_engine(self.history_database_url)
+            with Session(engine) as session:
+                persisted_player_id = _resolve_persisted_match_player_id(
+                    session=session,
+                    match_id=match_id,
+                    canonical_player_id=canonical_player_id,
+                )
+        else:
+            persisted_player_id = None
+        if persisted_player_id is None:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="agent_not_joined",
+                message=f"Agent '{agent_id}' has not joined match '{match_id}' as a player.",
+            )
+        return persisted_player_id
 
     def resolve_authenticated_lobby_actor(
         self,
@@ -351,3 +411,30 @@ class AppServices:
                 ),
             )
         return resolved_player_id
+
+
+def _resolve_persisted_match_player_id(
+    *,
+    session: Session,
+    match_id: str,
+    canonical_player_id: str,
+) -> str | None:
+    match = session.get(Match, match_id)
+    if match is None:
+        return None
+
+    persisted_players = session.scalars(
+        select(Player).where(Player.match_id == match_id).order_by(Player.id)
+    ).all()
+    persisted_player_mapping = build_persisted_player_mapping(
+        canonical_player_ids=sorted(MatchState.model_validate(match.state).players),
+        persisted_players=persisted_players,
+    )
+    return next(
+        (
+            persisted_player_id
+            for persisted_player_id, resolved_player_id in persisted_player_mapping.items()
+            if resolved_player_id == canonical_player_id
+        ),
+        None,
+    )

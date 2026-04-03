@@ -10,12 +10,15 @@ from server.agent_registry import InMemoryMatchRegistry, MatchJoinError
 from server.auth import hash_api_key
 from server.db.agent_entitlements import AgentEntitlementRequiredError
 from server.db.api_key_lifecycle import create_owned_api_key, revoke_owned_api_key
+from server.db.guidance import append_owned_agent_guidance
 from server.db.registry import join_match as join_db_match
 from server.models.api import (
     AuthenticatedOrderSubmissionRequest,
     MatchJoinRequest,
     MatchJoinResponse,
     OrderAcceptanceResponse,
+    OwnedAgentGuidanceAcceptanceResponse,
+    OwnedAgentGuidanceCreateRequest,
     OwnedApiKeyCreateResponse,
     OwnedApiKeySummary,
 )
@@ -258,6 +261,88 @@ def build_authenticated_write_router(
             player_id=envelope.player_id,
             tick=envelope.tick,
             submission_index=submission_index,
+        )
+
+    @router.post(
+        "/matches/{match_id}/agents/{agent_id}/guidance",
+        response_model=OwnedAgentGuidanceAcceptanceResponse,
+        status_code=HTTPStatus.ACCEPTED,
+        responses=_authenticated_write_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.FORBIDDEN,
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        ),
+    )
+    async def post_owned_agent_guidance(
+        match_id: str,
+        agent_id: str,
+        guidance: OwnedAgentGuidanceCreateRequest,
+        registry: InMemoryMatchRegistry = registry_dependency,
+        authorization: AuthorizationHeader = None,
+    ) -> OwnedAgentGuidanceAcceptanceResponse:
+        if history_database_url is None:
+            raise ApiError(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                code="guided_session_unavailable",
+                message="Owned agent guidance writes are only available in DB-backed mode.",
+            )
+
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+        if guidance.match_id != match_id:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="match_id_mismatch",
+                message=(
+                    f"Guidance payload match_id '{guidance.match_id}' does not match route "
+                    f"match '{match_id}'."
+                ),
+            )
+
+        (
+            user_id,
+            owned_agent,
+            resolved_player_id,
+            persisted_player_id,
+        ) = app_services.require_owned_agent_match_player(
+            registry=registry,
+            authorization=authorization,
+            match_id=match_id,
+            agent_id=agent_id,
+        )
+        if guidance.tick != record.state.tick:
+            raise ApiError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="tick_mismatch",
+                message=(
+                    f"Guidance payload tick '{guidance.tick}' does not match current match tick "
+                    f"'{record.state.tick}'."
+                ),
+            )
+
+        accepted_guidance = append_owned_agent_guidance(
+            database_url=history_database_url,
+            match_id=match_id,
+            owner_user_id=user_id,
+            agent_player_id=persisted_player_id,
+            content=guidance.content,
+            tick=guidance.tick,
+        )
+        return OwnedAgentGuidanceAcceptanceResponse(
+            status="accepted",
+            guidance_id=accepted_guidance.id,
+            match_id=match_id,
+            agent_id=owned_agent.agent_id,
+            player_id=resolved_player_id,
+            tick=accepted_guidance.tick,
+            content=accepted_guidance.content,
         )
 
     return router
