@@ -219,3 +219,6 @@ development_status:
 
   epic-44: done
   44-1-add-local-browser-to-api-cors-support: done
+
+  epic-45: done
+  45-1-stabilize-nextjs-client-dev-root-and-generated-types: done

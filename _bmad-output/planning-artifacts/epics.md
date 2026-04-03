@@ -2115,3 +2115,31 @@ So that the shipped local public and human browser flows actually work in dev mo
 **When** focused API/doc verification and the strongest practical repo-managed checks run
 **Then** the local browser access path is covered from the HTTP boundary and the repo remains in a simple coherent state.
 
+## Epic 45: Local Client Dev Ergonomics and Stability
+
+Harden the shipped Next.js client's local developer workflow so a normal `npm run dev` boot is quiet, deterministic, and does not create avoidable tracked-file churn. Keep this epic narrowly focused on boring dev ergonomics around the real `client/` workspace rather than broader frontend architecture or deployment changes.
+
+### Story 45.1: Stabilize Next.js client dev root and generated types
+
+As a local developer,
+I want `client/npm run dev` to anchor itself to the real client workspace without warning noise or generated-file drift,
+So that local browser work starts cleanly and does not dirty the repo with avoidable `next-env.d.ts` changes.
+
+**Acceptance Criteria:**
+
+**Given** the Iron Council repo lives inside a larger Hermes checkout with multiple lockfiles
+**When** `npm run dev` boots from `client/`
+**Then** Next.js uses an explicit client workspace root and does not emit the inferred-workspace-root warning.
+
+**And Given** the tracked `client/next-env.d.ts` file should stay stable across local dev boots
+**When** the dev server starts with the explicit client root
+**Then** the repo returns to one canonical tracked route-types import path instead of leaving a dev-only variant behind.
+
+**And Given** this is a local developer ergonomics fix
+**When** focused client/test verification and the strongest practical related repo-managed checks run
+**Then** the new config seam is covered, the warning/drift regression is pinned, and the repo remains in a simple coherent state.
+
+**Delivery Notes (2026-04-03):**
+- Added `client/next.config.ts` Turbopack root pinning to the absolute `client/` workspace path.
+- Added focused Vitest coverage for the exported root and a repo-level `next dev` subprocess smoke regression.
+- Kept `client/next-env.d.ts` with `import "./.next/types/routes.d.ts";` as the canonical tracked state and added a tiny normalization seam so both `npm run dev` shutdowns and `npm run build` converge back to that same file.
