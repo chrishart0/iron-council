@@ -99,6 +99,7 @@ def test_alembic_upgrade_creates_persistence_schema_for_an_empty_database(tmp_pa
         "matches",
         "match_settlements",
         "messages",
+        "owned_agent_guidance",
         "player_match_settlements",
         "players",
         "tick_log",
@@ -135,6 +136,36 @@ def test_alembic_upgrade_creates_persistence_schema_for_an_empty_database(tmp_pa
         "created_at",
         "updated_at",
     }
+    assert {column["name"] for column in inspector.get_columns("owned_agent_guidance")} >= {
+        "id",
+        "match_id",
+        "owner_user_id",
+        "agent_player_id",
+        "content",
+        "tick",
+        "created_at",
+    }
+    owned_agent_guidance_foreign_keys = {
+        tuple(foreign_key["constrained_columns"]): (
+            foreign_key["referred_table"],
+            tuple(foreign_key["referred_columns"]),
+        )
+        for foreign_key in inspector.get_foreign_keys("owned_agent_guidance")
+    }
+    assert owned_agent_guidance_foreign_keys == {
+        ("match_id",): ("matches", ("id",)),
+        ("agent_player_id",): ("players", ("id",)),
+    }
+    owned_agent_guidance_indexes = {
+        index["name"]: tuple(index["column_names"])
+        for index in inspector.get_indexes("owned_agent_guidance")
+    }
+    assert owned_agent_guidance_indexes["ix_owned_agent_guidance_owner_user_id"] == (
+        "owner_user_id",
+    )
+    assert owned_agent_guidance_indexes["ix_owned_agent_guidance_agent_player_id"] == (
+        "agent_player_id",
+    )
 
 
 def test_prepare_test_database_resets_to_head_after_existing_data(tmp_path: Path) -> None:
@@ -184,6 +215,7 @@ def test_provision_seeded_database_converges_to_deterministic_data_after_reset(
 
     engine = create_engine(database_url)
     with engine.begin() as connection:
+        connection.execute(text("DELETE FROM owned_agent_guidance"))
         connection.execute(text("DELETE FROM messages"))
         connection.execute(text("DELETE FROM treaties"))
         connection.execute(text("DELETE FROM tick_log"))
@@ -363,6 +395,10 @@ def _seeded_database_snapshot(database_url: str) -> dict[str, Sequence[tuple[obj
         "players": (
             "SELECT id, user_id, match_id, display_name, is_agent, api_key_id, alliance_id "
             "FROM players ORDER BY id"
+        ),
+        "owned_agent_guidance": (
+            "SELECT id, match_id, owner_user_id, agent_player_id, tick "
+            "FROM owned_agent_guidance ORDER BY id"
         ),
         "messages": (
             "SELECT id, match_id, sender_id, channel_type, channel_id, recipient_id, tick "
