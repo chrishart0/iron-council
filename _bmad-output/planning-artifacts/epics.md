@@ -2167,3 +2167,44 @@ So that the quality harness stays future-proof and warning output highlights rea
 **And Given** the repo-level quality gate currently passes with heavy sqlite warning noise
 **When** the strongest practical repo-managed verification runs after this story
 **Then** the relevant Python test output no longer includes the prior adapter deprecation spam and the repo remains in a simple coherent state.
+
+
+## Epic 47: Canonical Docs and Public Contract Hardening
+
+Close the most meaningful post-46 source-of-truth and public-read edge-case risks without expanding product scope. This epic keeps the work small and honest: sync the canonical/public docs with the shipped server/client surface, then harden DB-backed public read contracts around non-happy-path persisted identities and winner fallbacks.
+
+### Story 47.1: Sync canonical architecture and public entrypoint docs
+
+As a public reader and contributor,
+I want the canonical architecture and public entrypoint docs to match the shipped Iron Council surfaces,
+So that the repo's source-of-truth documents explain the real browse/profile/history/runtime contract instead of stale pre-extraction assumptions.
+
+**Acceptance Criteria:**
+
+**Given** the shipped server and client already expose public browse/profile/history pages plus mixed public/authenticated API and websocket paths
+**When** the canonical/public entrypoint docs are reviewed
+**Then** `core-architecture.md`, `README.md`, and `docs/index.md` describe those real surfaces with current route/env names instead of stale ones.
+
+**And Given** this story is documentation-only hardening
+**When** the update is finished
+**Then** one lightweight docs regression test pins the most important route/env-name promises without turning the docs into a brittle snapshot.
+
+### Story 47.2: Harden DB-backed public read edge contracts
+
+As a maintainer of Iron Council's public read models,
+I want the DB-backed public leaderboard/history/completed-match assembly path to stay correct for user-backed agent identities and winner fallback edge cases,
+So that public read surfaces remain trustworthy even when persisted data is not limited to the happiest seeded-path shape.
+
+**Acceptance Criteria:**
+
+**Given** persisted completed-match/public-read data can include agent competitors without an API key row
+**When** DB-backed public leaderboard/history/completed-match reads are assembled
+**Then** they expose the expected durable public competitor identity and metadata rather than drifting to a seeded-only assumption.
+
+**And Given** completed-match winner metadata can degrade to solo-winner or missing-alliance-row fallback cases
+**When** the same public read surfaces are built
+**Then** they stay honest about winners instead of inventing alliance rows or silently miscounting win/loss/draw outcomes.
+
+**And Given** this story is contract hardening rather than a new feature
+**When** the fix lands
+**Then** the implementation stays local to the public read seam plus tests and the repo remains in a simple coherent state.
