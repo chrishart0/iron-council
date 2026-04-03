@@ -2143,3 +2143,27 @@ So that local browser work starts cleanly and does not dirty the repo with avoid
 - Added `client/next.config.ts` Turbopack root pinning to the absolute `client/` workspace path.
 - Added focused Vitest coverage for the exported root and a repo-level `next dev` subprocess smoke regression.
 - Kept `client/next-env.d.ts` with `import "./.next/types/routes.d.ts";` as the canonical tracked state and added a tiny normalization seam so both `npm run dev` shutdowns and `npm run build` converge back to that same file.
+
+## Epic 46: Python 3.12 Persistence Warning Hardening
+
+Harden the sqlite-backed development and test persistence path so Python 3.12 datetime adapter deprecation noise does not bury real failures. Keep the scope narrow: one explicit UTC-aware DB timestamp seam plus focused regressions, not a broader persistence redesign.
+
+### Story 46.1: Eliminate Python 3.12 sqlite datetime adapter warnings
+
+As a local developer and CI maintainer,
+I want sqlite-backed DB tests and persistence helpers to stop emitting Python 3.12 datetime adapter deprecation warnings,
+So that the quality harness stays future-proof and warning output highlights real regressions instead of known adapter noise.
+
+**Acceptance Criteria:**
+
+**Given** the repo persists timezone-aware timestamps through SQLAlchemy models on sqlite-backed test paths
+**When** representative timestamp writes and reads run under Python 3.12
+**Then** they avoid the deprecated sqlite default datetime adapter path while preserving UTC-aware round-trip behavior.
+
+**And Given** this fix touches shared persistence seams
+**When** focused DB-backed API/runtime checks run
+**Then** serialized datetime fields and completed/history/settlement behavior stay unchanged at the public boundary.
+
+**And Given** the repo-level quality gate currently passes with heavy sqlite warning noise
+**When** the strongest practical repo-managed verification runs after this story
+**Then** the relevant Python test output no longer includes the prior adapter deprecation spam and the repo remains in a simple coherent state.
