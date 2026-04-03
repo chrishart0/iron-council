@@ -27,6 +27,7 @@ from server.db.registry import load_match_registry_from_database, persist_advanc
 from server.db.testing import provision_seeded_database
 from server.main import create_app
 from server.models.api import (
+    AllianceActionRequest,
     AuthenticatedAgentContext,
     GroupChatCreateRequest,
     GroupChatMessageCreateRequest,
@@ -1874,6 +1875,289 @@ async def test_create_app_settings_override_is_authoritative_for_db_backed_human
     assert response.status_code == HTTPStatus.OK
     assert response.json()["match_id"] == "00000000-0000-0000-0000-000000000101"
     assert response.json()["player_id"] == "player-1"
+
+
+@pytest.mark.asyncio
+async def test_owned_agent_guided_session_route_returns_owned_agent_snapshot_and_queued_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'owned-agent-guided-session.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+    registry = app.state.match_registry
+    record = registry.get_match("00000000-0000-0000-0000-000000000101")
+    assert record is not None
+
+    registry.record_submission(
+        match_id=record.match_id,
+        envelope=OrderEnvelope.model_validate(
+            {
+                "match_id": record.match_id,
+                "player_id": "player-2",
+                "tick": record.state.tick,
+                "orders": {
+                    "movements": [{"army_id": "army-b", "destination": "london"}],
+                    "recruitment": [{"city": "manchester", "troops": 3}],
+                    "upgrades": [],
+                    "transfers": [],
+                },
+            }
+        ),
+    )
+    registry.record_message(
+        match_id=record.match_id,
+        message=MatchMessageCreateRequest.model_validate(
+            _message_payload(
+                match_id=record.match_id,
+                tick=record.state.tick,
+                channel="direct",
+                recipient_id="player-2",
+                content="Hold Manchester.",
+            )
+        ),
+        sender_id="player-1",
+    )
+    group_chat = registry.create_group_chat(
+        match_id=record.match_id,
+        request=GroupChatCreateRequest.model_validate(
+            _group_chat_create_payload(
+                match_id=record.match_id,
+                tick=record.state.tick,
+                name="Owners Council",
+                member_ids=["player-1"],
+            )
+        ),
+        creator_id="player-2",
+    )
+    registry.record_group_chat_message(
+        match_id=record.match_id,
+        group_chat_id=group_chat.group_chat_id,
+        message=GroupChatMessageCreateRequest(
+            match_id=record.match_id,
+            tick=record.state.tick,
+            content="Queued guidance note.",
+        ),
+        sender_id="player-2",
+    )
+    registry.apply_alliance_action(
+        match_id=record.match_id,
+        action=AllianceActionRequest.model_validate(
+            _alliance_payload(
+                match_id=record.match_id,
+                action="create",
+                name="Eastern Bloc",
+            )
+        ),
+        player_id="player-3",
+    )
+    registry.apply_treaty_action(
+        match_id=record.match_id,
+        action=TreatyActionRequest.model_validate(
+            _treaty_payload(
+                match_id=record.match_id,
+                counterparty_id="player-3",
+            )
+        ),
+        player_id="player-2",
+    )
+    registry.apply_treaty_action(
+        match_id=record.match_id,
+        action=TreatyActionRequest.model_validate(
+            _treaty_payload(
+                match_id=record.match_id,
+                action="accept",
+                counterparty_id="player-2",
+            )
+        ),
+        player_id="player-3",
+    )
+    registry.apply_treaty_action(
+        match_id=record.match_id,
+        action=TreatyActionRequest.model_validate(
+            _treaty_payload(
+                match_id=record.match_id,
+                counterparty_id="player-4",
+            )
+        ),
+        player_id="player-1",
+    )
+    registry.apply_treaty_action(
+        match_id=record.match_id,
+        action=TreatyActionRequest.model_validate(
+            _treaty_payload(
+                match_id=record.match_id,
+                action="accept",
+                counterparty_id="player-1",
+            )
+        ),
+        player_id="player-4",
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/guided-session",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    assert payload["match_id"] == "00000000-0000-0000-0000-000000000101"
+    assert payload["agent_id"] == "agent-player-2"
+    assert payload["player_id"] == "player-2"
+    assert payload["state"]["match_id"] == "00000000-0000-0000-0000-000000000101"
+    assert payload["state"]["player_id"] == "player-2"
+    assert payload["state"]["cities"]["manchester"]["visibility"] == "full"
+    assert payload["queued_orders"] == {
+        "movements": [{"army_id": "army-b", "destination": "london"}],
+        "recruitment": [{"city": "manchester", "troops": 3}],
+        "upgrades": [],
+        "transfers": [],
+    }
+    assert payload["group_chats"] == [
+        {
+            "group_chat_id": "group-chat-1",
+            "name": "Owners Council",
+            "member_ids": ["player-1", "player-2"],
+            "created_by": "player-2",
+            "created_tick": 142,
+        }
+    ]
+    assert _briefing_message_contents(payload, "direct") == ["Hold Manchester."]
+    assert _briefing_message_contents(payload, "group") == ["Queued guidance note."]
+    assert payload["recent_activity"]["alliances"] == [
+        {
+            "alliance_id": "alliance-red",
+            "name": "Western Accord",
+            "leader_id": "player-1",
+            "formed_tick": 120,
+            "members": [
+                {"player_id": "player-1", "joined_tick": 120},
+                {"player_id": "player-2", "joined_tick": 120},
+            ],
+        }
+    ]
+    assert payload["recent_activity"]["treaties"] == [
+        {
+            "treaty_id": 1,
+            "player_a_id": "player-2",
+            "player_b_id": "player-3",
+            "treaty_type": "trade",
+            "status": "active",
+            "proposed_by": "player-2",
+            "proposed_tick": 142,
+            "signed_tick": 142,
+            "withdrawn_by": None,
+            "withdrawn_tick": None,
+        }
+    ]
+    assert all(
+        payload["player_id"] in {treaty["player_a_id"], treaty["player_b_id"]}
+        for treaty in payload["recent_activity"]["treaties"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_owned_agent_guided_session_route_requires_human_bearer_and_enforces_ownership_and_match_membership(  # noqa: E501
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'owned-agent-guided-session-errors.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("IRON_COUNCIL_MATCH_REGISTRY_BACKEND", "db")
+    monkeypatch.setenv("HUMAN_JWT_SECRET", "test-human-secret-key-material-1234")
+    monkeypatch.setenv("HUMAN_JWT_ISSUER", "https://supabase.test/auth/v1")
+    monkeypatch.setenv("HUMAN_JWT_AUDIENCE", "authenticated")
+    monkeypatch.setenv("HUMAN_JWT_REQUIRED_ROLE", "authenticated")
+
+    app = create_app()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        missing_auth_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/guided-session"
+        )
+        wrong_owner_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000101/agents/agent-player-2/guided-session",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000301"),
+        )
+        unjoined_agent_response = await client.get(
+            "/api/v1/matches/00000000-0000-0000-0000-000000000102/agents/agent-player-2/guided-session",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert missing_auth_response.status_code == HTTPStatus.UNAUTHORIZED
+    assert missing_auth_response.json() == {
+        "error": {
+            "code": "invalid_human_token",
+            "message": "A valid human Bearer token is required.",
+        }
+    }
+    assert wrong_owner_response.status_code == HTTPStatus.FORBIDDEN
+    assert wrong_owner_response.json() == {
+        "error": {
+            "code": "agent_not_owned",
+            "message": (
+                "Authenticated human user '00000000-0000-0000-0000-000000000301' does not "
+                "own agent 'agent-player-2'."
+            ),
+        }
+    }
+    assert unjoined_agent_response.status_code == HTTPStatus.BAD_REQUEST
+    assert unjoined_agent_response.json() == {
+        "error": {
+            "code": "agent_not_joined",
+            "message": (
+                "Agent 'agent-player-2' has not joined match "
+                "'00000000-0000-0000-0000-000000000102' as a player."
+            ),
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_owned_agent_guided_session_route_returns_documented_503_when_app_is_not_db_backed(
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    app = create_app(
+        match_registry=seeded_registry,
+        settings_override={
+            "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+            "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+            "HUMAN_JWT_AUDIENCE": "authenticated",
+            "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+        },
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/api/v1/matches/match-alpha/agents/agent-player-2/guided-session",
+            headers=_auth_headers_for_human("00000000-0000-0000-0000-000000000302"),
+        )
+
+    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert response.json() == {
+        "error": {
+            "code": "guided_session_unavailable",
+            "message": "Owned agent guided-session reads are only available in DB-backed mode.",
+        }
+    }
 
 
 @pytest.mark.asyncio
@@ -5456,6 +5740,11 @@ async def test_openapi_declares_secured_match_route_contracts(app_client: AsyncC
     assert paths["/api/v1/matches/{match_id}/agent-briefing"]["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/AgentBriefingResponse"}
+    assert paths["/api/v1/matches/{match_id}/agents/{agent_id}/guided-session"]["get"]["responses"][
+        "200"
+    ]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/OwnedAgentGuidedSessionResponse"
+    }
     assert paths["/api/v1/matches/{match_id}/orders"]["post"]["responses"]["202"]["content"][
         "application/json"
     ]["schema"] == {"$ref": "#/components/schemas/OrderAcceptanceResponse"}

@@ -524,3 +524,21 @@ class AgentBriefingResponse(StrictModel):
     treaties: list[TreatyRecord] = Field(default_factory=list)
     group_chats: list[GroupChatRecord] = Field(default_factory=list)
     messages: AgentBriefingMessageBuckets
+
+
+class OwnedAgentGuidedSessionRecentActivity(StrictModel):
+    alliances: list[AllianceRecord] = Field(default_factory=list)
+    treaties: list[TreatyRecord] = Field(default_factory=list)
+
+
+class OwnedAgentGuidedSessionResponse(StrictModel):
+    match_id: str
+    agent_id: str
+    player_id: str
+    state: AgentStateProjection
+    queued_orders: OrderBatch = Field(default_factory=OrderBatch)
+    group_chats: list[GroupChatRecord] = Field(default_factory=list)
+    messages: AgentBriefingMessageBuckets
+    recent_activity: OwnedAgentGuidedSessionRecentActivity = Field(
+        default_factory=OwnedAgentGuidedSessionRecentActivity
+    )

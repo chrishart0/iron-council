@@ -31,6 +31,7 @@ from server.db.identity import (
     build_non_seeded_agent_id,
     build_non_seeded_display_name,
     build_user_backed_agent_id,
+    resolve_owned_agent_context_from_db,
 )
 from server.db.models import Match, MatchSettlement, Player
 from server.db.rating_settlement import settle_completed_match_if_needed
@@ -4327,6 +4328,38 @@ def test_resolve_human_player_id_from_db_maps_persisted_human_membership_to_cano
         )
         is None
     )
+
+
+def test_resolve_owned_agent_context_from_db_requires_matching_user_owned_api_key(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-owned-agent-context.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    owned = resolve_owned_agent_context_from_db(
+        database_url=database_url,
+        user_id="00000000-0000-0000-0000-000000000302",
+        agent_id="agent-player-2",
+    )
+    wrong_owner = resolve_owned_agent_context_from_db(
+        database_url=database_url,
+        user_id="00000000-0000-0000-0000-000000000301",
+        agent_id="agent-player-2",
+    )
+    missing_agent = resolve_owned_agent_context_from_db(
+        database_url=database_url,
+        user_id="00000000-0000-0000-0000-000000000302",
+        agent_id="agent-missing",
+    )
+
+    assert owned is not None
+    assert owned.model_dump(mode="json") == {
+        "agent_id": "agent-player-2",
+        "display_name": "Morgana",
+        "is_seeded": True,
+    }
+    assert wrong_owner is None
+    assert missing_agent is None
 
 
 def test_resolve_authenticated_agent_context_from_db_rejects_inactive_api_keys(

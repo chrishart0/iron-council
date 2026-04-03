@@ -7,6 +7,9 @@ from typing import Final, cast
 
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
 from starlette.websockets import WebSocketState
 
 from server import __version__
@@ -80,9 +83,15 @@ def create_app(
         else cast(TickPersistence | None, tick_persistence)
     )
     history_database_url = _load_history_database_url(settings=settings)
+    history_database_engine = _load_history_database_engine(settings=settings)
     app_services = AppServices(
         settings=settings,
         history_database_url=history_database_url,
+        history_db_session_factory=(
+            sessionmaker(history_database_engine, class_=Session)
+            if history_database_engine is not None
+            else None
+        ),
     )
 
     async def broadcast_current_match(match_id: str) -> None:
@@ -113,6 +122,8 @@ def create_app(
             yield
         finally:
             await match_runtime.stop()
+            if history_database_engine is not None:
+                history_database_engine.dispose()
 
     app = FastAPI(title="iron-council-server", version=__version__, lifespan=lifespan)
     app.state.match_registry = registry
@@ -202,6 +213,12 @@ def _load_history_database_url(*, settings: Settings) -> str | None:
     if settings.match_registry_backend != "db":
         return None
     return settings.database_url
+
+
+def _load_history_database_engine(*, settings: Settings) -> Engine | None:
+    if settings.match_registry_backend != "db":
+        return None
+    return create_engine(settings.database_url)
 
 
 def _build_in_memory_public_match_roster(

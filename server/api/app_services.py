@@ -5,6 +5,7 @@ from http import HTTPStatus
 from typing import Annotated, Literal
 
 from fastapi import Header
+from sqlalchemy.orm import Session, sessionmaker
 
 from server.agent_registry import InMemoryMatchRegistry, MatchAccessError
 from server.auth import (
@@ -12,9 +13,13 @@ from server.auth import (
     extract_bearer_token,
     validate_human_jwt,
 )
-from server.db.registry import (
+from server.db.identity import (
+    resolve_authenticated_agent_context,
     resolve_authenticated_agent_context_from_db,
+    resolve_human_player_id,
     resolve_human_player_id_from_db,
+    resolve_owned_agent_context,
+    resolve_owned_agent_context_from_db,
 )
 from server.models.api import AuthenticatedAgentContext
 from server.settings import Settings
@@ -37,6 +42,7 @@ class AuthenticatedLobbyActor:
 class AppServices:
     settings: Settings
     history_database_url: str | None
+    history_db_session_factory: sessionmaker[Session] | None = None
 
     def get_authenticated_agent(
         self,
@@ -66,11 +72,18 @@ class AppServices:
             return None
 
         authenticated_agent = registry.resolve_authenticated_agent(api_key)
-        if authenticated_agent is None and self.history_database_url is not None:
-            authenticated_agent = resolve_authenticated_agent_context_from_db(
-                database_url=self.history_database_url,
-                api_key=api_key,
-            )
+        if authenticated_agent is None:
+            if self.history_db_session_factory is not None:
+                with self.history_db_session_factory() as session:
+                    authenticated_agent = resolve_authenticated_agent_context(
+                        session=session,
+                        api_key=api_key,
+                    )
+            elif self.history_database_url is not None:
+                authenticated_agent = resolve_authenticated_agent_context_from_db(
+                    database_url=self.history_database_url,
+                    api_key=api_key,
+                )
         return authenticated_agent
 
     def resolve_authenticated_human_user_id(
@@ -118,6 +131,41 @@ class AppServices:
                 message=exc.message,
             ) from exc
         return human_context.user_id
+
+    def require_owned_agent_context(
+        self,
+        *,
+        authorization: str | None,
+        agent_id: str,
+    ) -> tuple[str, AuthenticatedAgentContext]:
+        if self.history_database_url is None:
+            raise ApiError(
+                status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+                code="guided_session_unavailable",
+                message="Owned agent guided-session reads are only available in DB-backed mode.",
+            )
+
+        user_id = self.require_authenticated_human_user_id(authorization=authorization)
+        if self.history_db_session_factory is not None:
+            with self.history_db_session_factory() as session:
+                owned_agent = resolve_owned_agent_context(
+                    session=session,
+                    user_id=user_id,
+                    agent_id=agent_id,
+                )
+        else:
+            owned_agent = resolve_owned_agent_context_from_db(
+                database_url=self.history_database_url,
+                user_id=user_id,
+                agent_id=agent_id,
+            )
+        if owned_agent is None:
+            raise ApiError(
+                status_code=HTTPStatus.FORBIDDEN,
+                code="agent_not_owned",
+                message=f"Authenticated human user '{user_id}' does not own agent '{agent_id}'.",
+            )
+        return user_id, owned_agent
 
     def resolve_authenticated_lobby_actor(
         self,
@@ -204,11 +252,19 @@ class AppServices:
                 message=f"Match '{match_id}' was not found.",
             )
         if self.history_database_url is not None:
-            db_player_id = resolve_human_player_id_from_db(
-                database_url=self.history_database_url,
-                match_id=match_id,
-                user_id=user_id,
-            )
+            if self.history_db_session_factory is not None:
+                with self.history_db_session_factory() as session:
+                    db_player_id = resolve_human_player_id(
+                        session=session,
+                        match_id=match_id,
+                        user_id=user_id,
+                    )
+            else:
+                db_player_id = resolve_human_player_id_from_db(
+                    database_url=self.history_database_url,
+                    match_id=match_id,
+                    user_id=user_id,
+                )
             if db_player_id is not None:
                 return db_player_id
         return self.require_joined_human_player_id(

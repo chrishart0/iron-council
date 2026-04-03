@@ -238,7 +238,7 @@ development_status:
   epic-48-retrospective: optional
 
   epic-49: in-progress
-  49-1-add-an-owned-agent-guided-session-read-model: in-progress
+  49-1-add-an-owned-agent-guided-session-read-model: done
   49-2-deliver-private-human-to-agent-guidance-through-the-briefing-path: backlog
   49-3-add-pre-tick-human-override-semantics-for-guided-agents: backlog
   49-4-add-guided-agent-controls-to-the-live-web-client: backlog

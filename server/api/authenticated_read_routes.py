@@ -7,22 +7,37 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 
 from server.agent_registry import InMemoryMatchRegistry
+from server.agent_registry_commands import combine_submissions_by_player
 from server.db.api_key_lifecycle import list_owned_api_keys
 from server.db.identity_hydration import get_agent_profile_from_db, get_human_profile_from_db
 from server.fog import project_agent_state
 from server.models.api import (
     AgentBriefingResponse,
     AgentProfileResponse,
+    AllianceRecord,
     AuthenticatedAgentContext,
     HumanProfileResponse,
+    OwnedAgentGuidedSessionRecentActivity,
+    OwnedAgentGuidedSessionResponse,
     OwnedApiKeyListResponse,
+    TreatyRecord,
 )
 from server.models.fog import AgentStateProjection
+from server.models.orders import OrderBatch, OrderEnvelope
 
 from .app_services import ApiKeyHeader, AppServices, AuthorizationHeader
 from .errors import API_ERROR_RESPONSE_SCHEMA, ApiError
 
 RegistryProvider = Callable[..., InMemoryMatchRegistry]
+
+
+def _queued_orders_for_player(
+    *, match_record_player_submissions: list[OrderEnvelope]
+) -> OrderBatch:
+    if not match_record_player_submissions:
+        return OrderBatch()
+    combined_submission = combine_submissions_by_player(match_record_player_submissions)[0]
+    return combined_submission.orders.model_copy(deep=True)
 
 
 def _authenticated_read_route_responses(
@@ -32,6 +47,24 @@ def _authenticated_read_route_responses(
         int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
         **{int(status_code): API_ERROR_RESPONSE_SCHEMA for status_code in status_codes},
     }
+
+
+def _current_alliance_for_player(
+    *,
+    alliances: list[AllianceRecord],
+    current_alliance_id: str | None,
+) -> list[AllianceRecord]:
+    if current_alliance_id is None:
+        return []
+    return [alliance for alliance in alliances if alliance.alliance_id == current_alliance_id]
+
+
+def _recent_treaties_for_player(
+    *,
+    treaties: list[TreatyRecord],
+    player_id: str,
+) -> list[TreatyRecord]:
+    return [treaty for treaty in treaties if player_id in {treaty.player_a_id, treaty.player_b_id}]
 
 
 def build_authenticated_read_router(
@@ -229,6 +262,84 @@ def build_authenticated_read_router(
                 match_id=match_id,
                 player_id=resolved_player_id,
                 since_tick=since_tick,
+            ),
+        )
+
+    @router.get(
+        "/matches/{match_id}/agents/{agent_id}/guided-session",
+        response_model=OwnedAgentGuidedSessionResponse,
+        responses=_authenticated_read_route_responses(
+            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.FORBIDDEN,
+            HTTPStatus.NOT_FOUND,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+        ),
+    )
+    async def get_owned_agent_guided_session(
+        match_id: str,
+        agent_id: str,
+        authorization: AuthorizationHeader = None,
+        registry: InMemoryMatchRegistry = registry_dependency,
+    ) -> OwnedAgentGuidedSessionResponse:
+        _, owned_agent = app_services.require_owned_agent_context(
+            authorization=authorization,
+            agent_id=agent_id,
+        )
+
+        record = registry.get_match(match_id)
+        if record is None:
+            raise ApiError(
+                status_code=HTTPStatus.NOT_FOUND,
+                code="match_not_found",
+                message=f"Match '{match_id}' was not found.",
+            )
+
+        resolved_player_id = app_services.require_joined_player_id(
+            registry=registry,
+            match_id=match_id,
+            authenticated_agent=owned_agent,
+        )
+        current_tick = record.state.tick
+        player_state = record.state.players[resolved_player_id]
+        queued_orders = _queued_orders_for_player(
+            match_record_player_submissions=[
+                submission
+                for submission in record.order_submissions
+                if submission.player_id == resolved_player_id and submission.tick == current_tick
+            ]
+        )
+        recent_treaties = _recent_treaties_for_player(
+            treaties=registry.list_treaties(
+                match_id=match_id,
+                since_tick=current_tick,
+            ),
+            player_id=resolved_player_id,
+        )
+        return OwnedAgentGuidedSessionResponse(
+            match_id=match_id,
+            agent_id=owned_agent.agent_id,
+            player_id=resolved_player_id,
+            state=project_agent_state(
+                record.state,
+                player_id=resolved_player_id,
+                match_id=match_id,
+            ),
+            queued_orders=queued_orders,
+            group_chats=registry.list_visible_group_chats(
+                match_id=match_id,
+                player_id=resolved_player_id,
+            ),
+            messages=registry.list_briefing_messages(
+                match_id=match_id,
+                player_id=resolved_player_id,
+                since_tick=current_tick,
+            ),
+            recent_activity=OwnedAgentGuidedSessionRecentActivity(
+                alliances=_current_alliance_for_player(
+                    alliances=registry.list_alliances(match_id=match_id),
+                    current_alliance_id=player_state.alliance_id,
+                ),
+                treaties=recent_treaties,
             ),
         )
 

@@ -95,50 +95,117 @@ def resolve_human_elo_rating(*, session: Session, user_id: str) -> int:
     return 0
 
 
+def resolve_authenticated_agent_context(
+    *, session: Session, api_key: str
+) -> AuthenticatedAgentContext | None:
+    resolved = resolve_authenticated_agent_from_db_key_hash(
+        session=session,
+        key_hash=hash_api_key(api_key),
+    )
+    return resolved.context if resolved is not None else None
+
+
 def resolve_authenticated_agent_context_from_db(
-    *, database_url: str, api_key: str, session_factory: type[Session]
+    *, database_url: str, api_key: str, session_factory: type[Session] = Session
 ) -> AuthenticatedAgentContext | None:
     from sqlalchemy import create_engine
 
     engine = create_engine(database_url)
     with session_factory(engine) as session:
-        resolved = resolve_authenticated_agent_from_db_key_hash(
-            session=session,
-            key_hash=hash_api_key(api_key),
-        )
-    return resolved.context if resolved is not None else None
+        return resolve_authenticated_agent_context(session=session, api_key=api_key)
+
+
+def resolve_human_player_id(*, session: Session, match_id: str, user_id: str) -> str | None:
+    match = session.get(Match, match_id)
+    if match is None:
+        return None
+
+    persisted_players = session.scalars(
+        select(Player).where(Player.match_id == match_id).order_by(Player.id)
+    ).all()
+    state = MatchState.model_validate(match.state)
+    persisted_player_mapping = build_persisted_player_mapping(
+        canonical_player_ids=sorted(state.players),
+        persisted_players=persisted_players,
+    )
+    resolved_player = next(
+        (
+            player
+            for player in persisted_players
+            if str(player.user_id) == user_id and not player.is_agent
+        ),
+        None,
+    )
+    if resolved_player is None:
+        return None
+    return persisted_player_mapping.get(str(resolved_player.id))
 
 
 def resolve_human_player_id_from_db(
-    *, database_url: str, match_id: str, user_id: str, session_factory: type[Session]
+    *,
+    database_url: str,
+    match_id: str,
+    user_id: str,
+    session_factory: type[Session] = Session,
 ) -> str | None:
     from sqlalchemy import create_engine
 
     engine = create_engine(database_url)
     with session_factory(engine) as session:
-        match = session.get(Match, match_id)
-        if match is None:
-            return None
+        return resolve_human_player_id(session=session, match_id=match_id, user_id=user_id)
 
-        persisted_players = session.scalars(
-            select(Player).where(Player.match_id == match_id).order_by(Player.id)
-        ).all()
-        state = MatchState.model_validate(match.state)
-        persisted_player_mapping = build_persisted_player_mapping(
-            canonical_player_ids=sorted(state.players),
-            persisted_players=persisted_players,
+
+def resolve_owned_agent_context(
+    *, session: Session, user_id: str, agent_id: str
+) -> AuthenticatedAgentContext | None:
+    api_keys = session.scalars(
+        select(ApiKey).where(ApiKey.user_id == user_id).order_by(ApiKey.created_at, ApiKey.id)
+    ).all()
+
+    seeded_profiles_by_key_hash = build_seeded_profiles_by_key_hash()
+    for api_key in api_keys:
+        seeded_profile = seeded_profiles_by_key_hash.get(api_key.key_hash)
+        if seeded_profile is not None:
+            if seeded_profile.agent_id != agent_id:
+                continue
+            return AuthenticatedAgentContext(
+                agent_id=seeded_profile.agent_id,
+                display_name=seeded_profile.display_name,
+                is_seeded=True,
+            )
+
+        if build_non_seeded_agent_id(str(api_key.id)) != agent_id:
+            continue
+
+        existing_agent_player = session.scalar(
+            select(Player)
+            .where(Player.api_key_id == api_key.id, Player.is_agent.is_(True))
+            .order_by(Player.match_id, Player.id)
         )
-        resolved_player = next(
-            (
-                player
-                for player in persisted_players
-                if str(player.user_id) == user_id and not player.is_agent
+        return AuthenticatedAgentContext(
+            agent_id=agent_id,
+            display_name=(
+                existing_agent_player.display_name
+                if existing_agent_player is not None
+                else build_non_seeded_display_name(str(api_key.id))
             ),
-            None,
+            is_seeded=False,
         )
-        if resolved_player is None:
-            return None
-        return persisted_player_mapping.get(str(resolved_player.id))
+    return None
+
+
+def resolve_owned_agent_context_from_db(
+    *,
+    database_url: str,
+    user_id: str,
+    agent_id: str,
+    session_factory: type[Session] = Session,
+) -> AuthenticatedAgentContext | None:
+    from sqlalchemy import create_engine
+
+    engine = create_engine(database_url)
+    with session_factory(engine) as session:
+        return resolve_owned_agent_context(session=session, user_id=user_id, agent_id=agent_id)
 
 
 def resolve_loaded_agent_identity(
@@ -241,5 +308,6 @@ __all__ = [
     "resolve_human_display_name",
     "resolve_human_elo_rating",
     "resolve_human_player_id_from_db",
+    "resolve_owned_agent_context_from_db",
     "resolve_loaded_agent_identity",
 ]
