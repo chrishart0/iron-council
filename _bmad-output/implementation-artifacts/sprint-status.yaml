@@ -1,9 +1,9 @@
-generated: 2026-04-03 06:18 UTC
+generated: 2026-04-03 07:43 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 47-1-sync-canonical-architecture-and-public-entrypoint-docs
+next_story: null
 
 development_status:
   public-readiness-epic: done
@@ -226,6 +226,6 @@ development_status:
   epic-46: done
   46-1-eliminate-python-3-12-sqlite-datetime-adapter-warnings: done
 
-  epic-47: in-progress
+  epic-47: done
   47-1-sync-canonical-architecture-and-public-entrypoint-docs: done
   47-2-harden-db-backed-public-read-edge-contracts: done

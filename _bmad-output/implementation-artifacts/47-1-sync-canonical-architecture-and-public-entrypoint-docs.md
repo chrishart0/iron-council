@@ -45,7 +45,9 @@ Done
 - GREEN: `uv run pytest -q -o addopts='' tests/test_local_dev_docs.py`
 - GREEN within `make quality`: `uv run ruff format --check server tests agent-sdk/python`
 - GREEN within `make quality`: `uv run ruff check server tests agent-sdk/python`
-- QUALITY-GATE BLOCKER: `make quality` stopped at `uv run mypy server tests agent-sdk/python` with `Failed to spawn: mypy` because `mypy` was not available in this environment.
+- QUALITY-GATE BLOCKER (worker worktree): `make quality` stopped at `uv run mypy server tests agent-sdk/python` with `Failed to spawn: mypy` because `mypy` was not available in that fresh worker environment.
+- GREEN (controller): `source .venv/bin/activate && uv run pytest --no-cov tests/test_local_dev_docs.py -q`
+- GREEN (controller): `source .venv/bin/activate && make quality`
 
 ### Completion Notes List
 - Updated `core-architecture.md` section 5.2 so it now describes the shipped mixed public/authenticated HTTP surface instead of framing the API as agent-only.
@@ -54,6 +56,7 @@ Done
 - Expanded `README.md` and `docs/index.md` just enough to make the shipped public leaderboard, completed-match summaries, match history/replay, and public human/agent profile pages easier to discover.
 - Added a small docs regression guard in `tests/test_local_dev_docs.py` that pins the most important route/env/websocket promises without introducing brittle full-document snapshots.
 - Performed a simplification pass after the edits and kept the architecture changes limited to drift correction rather than rewriting the whole document.
+- Controller integration verified the merged story in the main repo before closeout.
 
 ### File List
 - `core-architecture.md`
@@ -67,4 +70,4 @@ Done
 - PASS: AC1. `core-architecture.md` now distinguishes public HTTP reads, authenticated HTTP/player routes, and the public spectator versus authenticated player websocket usage.
 - PASS: AC2. The canonical/public entrypoint docs now enumerate the shipped public leaderboard, completed-match, history/replay, and public profile surfaces and use `IRON_COUNCIL_BROWSER_ORIGINS`.
 - PASS: AC3. `tests/test_local_dev_docs.py` now contains a lightweight regression guard for the critical route/env/websocket promises.
-- PARTIAL: AC4. Focused docs verification passed with `uv run pytest -q -o addopts='' tests/test_local_dev_docs.py`, and the repo quality gate advanced through Ruff formatting/lint checks, but `make quality` was blocked by missing `mypy` in this environment rather than by a product regression in this story.
+- PASS: AC4. Worker-level focused docs verification passed, and controller-side verification then passed with `source .venv/bin/activate && uv run pytest --no-cov tests/test_local_dev_docs.py -q` plus the full `source .venv/bin/activate && make quality` gate in the main repo.

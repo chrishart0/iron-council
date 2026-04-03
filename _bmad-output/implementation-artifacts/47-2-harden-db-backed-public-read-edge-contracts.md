@@ -41,16 +41,17 @@ Done
 - `uv sync --extra dev --frozen`
   Outcome: installed the locked dev tools, including `mypy`, so the repo quality gate could run.
 - `make quality`
-  Outcome: format, Ruff, mypy, and the repo test suite ran, but the gate failed on unrelated existing client smoke coverage in `tests/test_client_dev_smoke.py::test_next_dev_uses_client_workspace_without_warning_or_generated_type_drift`.
-- `uv run pytest --no-cov tests/test_client_dev_smoke.py -k next_dev_uses_client_workspace_without_warning_or_generated_type_drift -q`
-  Outcome: reproduced the unrelated failure (`ProcessLookupError` during `npm run dev` teardown), confirming it was not introduced by Story 47.2.
+  Outcome: in the fresh worker worktree, the gate reached repo verification but was not a trustworthy final signal because that worktree still had an unrelated client smoke failure path.
+- GREEN (controller): `source .venv/bin/activate && uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_db_registry.py -k 'leaderboard or completed_match or match_history or user_backed_agent or solo_winner or winner_fallback'`
+- GREEN (controller): `source .venv/bin/activate && uv run pytest --no-cov tests/api/test_agent_api.py -k 'leaderboard or completed or history' -q`
+- GREEN (controller): `source .venv/bin/activate && make quality`
 
 ## Completion Notes
 - Added two behavior-first DB-backed regressions in `tests/test_db_registry.py` to pin:
   - user-backed agent public identities across `get_public_leaderboard`, `get_completed_match_summaries`, and `get_match_history`
   - honest solo-winner and missing-alliance-row winner fallback behavior at the public read boundary
 - The new coverage did not reveal a contract bug, so `server/db/public_read_assembly.py` was left unchanged.
-- Sprint tracking was updated for Story 47.2 only on the `feat/47-2-public-read-hardening` branch.
+- Sprint tracking was updated for Story 47.2 on the worker branch and then reconciled in the main repo after integration.
 
 ## File List
 - `tests/test_db_registry.py`
@@ -59,4 +60,5 @@ Done
 
 ## QA Results
 - Story-focused DB-backed verification: pass
-- Repo quality gate: partial pass; blocked by unrelated existing failure in `tests/test_client_dev_smoke.py::test_next_dev_uses_client_workspace_without_warning_or_generated_type_drift`
+- Public-boundary API slice: pass
+- Repo quality gate after controller integration: pass (`source .venv/bin/activate && make quality`)
