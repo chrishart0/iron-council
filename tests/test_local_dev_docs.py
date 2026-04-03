@@ -67,3 +67,14 @@ def test_readme_documents_public_match_browser_client_workflow() -> None:
     assert "make client-test" in readme
     assert "make client-build" in readme
     assert "No client environment variables are required for this story." in client_env_example
+
+
+def test_readme_and_env_example_document_local_browser_cors_workflow() -> None:
+    readme = (REPO_ROOT / "README.md").read_text()
+    env_example = (REPO_ROOT / "env.local.example").read_text()
+
+    assert "IRON_COUNCIL_BROWSER_ORIGINS" in readme
+    assert "http://127.0.0.1:3000" in readme
+    assert "http://localhost:3000" in readme
+    assert "alternate local browser ports or hosts" in readme
+    assert "IRON_COUNCIL_BROWSER_ORIGINS" in env_example

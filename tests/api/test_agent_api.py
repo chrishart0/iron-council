@@ -291,6 +291,72 @@ def websocket_client(websocket_app: FastAPI) -> TestClient:
     return TestClient(websocket_app, base_url="http://testserver")
 
 
+def test_create_app_uses_explicit_local_browser_cors_origin_defaults_and_override(
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    default_app = create_app(match_registry=seeded_registry)
+
+    assert default_app.state.settings.allowed_browser_origins == (
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+    )
+
+    override_app = create_app(
+        match_registry=seeded_registry,
+        settings_override={
+            "IRON_COUNCIL_BROWSER_ORIGINS": "http://127.0.0.1:3100, http://localhost:3100",
+        },
+    )
+
+    assert override_app.state.settings.allowed_browser_origins == (
+        "http://127.0.0.1:3100",
+        "http://localhost:3100",
+    )
+
+
+@pytest.mark.asyncio
+async def test_cors_preflight_for_allowed_local_browser_origin_returns_allow_origin_header(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        response = await client.options(
+            "/api/v1/matches",
+            headers={
+                "Origin": "http://127.0.0.1:3000",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:3000"
+
+
+@pytest.mark.asyncio
+async def test_cors_simple_request_for_allowed_local_browser_origin_returns_allow_origin_header(
+    app_client: AsyncClient,
+) -> None:
+    async with app_client as client:
+        response = await client.get(
+            "/api/v1/matches",
+            headers={"Origin": "http://127.0.0.1:3000"},
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:3000"
+
+
+@pytest.mark.asyncio
+async def test_cors_does_not_echo_unlisted_origin(app_client: AsyncClient) -> None:
+    async with app_client as client:
+        response = await client.get(
+            "/api/v1/matches",
+            headers={"Origin": "http://127.0.0.1:3999"},
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert "access-control-allow-origin" not in response.headers
+
+
 @pytest.mark.asyncio
 async def test_list_matches_returns_stable_json_summaries(app_client: AsyncClient) -> None:
     async with app_client as client:

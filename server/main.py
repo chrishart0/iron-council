@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Final, cast
 
 from fastapi import FastAPI, Request, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
 
 from server import __version__
@@ -119,6 +120,12 @@ def create_app(
     app.state.match_runtime = match_runtime
     app.state.settings = settings
     app.state.history_database_url = history_database_url
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(settings.allowed_browser_origins),
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     register_error_handlers(app)
     register_public_metadata_routes(app)

@@ -76,6 +76,13 @@ Open `http://127.0.0.1:3000/matches` for the public browser. From there you can 
 `http://127.0.0.1:3000/lobby`.
 No client env vars are required. The browser session panel stores the API base URL and
 an optional human bearer token in local storage. Public pages stay available without auth.
+The host-run FastAPI server allows browser requests from `http://127.0.0.1:3000` and
+`http://localhost:3000` by default, so the shipped Next.js dev server can call
+`http://127.0.0.1:8000` directly during local development. If you need alternate local browser ports or hosts, set `IRON_COUNCIL_BROWSER_ORIGINS` in `.env.local` as a
+comma-separated list such as
+`IRON_COUNCIL_BROWSER_ORIGINS=http://127.0.0.1:3100,http://localhost:3100`.
+This only adjusts the API's local browser allowlist; the server still runs directly on
+the host against the support-services stack.
 
 ### 5. Run the example agent / SDK flow
 
