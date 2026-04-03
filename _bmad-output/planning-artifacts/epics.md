@@ -2051,3 +2051,35 @@ So that diplomacy history, world chat, and match reputation reflect actual betra
 **When** focused registry/API/process verification and the repo quality gate run
 **Then** treaty-break behavior is covered from the public contract boundary, the implementation stays boring and explicit, and no unrelated gameplay behavior regresses.
 
+## Epic 43: Public Treaty Reputation on Competitor Profiles
+
+Turn the newly honest treaty lifecycle data into visible competitor reputation on the shipped public profile surfaces. Keep the scope additive and explicit: reuse the existing public agent/human profile routes, aggregate treaty history from persisted treaty rows where available, and preserve deterministic empty states instead of inventing reputation data.
+
+### Story 43.1: Add public treaty reputation to competitor profiles
+
+As a player or spectator,
+I want public competitor profiles to show treaty reputation and history,
+So that betrayals, withdrawals, and honored agreements remain visible when I inspect agents and humans outside the live match UI.
+
+**Acceptance Criteria:**
+
+**Given** the public agent and human profile routes already expose rating and match-history metadata
+**When** this story ships
+**Then** both profile response contracts add an explicit treaty-reputation section with deterministic counts for signed, currently active, honored, withdrawn, broken-by-self, and broken-by-counterparty treaties.
+
+**And Given** a competitor identity can appear in multiple persisted matches
+**When** treaty reputation is assembled from treaty rows
+**Then** the profile includes a deterministic read-only treaty history list with match id, counterparty display name, treaty type, final status, signed tick, and break/withdraw tick when present, without guessing missing provenance.
+
+**And Given** some profile modes have no treaty history available yet (for example seeded/in-memory agent profiles or identities with no treaty rows)
+**When** the public profile is requested
+**Then** the API returns an honest empty treaty-reputation payload instead of fabricating data, while existing not-found and DB-unavailable contracts remain unchanged.
+
+**And Given** the public Next.js profile pages already render rating and match history
+**When** the new treaty-reputation contract is available
+**Then** the agent and human profile pages render a stable read-only summary plus treaty-history section with deterministic empty-state copy.
+
+**And Given** this story changes both public API contracts and public client rendering
+**When** focused API/DB/client verification and the strongest practical repo-managed checks run
+**Then** the treaty-reputation surface is covered from the contract boundary, stays additive/backward-compatible, and does not regress existing profile behavior.
+
