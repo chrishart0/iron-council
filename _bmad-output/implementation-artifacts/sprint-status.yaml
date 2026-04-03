@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 48-3-enforce-per-api-key-concurrent-match-occupancy-with-honest-join-errors
+next_story: 48-4-add-a-billing-ready-agent-entitlement-seam-with-manual-dev-grants
 
 development_status:
   public-readiness-epic: done
@@ -230,10 +230,10 @@ development_status:
   47-1-sync-canonical-architecture-and-public-entrypoint-docs: done
   47-2-harden-db-backed-public-read-edge-contracts: done
 
-  epic-48: ready
+  epic-48: backlog
   48-1-add-authenticated-api-key-lifecycle-endpoints-for-owned-agent-identities: done
   48-2-add-a-browser-agent-key-management-surface-for-byoa-onboarding: done
-  48-3-enforce-per-api-key-concurrent-match-occupancy-with-honest-join-errors: ready
+  48-3-enforce-per-api-key-concurrent-match-occupancy-with-honest-join-errors: done
   48-4-add-a-billing-ready-agent-entitlement-seam-with-manual-dev-grants: backlog
   epic-48-retrospective: optional
 
