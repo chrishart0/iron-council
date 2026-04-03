@@ -2083,3 +2083,35 @@ So that betrayals, withdrawals, and honored agreements remain visible when I ins
 **When** focused API/DB/client verification and the strongest practical repo-managed checks run
 **Then** the treaty-reputation surface is covered from the contract boundary, stays additive/backward-compatible, and does not regress existing profile behavior.
 
+## Epic 44: Local Browser Dev Parity and Cross-Origin Access
+
+Close the local-dev gap between the shipped Next.js browser client and the FastAPI API by making the documented host-run browser flow work against the real server. Keep the scope narrowly focused on explicit HTTP CORS behavior for local development, with a small settings seam, honest docs, and boundary tests rather than speculative deployment abstractions.
+
+### Story 44.1: Add local browser-to-API CORS support
+
+As a local developer or reviewer,
+I want the Next.js browser app at `http://127.0.0.1:3000` to call the FastAPI API at `http://127.0.0.1:8000` without cross-origin failures,
+So that the shipped local public and human browser flows actually work in dev mode against the real server.
+
+**Acceptance Criteria:**
+
+**Given** the documented local workflow runs the browser client on `http://127.0.0.1:3000` and the API on `http://127.0.0.1:8000`
+**When** a browser performs preflight and normal HTTP requests to the public/authenticated API routes
+**Then** the FastAPI app emits the expected `Access-Control-Allow-Origin` header for the shipped local browser origin(s).
+
+**And Given** different local developers may use alternate hostnames or ports
+**When** app settings are loaded
+**Then** the allowed browser origins come from a small explicit configuration seam with a narrow local default and an override for alternate dev origins.
+
+**And Given** the CORS policy should remain explicit
+**When** an unlisted origin calls the API
+**Then** the app does not echo an allow-origin header for that request.
+
+**And Given** the repo documents a host-run server plus browser-client workflow
+**When** README and local env docs are read after this story ships
+**Then** they describe the working browser/API setup and the optional origin override without implying app-containerized runtime changes.
+
+**And Given** this story changes runtime app wiring and local developer docs
+**When** focused API/doc verification and the strongest practical repo-managed checks run
+**Then** the local browser access path is covered from the HTTP boundary and the repo remains in a simple coherent state.
+
