@@ -15,8 +15,8 @@ So that I can see the current visible state, queued actions, and recent agent ac
 
 ## Ready Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Tasks / Subtasks
 
@@ -44,8 +44,8 @@ So that I can see the current visible state, queued actions, and recent agent ac
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Change Log
 
