@@ -1,24 +1,26 @@
 # Public Readiness Follow-Ups
 
-Date: 2026-04-01
+Date: 2026-04-04
 Source: [public repo assessment](../consulting/public-repo-assessment-2026-04-01.md)
 
 ## Priority Queue
 
-1. Refactor the human live page into smaller UI and state slices.
-Owner suggestion: client maintainers
-Scope: carve [human-match-live-page.tsx](../../client/src/components/matches/human-match-live-page.tsx) into smaller components/hooks without changing the public route contract.
-Why now: the file is already 2,167 lines and sits on a high-change, user-visible path.
+1. Define deployable runtime packaging, environment contract, and an operator runbook.
+Owner suggestion: platform/server/docs maintainers
+Scope: make the shipped server, client, and support-service runtime honestly deployable outside the current dev-only context with one boring packaging path and one explicit env contract.
+Why now: Epic 51 should start by removing ambiguity around how Iron Council is started, checked, and recovered in a real launch scenario.
 
-2. Split server API/app wiring out of the monolithic main module.
-Owner suggestion: server maintainers
-Scope: move route groups, app setup, or dependency wiring out of [server/main.py](../../server/main.py) behind stable module boundaries.
-Why now: the file is already 2,140 lines and is a likely regression magnet as public API surface grows.
+2. Add runtime observability for tick drift, websocket fanout, and restart recovery.
+Owner suggestion: server/platform maintainers
+Scope: expose boring operator-facing signals for the async tick loop, websocket connection/fanout behavior, and whether active matches resume cleanly after process restart.
+Why now: the architecture already calls out these failure modes as launch risks, but the repo still lacks a small, explicit observability seam for them.
 
-3. Reduce registry concentration in server persistence and agent workflows.
-Owner suggestion: server maintainers
-Scope: review [server/agent_registry.py](../../server/agent_registry.py) and [server/db/registry.py](../../server/db/registry.py) for extraction opportunities around read/write responsibilities and lifecycle operations.
+3. Add multi-match/load validation plus a launch-readiness smoke path.
+Owner suggestion: server/QA maintainers
+Scope: prove the packaged runtime survives a small realistic concurrent-match slice with websocket subscribers and restart/resume checks, without pretending to ship large-scale benchmarking.
+Why now: current quality gates prove correctness well, but launch confidence still leans too hard on single-match or developer-local assumptions.
 
-4. Continue public-doc curation around BMAD-visible repo structure.
-Owner suggestion: docs maintainers
-Scope: keep [README.md](../../README.md) and [docs/index.md](../../docs/index.md) as the first stop for external readers and avoid letting planning artifacts become the accidental public landing surface.
+4. Do one small public demo and launch-polish pass after runtime hardening lands.
+Owner suggestion: docs/client maintainers
+Scope: tighten the public-facing demo path, operator-facing docs links, and any obviously rough launch copy or presentation seams that still block a credible first public showing.
+Why now: once the runtime path is honest, the remaining launch debt should be framed as polish and demo readiness rather than more internal refactor work.

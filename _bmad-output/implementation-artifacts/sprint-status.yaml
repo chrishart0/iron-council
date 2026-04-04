@@ -1,9 +1,9 @@
-generated: 2026-04-04 06:18 UTC
+generated: 2026-04-04 06:55 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: null
+next_story: 51-1-add-deployable-runtime-packaging-env-contract-and-operator-runbook
 
 development_status:
   public-readiness-epic: done
@@ -248,3 +248,9 @@ development_status:
   50-1-harden-in-memory-diplomacy-and-messaging-contract-edges: done
   50-2-harden-db-backed-rating-settlement-identity-and-tenure-edges: done
   epic-50-retrospective: optional
+
+  epic-51: drafted
+  51-1-add-deployable-runtime-packaging-env-contract-and-operator-runbook: drafted
+  51-2-add-runtime-observability-for-tick-drift-websocket-fanout-and-restart-recovery: drafted
+  51-3-add-multi-match-load-validation-and-launch-readiness-smoke-path: drafted
+  epic-51-retrospective: optional

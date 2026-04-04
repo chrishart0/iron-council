@@ -2392,3 +2392,71 @@ So that completed-match ELO updates remain honest across solo winners, alliance 
 **And Given** V1 is already feature-complete
 **When** this hardening story lands
 **Then** the code and tests stay boring: prefer narrow DB/behavior tests and only the smallest production refactor needed to keep the implementation aligned with repo conventions and `make quality`.
+
+## Epic 51: Production Readiness and Launch Hardening
+
+Use the next post-V1 slice to make the shipped FastAPI, Next.js, and Postgres stack honestly launchable without pretending the repo already has full platform automation. Keep the scope pragmatic and small: define one concrete deployable runtime/env contract first, then harden runtime observability and launch-readiness validation against that contract.
+
+### Story 51.1: Add deployable runtime packaging, env contract, and operator runbook
+
+As an operator and maintainer of Iron Council,
+I want one boring deployable runtime package plus an explicit environment contract and runbook,
+So that the shipped server, client, and local support services can be started, checked, and recovered consistently outside the current developer-only context.
+
+**Acceptance Criteria:**
+
+**Given** `core-plan.md` and `core-architecture.md` already define the server, client, websocket, and persistence shape
+**When** the first production-readiness story lands
+**Then** the repo contains at least one checked-in runnable packaging or startup artifact plus the required environment variables and startup assumptions for the server, client, and supporting services without overpromising full infra automation.
+
+**And Given** launch work will continue in later stories
+**When** the operator runbook is written
+**Then** it covers startup order, health verification, websocket/runtime expectations, restart basics, and rollback or recovery guidance clearly enough that Stories 51.2 and 51.3 can build on the same runtime/env contract.
+
+**And Given** this story defines the contract for the rest of Epic 51
+**When** focused verification and the repo quality gate run
+**Then** the BMAD artifact records the real commands and outcomes and later stories can treat the runtime/env contract as the single source of truth.
+
+**And Given** this story is about deployable packaging rather than docs-only planning
+**When** Story 51.1 completes
+**Then** it leaves behind a checked-in runnable packaging/startup artifact instead of only prose about how a future deploy might work.
+
+### Story 51.2: Add runtime observability for tick drift, websocket fanout, and restart recovery
+
+As an operator of the live runtime,
+I want narrow observability around tick timing, websocket fanout, and restart recovery,
+So that the first public launch can detect the most meaningful runtime-failure signals before they turn into silent gameplay drift.
+
+**Acceptance Criteria:**
+
+**Given** Story 51.1 has already defined the runtime package and environment contract
+**When** the runtime is exercised under normal live-match behavior
+**Then** operators can see boring, trustworthy signals for tick drift, websocket connection or fanout behavior, and whether an active match resumed cleanly after restart without reading private implementation details.
+
+**And Given** this is a hardening story rather than an observability platform rollout
+**When** the change ships
+**Then** the implementation stays narrow, repo-convention aligned, and verified through focused tests or smoke validation plus `make quality`.
+
+**And Given** Story 51.3 will validate launch-readiness behavior
+**When** Story 51.2 finishes
+**Then** it exposes the runtime signals Story 51.3 should consume rather than inventing a second observability contract.
+
+### Story 51.3: Add multi-match/load validation and launch-readiness smoke path
+
+As a maintainer preparing for public launch,
+I want a small multi-match/load validation slice and one launch-readiness smoke path,
+So that the packaged runtime is proven against realistic concurrent-match and restart scenarios instead of only single-match happy paths.
+
+**Acceptance Criteria:**
+
+**Given** Story 51.1 has defined the deployable runtime/env contract
+**When** the packaged server is exercised with multiple active matches, websocket subscribers, and restart or resume conditions
+**Then** the repo contains a focused validation path that proves the launch-critical behavior honestly without claiming large-scale benchmarking coverage.
+
+**And Given** Story 51.2 may be implemented in parallel once the runtime contract exists
+**When** Story 51.3 finishes
+**Then** the smoke and load validation stays launch-scoped, deterministic where practical, and aligned with the same packaged runtime/runbook operators are expected to use.
+
+**And Given** Story 51.2 may already expose runtime signals
+**When** Story 51.3 asserts websocket or restart behavior
+**Then** it consumes those same signals where available instead of inventing a separate observability surface.
