@@ -30,10 +30,12 @@ class MatchWebSocketManager:
         *,
         send_timeout_seconds: float = 0.1,
         max_concurrent_sends: int = 16,
+        fanout_observer: Callable[[str, int, int, int], None] | None = None,
     ) -> None:
         self._connections: dict[str, list[MatchWebSocketSubscription]] = {}
         self._send_timeout_seconds = send_timeout_seconds
         self._max_concurrent_sends = max_concurrent_sends
+        self._fanout_observer = fanout_observer
 
     def register(
         self,
@@ -65,6 +67,11 @@ class MatchWebSocketManager:
     def connection_count(self, match_id: str) -> int:
         return len(self._connections.get(match_id, []))
 
+    def connection_counts(self) -> dict[str, int]:
+        return {
+            match_id: len(subscriptions) for match_id, subscriptions in self._connections.items()
+        }
+
     async def broadcast(
         self,
         *,
@@ -77,21 +84,31 @@ class MatchWebSocketManager:
 
         semaphore = asyncio.Semaphore(self._max_concurrent_sends)
 
-        async def send_to_subscription(subscription: MatchWebSocketSubscription) -> None:
+        async def send_to_subscription(subscription: MatchWebSocketSubscription) -> bool:
+            payload = payload_factory(subscription)
             try:
-                payload = payload_factory(subscription)
                 async with semaphore:
                     await asyncio.wait_for(
                         subscription.websocket.send_json(payload.model_dump(mode="json")),
                         timeout=self._send_timeout_seconds,
                     )
+                return True
             except Exception:
                 self.unregister(match_id=match_id, websocket=subscription.websocket)
+                return False
 
-        await asyncio.gather(
-            *(send_to_subscription(subscription) for subscription in subscriptions),
-            return_exceptions=True,
+        results = await asyncio.gather(
+            *(send_to_subscription(subscription) for subscription in subscriptions)
         )
+        delivered_connections = sum(1 for delivered in results if delivered)
+        dropped_connections = len(subscriptions) - delivered_connections
+        if self._fanout_observer is not None:
+            self._fanout_observer(
+                match_id,
+                len(subscriptions),
+                delivered_connections,
+                dropped_connections,
+            )
 
 
 def build_match_realtime_envelope(

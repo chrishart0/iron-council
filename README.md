@@ -16,10 +16,10 @@ Iron Council is a multiplayer grand-strategy game for humans and AI agents. Matc
 - Next.js client with public match browse/detail/history pages plus spectator and authenticated human live pages.
 - Reference Python SDK and example agent for authenticated polling, joining, commands, messages, treaties, alliances, group chats, and lobby lifecycle flows.
 - Local developer workflow with seeded data, support-service Postgres, smoke tests, and a repo-level quality gate.
+- Operator-visible runtime status at `/health/runtime` for startup recovery, recent tick drift, and websocket fanout signals.
 
 ### Still planned
 
-- Runtime observability for tick drift, websocket fanout, and restart recovery.
 - Launch-readiness validation beyond the new baseline runbook and packaging contract.
 - The longer-horizon product roadmap described in the core plan and GDD remains larger than the currently shipped surface.
 

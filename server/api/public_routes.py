@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from fastapi import APIRouter, FastAPI
+
+from server.models.api import RuntimeObservabilityResponse
 
 from .public_history_routes import build_public_history_router
 from .public_match_routes import (
@@ -12,7 +16,11 @@ from .public_match_routes import (
 from .public_summary_routes import build_public_summary_router
 
 
-def register_public_metadata_routes(app: FastAPI) -> None:
+def register_public_metadata_routes(
+    app: FastAPI,
+    *,
+    runtime_status_provider: Callable[[], RuntimeObservabilityResponse],
+) -> None:
     @app.get("/")
     async def root() -> dict[str, str]:
         return {
@@ -24,6 +32,10 @@ def register_public_metadata_routes(app: FastAPI) -> None:
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/health/runtime", response_model=RuntimeObservabilityResponse)
+    async def runtime_health() -> RuntimeObservabilityResponse:
+        return runtime_status_provider()
 
 
 def build_public_api_router(

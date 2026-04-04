@@ -1,6 +1,6 @@
 # Story 51.2: Add runtime observability for tick drift, websocket fanout, and restart recovery
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -21,10 +21,10 @@ So that the first public launch can detect the most meaningful runtime-failure s
 
 ## Tasks / Subtasks
 
-- [ ] Add focused failing expectations for tick-drift, websocket-fanout, and restart-recovery signals at the operator boundary. (AC: 1)
-- [ ] Expose one narrow signal surface for those runtime events without introducing a heavy observability framework. (AC: 1, 2)
-- [ ] Verify Story 51.3 can consume the same signal surface rather than redefining observability semantics. (AC: 2)
-- [ ] Run focused validation plus `make quality`, then update this artifact with the real results. (AC: 3)
+- [x] Add focused failing expectations for tick-drift, websocket-fanout, and restart-recovery signals at the operator boundary. (AC: 1)
+- [x] Expose one narrow signal surface for those runtime events without introducing a heavy observability framework. (AC: 1, 2)
+- [x] Verify Story 51.3 can consume the same signal surface rather than redefining observability semantics. (AC: 2)
+- [x] Run focused validation plus `make quality`, then update this artifact with the real results. (AC: 3)
 
 ## Dev Notes
 
@@ -48,15 +48,32 @@ So that the first public launch can detect the most meaningful runtime-failure s
 ## Change Log
 
 - 2026-04-04: Drafted Story 51.2 as the operator-observability follow-on once Story 51.1 defines the packaged runtime contract.
+- 2026-04-04: Fixed review findings so `/health/runtime` keeps a narrow operator surface while reporting honest tick scheduling, websocket fanout, and startup recovery signals.
 
 ## Debug Log References
 
-- None yet. Story not started.
+- `uv run pytest tests/api/test_runtime_observability.py -q` failed before test execution because the repo `pytest` addopts included `--cov` flags but the current `uv run` environment had not loaded the dev extras yet.
+- `uv run --extra dev pytest --no-cov tests/api/test_runtime_observability.py -q` passed (`5 passed`).
+- `uv run --extra dev pytest --no-cov tests/api/test_runtime_observability.py tests/test_runtime_contract_docs.py tests/e2e/test_api_smoke.py -k 'runtime_observability or runtime_status or runtime_contract or runtime_control or runtime_env_contract' -q` passed (`8 passed`).
+- `make quality` passed after formatting/lint cleanup (`479 passed, 1 skipped`, coverage `95.32%`, client lint/test/build green).
 
 ## Completion Notes
 
-- Pending implementation.
+- `server/runtime.py` now schedules against the next tick deadline instead of sleeping a full interval after each loop body, so `/health/runtime` drift stays tied to scheduler lateness while processing time remains a separate signal.
+- `server/websocket.py` now lets payload-construction bugs fail as server errors instead of unregistering sockets and inflating dropped-connection counts.
+- Focused coverage now proves startup recovery against a DB-backed resumed active match, plus the healthy-processing-time drift regression and payload-construction fanout honesty.
+- `docs/operations/runtime-runbook.md` now reflects that Story 51.2 signals exist at `/health/runtime`.
 
 ## File List
 
 - `_bmad-output/implementation-artifacts/51-2-add-runtime-observability-for-tick-drift-websocket-fanout-and-restart-recovery.md`
+- `docs/operations/runtime-runbook.md`
+- `server/main.py`
+- `server/models/api.py`
+- `server/runtime.py`
+- `server/runtime_observability.py`
+- `server/websocket.py`
+- `server/api/public_routes.py`
+- `tests/api/test_runtime_observability.py`
+- `tests/e2e/test_api_smoke.py`
+- `tests/test_runtime_contract_docs.py`

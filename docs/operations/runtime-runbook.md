@@ -8,7 +8,7 @@ This runbook documents the first boring operator path for Iron Council. It is in
 - local/demo support services come from `compose.support-services.yaml`
 - `./scripts/runtime-control.sh` is the checked-in operator entrypoint
 
-Stories 51.2 and 51.3 will add explicit operator signals and a broader launch-readiness smoke path. This runbook defines the startup order and recovery baseline they should reuse.
+Story 51.2 adds the explicit operator signals exposed at `/health/runtime`, and Story 51.3 will add the broader launch-readiness smoke path that reuses them. This runbook defines the startup order and recovery baseline those checks should follow.
 
 ## 1. Bootstrap the workspace
 
@@ -43,6 +43,7 @@ Expected output includes:
 - server and client URLs
 - `IRON_COUNCIL_MATCH_REGISTRY_BACKEND`
 - the `/health` curl target
+- the `/health/runtime` curl target
 
 If the env file does not exist yet, the doctor command warns instead of pretending the runtime is ready.
 
@@ -105,12 +106,14 @@ Once the API process is up:
 
 ```bash
 curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/health/runtime
 curl http://127.0.0.1:8000/
 ```
 
 Expected responses:
 
 - `/health` returns `{"status":"ok"}`
+- `/health/runtime` returns the operator-facing runtime status JSON with startup recovery, per-match tick drift, and websocket fanout fields
 - `/` returns service metadata including the server version
 
 Then verify a public browse surface in the browser:
@@ -122,12 +125,15 @@ For authenticated human flows, also verify the browser session panel can reach t
 
 ## 7. Websocket/runtime expectations
 
-Current Story 51.1 expectations are intentionally limited:
+Current operator-visible runtime expectations are intentionally narrow:
 
 - the API process owns the in-process match runtime
 - with `IRON_COUNCIL_MATCH_REGISTRY_BACKEND=db`, startup reloads match state from the configured database before the runtime loop starts
 - browser spectators and authenticated players reconnect through the existing websocket routes once the API process is healthy again
-- Story 51.2 will add explicit operator-visible tick-drift, websocket-fanout, and restart-recovery signals; this story does not claim those signals exist yet
+- `/health/runtime` exposes one small shared signal surface for operators and Story 51.3 validation, including:
+  - startup recovery metadata for resumed active matches
+  - the most recent observed tick drift and processing time per match after a runtime tick completes
+  - current websocket connection counts plus the most recent per-match fanout delivery summary
 
 ## 8. Restart basics
 
@@ -138,7 +144,7 @@ Current Story 51.1 expectations are intentionally limited:
 3. Re-run the `/health` and `/` checks.
 4. Re-open a public browse page or live page and confirm it reconnects.
 
-The safe assumption today is that persisted match data survives because it is DB-backed; in-process tick workers restart with the process. Treat Story 51.2 as the follow-on for explicit restart-recovery signals.
+The safe assumption remains that persisted match data survives because it is DB-backed and in-process tick workers restart with the process. After the API comes back, use `/health/runtime` to confirm which active matches resumed, what tick they are on, and whether websocket fanout remains healthy.
 
 ### Client restart
 

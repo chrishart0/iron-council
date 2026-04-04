@@ -48,6 +48,7 @@ def test_runtime_control_script_is_checked_in_executable_and_reports_doctor_summ
     assert f"- server env file: {env_file}" in doctor_output
     assert "- env file exists: yes" in doctor_output
     assert "- health check: curl http://127.0.0.1:8000/health" in doctor_output
+    assert "- runtime status check: curl http://127.0.0.1:8000/health/runtime" in doctor_output
 
 
 def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_artifacts() -> None:
@@ -87,4 +88,5 @@ def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_a
     assert "./scripts/runtime-control.sh support-up" in runbook
     assert "./scripts/runtime-control.sh db-setup" in runbook
     assert "curl http://127.0.0.1:8000/health" in runbook
-    assert "Story 51.2" in runbook
+    assert "curl http://127.0.0.1:8000/health/runtime" in runbook
+    assert "/health/runtime" in runbook

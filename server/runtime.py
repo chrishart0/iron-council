@@ -18,10 +18,12 @@ class MatchRuntime:
         *,
         tick_persistence: Callable[[AdvancedMatchTick], None] | None = None,
         tick_broadcast: Callable[[AdvancedMatchTick], Awaitable[None]] | None = None,
+        tick_observer: Callable[[str, int, int, float, float], None] | None = None,
     ) -> None:
         self._registry = registry
         self._tick_persistence = tick_persistence
         self._tick_broadcast = tick_broadcast
+        self._tick_observer = tick_observer
         self._tasks: dict[str, asyncio.Task[None]] = {}
 
     async def start(self) -> None:
@@ -54,12 +56,18 @@ class MatchRuntime:
         )
 
     async def _run_match_loop(self, match_id: str) -> None:
+        loop = asyncio.get_running_loop()
+        next_tick_scheduled_at: float | None = None
         try:
             while True:
                 match = self._registry.get_match(match_id)
                 if match is None or match.status != MatchStatus.ACTIVE:
                     return
-                await asyncio.sleep(match.tick_interval_seconds)
+                if next_tick_scheduled_at is None:
+                    next_tick_scheduled_at = loop.time() + match.tick_interval_seconds
+                await asyncio.sleep(max(0.0, next_tick_scheduled_at - loop.time()))
+                actual_tick_started_at = loop.time()
+                tick_drift_seconds = max(0.0, actual_tick_started_at - next_tick_scheduled_at)
                 match_snapshot = (
                     self._registry.snapshot_match(match_id)
                     if self._tick_persistence is not None
@@ -80,7 +88,16 @@ class MatchRuntime:
                         completed_match.status = MatchStatus.COMPLETED
                 if self._tick_broadcast is not None:
                     await self._tick_broadcast(advanced_tick)
+                if self._tick_observer is not None:
+                    self._tick_observer(
+                        advanced_tick.match_id,
+                        advanced_tick.resolved_tick,
+                        match.tick_interval_seconds,
+                        tick_drift_seconds,
+                        max(0.0, loop.time() - actual_tick_started_at),
+                    )
                 if is_terminal:
                     return
+                next_tick_scheduled_at += match.tick_interval_seconds
         except asyncio.CancelledError:
             raise

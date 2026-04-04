@@ -83,6 +83,7 @@ Runtime doctor summary
 - match registry backend: $MATCH_REGISTRY_BACKEND
 - support services command: docker compose -f compose.support-services.yaml up -d postgres
 - health check: curl http://$SERVER_HOST:$SERVER_PORT/health
+- runtime status check: curl http://$SERVER_HOST:$SERVER_PORT/health/runtime
 EOF
 
   if [[ -f "$ENV_FILE" ]]; then

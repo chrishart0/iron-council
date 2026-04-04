@@ -34,6 +34,47 @@ class MatchListResponse(StrictModel):
     matches: list[MatchSummary] = Field(default_factory=list)
 
 
+class RuntimeObservabilityFanoutStatus(StrictModel):
+    attempted_connections: int = Field(ge=0)
+    delivered_connections: int = Field(ge=0)
+    dropped_connections: int = Field(ge=0)
+    observed_at: datetime
+
+
+class RuntimeObservabilityWebSocketStatus(StrictModel):
+    connection_count: int = Field(ge=0)
+    last_fanout: RuntimeObservabilityFanoutStatus | None = None
+
+
+class RuntimeObservabilityTickStatus(StrictModel):
+    resolved_tick: TickDuration
+    expected_interval_seconds: int = Field(gt=0)
+    drift_seconds: float = Field(ge=0)
+    processing_seconds: float = Field(ge=0)
+    observed_at: datetime
+
+
+class RuntimeObservabilityMatchStatus(StrictModel):
+    match_id: str
+    status: MatchStatus
+    tick: TickDuration
+    tick_interval_seconds: int = Field(gt=0)
+    last_tick: RuntimeObservabilityTickStatus | None = None
+    websocket: RuntimeObservabilityWebSocketStatus
+
+
+class RuntimeObservabilityStartupRecovery(StrictModel):
+    recorded_at: datetime
+    resumed_active_match_count: int = Field(ge=0)
+    resumed_active_matches: list[RuntimeObservabilityMatchStatus] = Field(default_factory=list)
+
+
+class RuntimeObservabilityResponse(StrictModel):
+    status: Literal["ok"]
+    startup_recovery: RuntimeObservabilityStartupRecovery | None = None
+    matches: list[RuntimeObservabilityMatchStatus] = Field(default_factory=list)
+
+
 class MatchHistoryEntry(StrictModel):
     tick: TickDuration
 

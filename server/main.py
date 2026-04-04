@@ -26,9 +26,15 @@ from server.api import (
 from server.api.errors import ApiError
 from server.db.player_ids import build_human_actor_id
 from server.db.registry import load_match_registry_from_database, persist_advanced_match_tick
-from server.models.api import ApiErrorDetail, ApiErrorResponse, PublicMatchRosterRow
+from server.models.api import (
+    ApiErrorDetail,
+    ApiErrorResponse,
+    PublicMatchRosterRow,
+    RuntimeObservabilityResponse,
+)
 from server.models.domain import MatchStatus
 from server.runtime import MatchRuntime
+from server.runtime_observability import RuntimeObservability
 from server.settings import Settings, get_settings
 from server.websocket import MatchWebSocketManager, broadcast_match_update
 
@@ -77,7 +83,17 @@ def create_app(
         settings_env.update(settings_override)
     settings = get_settings(env=settings_env)
     registry = match_registry or _load_default_match_registry(settings=settings)
-    websocket_manager = MatchWebSocketManager()
+    runtime_observability = RuntimeObservability(registry)
+    websocket_manager = MatchWebSocketManager(
+        fanout_observer=lambda match_id, attempted, delivered, dropped: (
+            runtime_observability.record_fanout(
+                match_id=match_id,
+                attempted_connections=attempted,
+                delivered_connections=delivered,
+                dropped_connections=dropped,
+            )
+        )
+    )
     runtime_tick_persistence = (
         _load_runtime_tick_persistence(settings=settings, match_registry=match_registry)
         if tick_persistence is _DEFAULT_TICK_PERSISTENCE
@@ -105,10 +121,31 @@ def create_app(
     async def broadcast_advanced_tick(advanced_tick: AdvancedMatchTick) -> None:
         await broadcast_current_match(advanced_tick.match_id)
 
+    def runtime_status_provider() -> RuntimeObservabilityResponse:
+        return runtime_observability.build_response(
+            websocket_connection_counts=websocket_manager.connection_counts()
+        )
+
+    def observe_runtime_tick(
+        match_id: str,
+        resolved_tick: int,
+        tick_interval_seconds: int,
+        drift_seconds: float,
+        processing_seconds: float,
+    ) -> None:
+        runtime_observability.record_tick(
+            match_id=match_id,
+            resolved_tick=resolved_tick,
+            tick_interval_seconds=tick_interval_seconds,
+            drift_seconds=drift_seconds,
+            processing_seconds=processing_seconds,
+        )
+
     match_runtime = MatchRuntime(
         registry,
         tick_persistence=runtime_tick_persistence,
         tick_broadcast=broadcast_advanced_tick,
+        tick_observer=observe_runtime_tick,
     )
 
     @asynccontextmanager
@@ -116,8 +153,10 @@ def create_app(
         app.state.match_registry = registry
         app.state.match_websocket_manager = websocket_manager
         app.state.match_runtime = match_runtime
+        app.state.runtime_observability = runtime_observability
         app.state.settings = settings
         app.state.history_database_url = history_database_url
+        runtime_observability.record_startup_recovery()
         await match_runtime.start()
         try:
             yield
@@ -130,6 +169,7 @@ def create_app(
     app.state.match_registry = registry
     app.state.match_websocket_manager = websocket_manager
     app.state.match_runtime = match_runtime
+    app.state.runtime_observability = runtime_observability
     app.state.settings = settings
     app.state.history_database_url = history_database_url
     app.add_middleware(
@@ -140,7 +180,7 @@ def create_app(
     )
 
     register_error_handlers(app)
-    register_public_metadata_routes(app)
+    register_public_metadata_routes(app, runtime_status_provider=runtime_status_provider)
     register_realtime_routes(
         app,
         registry=registry,

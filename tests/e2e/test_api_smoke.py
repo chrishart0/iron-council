@@ -45,6 +45,27 @@ def _human_headers(user_id: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {_human_jwt_token(user_id)}"}
 
 
+def test_runtime_observability_status_smoke_reports_recovery_and_match_runtime_signals(
+    running_seeded_app: RunningApp,
+) -> None:
+    with httpx.Client(base_url=running_seeded_app.base_url, timeout=5) as client:
+        response = client.get("/health/runtime")
+
+    assert response.status_code == HTTPStatus.OK
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["startup_recovery"]["resumed_active_match_count"] == 1
+    resumed_match = payload["startup_recovery"]["resumed_active_matches"][0]
+    assert resumed_match["match_id"] == running_seeded_app.primary_match_id
+    active_match = next(
+        match
+        for match in payload["matches"]
+        if match["match_id"] == running_seeded_app.primary_match_id
+    )
+    assert active_match["status"] == "active"
+    assert active_match["websocket"]["connection_count"] == 0
+
+
 def test_agent_api_smoke_flow_runs_through_real_process_and_seeded_database(
     running_seeded_app: RunningApp,
     representative_order_payload: dict[str, Any],
