@@ -1,9 +1,9 @@
-generated: 2026-04-04 14:18 UTC
+generated: 2026-04-04 18:12 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: null
+next_story: 55-1-extract-public-client-route-families-out-of-client-src-lib-api-public-contract-ts
 
 development_status:
   public-readiness-epic: done
@@ -269,3 +269,7 @@ development_status:
   54-1-extract-client-public-read-and-live-parse-helpers-out-of-client-src-lib-api-ts: done
   54-2-extract-authenticated-client-write-and-account-management-helpers-out-of-client-src-lib-api-ts: done
   epic-54-retrospective: optional
+
+  epic-55: in-progress
+  55-1-extract-public-client-route-families-out-of-client-src-lib-api-public-contract-ts: in-progress
+  55-2-split-client-src-lib-api-test-ts-into-focused-module-aligned-suites: backlog

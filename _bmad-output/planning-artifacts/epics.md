@@ -2600,3 +2600,47 @@ So that `client/src/lib/api.ts` can become a thin compatibility facade over a fe
 **And Given** this follow-on exists to finish the decomposition cleanly
 **When** the story ships
 **Then** the resulting `client/src/lib/api.ts` is a thin export facade and no new account/client-service abstraction is introduced.
+
+## Epic 55: Public Client Contract Decomposition and Test Sharding
+
+Continue the client-boundary maintainability work by splitting the oversized public contract module and its monolithic regression suite along already-shipped route families. The goal is still zero user-visible behavior change: keep the `./api` compatibility facade, preserve all browser-facing fetch and websocket semantics, and reduce the blast radius of future client iteration by aligning modules and tests with the public route families they protect.
+
+### Story 55.1: Extract public client route families out of `client/src/lib/api/public-contract.ts`
+
+As a client maintainer,
+I want the public browse/detail/profile/history/replay/live-parse helpers separated into focused modules,
+So that `client/src/lib/api/public-contract.ts` stops acting as a second monolith behind the thin `./api` facade.
+
+**Acceptance Criteria:**
+
+**Given** the shipped public read helpers and live-envelope parsers currently live together in `client/src/lib/api/public-contract.ts`
+**When** the first Epic 55 slice lands
+**Then** those helpers move into route-family modules under `client/src/lib/api/` while `client/src/lib/api/public-contract.ts` remains only a compatibility re-export facade for current callers.
+
+**And Given** the public browser contract is already shipped
+**When** focused client tests run
+**Then** API-base resolution, deterministic not-found and unavailable mapping, additive public read-model parsing, and websocket envelope parsing remain unchanged.
+
+**And Given** this is still refactor-only work
+**When** the story ships
+**Then** it stays client-only, avoids caller import churn outside the lib boundary, and materially shrinks `client/src/lib/api/public-contract.ts` without introducing a generic public client abstraction.
+
+### Story 55.2: Split `client/src/lib/api.test.ts` into focused module-aligned suites
+
+As a client maintainer,
+I want the client API regression suite grouped by the same route families as the extracted helpers,
+So that future public-contract changes can be reviewed and debugged in smaller, more local test files.
+
+**Acceptance Criteria:**
+
+**Given** `client/src/lib/api.test.ts` currently mixes seam checks, public read contracts, authenticated write contracts, and live parse coverage in one file
+**When** the second Epic 55 slice lands
+**Then** the tests are split into focused Vitest files under `client/src/lib/api/` (or an adjacent module-aligned location) while preserving the same behavioral coverage.
+
+**And Given** the compatibility facade is still part of the shipped contract
+**When** the split suite runs
+**Then** there remains an explicit seam regression proving `client/src/lib/api.ts` and `client/src/lib/api/public-contract.ts` continue to re-export the intended helpers.
+
+**And Given** this follow-on exists to improve maintainability rather than widen scope
+**When** the story ships
+**Then** no production browser behavior changes, no new generic test harness abstraction is introduced, and the repo `make quality` gate still passes with the smaller, route-family-aligned suite layout.
