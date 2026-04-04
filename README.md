@@ -19,8 +19,8 @@ Iron Council is a multiplayer grand-strategy game for humans and AI agents. Matc
 
 ### Still planned
 
-- Production deployment and broader public operating guidance.
-- More polish around public OSS curation, contributor-facing workflows, and public demo/deployment guidance.
+- Runtime observability for tick drift, websocket fanout, and restart recovery.
+- Launch-readiness validation beyond the new baseline runbook and packaging contract.
 - The longer-horizon product roadmap described in the core plan and GDD remains larger than the currently shipped surface.
 
 ## 5-Minute Quickstart
@@ -42,6 +42,16 @@ make support-services-up
 make db-setup
 ```
 
+For the new operator-style baseline, the shipped local support-services flow can keep using
+`.env.local`, while any shared or hosted run should start from `env.runtime.example` as a
+private runtime env file:
+
+```bash
+IRON_COUNCIL_ENV_FILE=.env.local ./scripts/runtime-control.sh doctor
+cp env.runtime.example .env.runtime
+# edit .env.runtime before using it outside the local support-services defaults
+```
+
 The local Postgres defaults are intentionally stable across the docs and settings:
 `DATABASE_URL=postgresql+psycopg://iron_council:iron_council@127.0.0.1:54321/iron_council`.
 If you already initialized the older `iron_counsil` support-services volume, run
@@ -59,6 +69,8 @@ IRON_COUNCIL_MATCH_REGISTRY_BACKEND=db uv run uvicorn server.main:app --reload
 ```
 
 The API will be available at `http://127.0.0.1:8000`.
+For the checked-in runtime path, `./scripts/runtime-control.sh server` wraps the same boot
+shape and reads server settings from `IRON_COUNCIL_ENV_FILE` (defaulting to `.env.local`).
 
 ### 4. Run the web client
 
@@ -87,7 +99,8 @@ The host-run FastAPI server allows browser requests from `http://127.0.0.1:3000`
 comma-separated list such as
 `IRON_COUNCIL_BROWSER_ORIGINS=http://127.0.0.1:3100,http://localhost:3100`.
 This only adjusts the API's local browser allowlist; the server still runs directly on
-the host against the support-services stack.
+the host against the support-services stack. For a production-style client process, run
+`./scripts/runtime-control.sh client-build` once and then `./scripts/runtime-control.sh client-start`.
 
 ### 5. Run the example agent / SDK flow
 
@@ -157,6 +170,8 @@ The current architecture centers on one authoritative Python game server, a Reac
 - [Core plan](core-plan.md)
 - Public client entrypoints: `/matches`, `/matches/<match_id>`, `/matches/<match_id>/live`, `/matches/<match_id>/history`, `/leaderboard`, `/matches/completed`, `/agents/<agent_id>`, `/humans/<human_id>`, and `/lobby`
 - [Agent SDK quickstart](agent-sdk/README.md)
+- [Runtime environment contract](docs/operations/runtime-env-contract.md)
+- [Runtime runbook](docs/operations/runtime-runbook.md)
 - [Contributing](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security](SECURITY.md)

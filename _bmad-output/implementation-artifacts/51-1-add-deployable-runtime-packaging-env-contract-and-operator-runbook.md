@@ -1,6 +1,6 @@
 # Story 51.1: Add deployable runtime packaging, env contract, and operator runbook
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -18,16 +18,16 @@ So that the shipped server, client, and local support services can be started, c
 
 ## Ready Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Tasks / Subtasks
 
-- [ ] Inventory the current shipped runtime pieces and operator assumptions already implied by the repo docs, support tooling, and local services. (AC: 1)
-- [ ] Define one concrete deployable packaging shape and check in at least one runnable packaging or startup artifact for the FastAPI server, Next.js client, and required supporting services, keeping the deployment shape intentionally boring. (AC: 1, 3, 5)
-- [ ] Document the environment contract, including required vs. optional variables and local-only vs. hosted expectations, without promising secret-management automation the repo does not ship. (AC: 1, 3)
-- [ ] Write an operator runbook covering startup order, health checks, websocket/runtime expectations, restart behavior, and basic recovery or rollback actions. (AC: 2)
-- [ ] Add focused docs validation only where it honestly protects the most important runtime/env promises, then run the repo quality gate and update this artifact with the real verification results. (AC: 1, 2, 4)
+- [x] Inventory the current shipped runtime pieces and operator assumptions already implied by the repo docs, support tooling, and local services. (AC: 1)
+- [x] Define one concrete deployable packaging shape and check in at least one runnable packaging or startup artifact for the FastAPI server, Next.js client, and required supporting services, keeping the deployment shape intentionally boring. (AC: 1, 3, 5)
+- [x] Document the environment contract, including required vs. optional variables and local-only vs. hosted expectations, without promising secret-management automation the repo does not ship. (AC: 1, 3)
+- [x] Write an operator runbook covering startup order, health checks, websocket/runtime expectations, restart behavior, and basic recovery or rollback actions. (AC: 2)
+- [x] Add focused docs validation only where it honestly protects the most important runtime/env promises, then run the repo quality gate and update this artifact with the real verification results. (AC: 1, 2, 4)
 
 ## Dev Notes
 
@@ -48,21 +48,33 @@ So that the shipped server, client, and local support services can be started, c
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Change Log
 
 - 2026-04-04: Drafted Story 51.1 as the first production-readiness slice after Epic 50 closed, keeping the scope on boring deployable packaging, explicit env contracts, and operator guidance.
+- 2026-04-04: Delivered the checked-in runtime launcher, explicit runtime env contract, operator runbook, and focused docs regression coverage; verified with focused pytest plus the full `make quality` gate.
 
 ## Debug Log References
 
-- None yet. Story not started.
+- Focused verification: `uv run pytest --override-ini addopts=' -q --strict-config --strict-markers' tests/test_runtime_contract_docs.py tests/test_local_dev_docs.py` -> PASS (11 passed).
+- Repo quality gate: `source .venv/bin/activate && make quality` -> PASS after bootstrapping the fresh worktree with `uv sync --all-extras --dev` and `cd client && npm ci` so mypy/client tooling were present on PATH.
 
 ## Completion Notes
 
-- Pending implementation.
+- Added `scripts/runtime-control.sh` as the checked-in runtime/operator entrypoint for doctor, support-service, DB, server, and client commands without introducing containerized app automation.
+- Added `env.runtime.example` plus `docs/operations/runtime-env-contract.md` as the single explicit environment contract for server, client, and runtime dependencies.
+- Added `docs/operations/runtime-runbook.md` plus README/docs-index links so startup order, health checks, websocket expectations, restart basics, and rollback/recovery guidance are documented from one boring baseline.
+- Added `tests/test_runtime_contract_docs.py` to keep the launcher help, doctor summary, runtime env example, and linked docs aligned with the shipped contract.
 
 ## File List
 
+- `README.md`
+- `docs/index.md`
+- `docs/operations/runtime-env-contract.md`
+- `docs/operations/runtime-runbook.md`
+- `env.runtime.example`
+- `scripts/runtime-control.sh`
+- `tests/test_runtime_contract_docs.py`
 - `_bmad-output/implementation-artifacts/51-1-add-deployable-runtime-packaging-env-contract-and-operator-runbook.md`
