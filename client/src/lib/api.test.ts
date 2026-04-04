@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import * as accountSession from "./api/account-session";
 import * as guidedAgents from "./api/guided-agents";
+import * as liveEnvelope from "./api/live-envelope";
 import * as lobbyLifecycle from "./api/lobby-lifecycle";
 import * as matchWrites from "./api/match-writes";
 import * as publicContract from "./api/public-contract";
+import * as publicBrowse from "./api/public-browse";
+import * as publicHistory from "./api/public-history";
+import * as publicProfiles from "./api/public-profiles";
 import {
   ApiKeyLifecycleError,
   buildAuthenticatedHeaders,
@@ -58,6 +62,25 @@ import {
 
 describe("public api extraction seam", () => {
   it("keeps the extracted public contract helpers available through both modules", () => {
+    expect(publicBrowse.fetchPublicMatches).toBe(fetchPublicMatches);
+    expect(publicBrowse.fetchPublicMatchDetail).toBe(fetchPublicMatchDetail);
+    expect(publicBrowse.fetchCompletedMatches).toBe(fetchCompletedMatches);
+    expect(publicBrowse.PublicMatchesError).toBe(PublicMatchesError);
+    expect(publicBrowse.PublicMatchDetailError).toBe(PublicMatchDetailError);
+    expect(publicBrowse.CompletedMatchesError).toBe(CompletedMatchesError);
+    expect(publicProfiles.fetchPublicLeaderboard).toBe(fetchPublicLeaderboard);
+    expect(publicProfiles.fetchPublicAgentProfile).toBe(fetchPublicAgentProfile);
+    expect(publicProfiles.fetchPublicHumanProfile).toBe(fetchPublicHumanProfile);
+    expect(publicProfiles.PublicLeaderboardError).toBe(PublicLeaderboardError);
+    expect(publicProfiles.PublicAgentProfileError).toBe(PublicAgentProfileError);
+    expect(publicProfiles.PublicHumanProfileError).toBe(PublicHumanProfileError);
+    expect(publicHistory.fetchPublicMatchHistory).toBe(fetchPublicMatchHistory);
+    expect(publicHistory.fetchMatchReplayTick).toBe(fetchMatchReplayTick);
+    expect(publicHistory.PublicMatchHistoryError).toBe(PublicMatchHistoryError);
+    expect(publicHistory.MatchReplayTickError).toBe(MatchReplayTickError);
+    expect(liveEnvelope.parsePlayerMatchEnvelope).toBe(parsePlayerMatchEnvelope);
+    expect(liveEnvelope.parseSpectatorMatchEnvelope).toBe(parseSpectatorMatchEnvelope);
+    expect(liveEnvelope.parseWebSocketApiErrorEnvelope).toBe(parseWebSocketApiErrorEnvelope);
     expect(publicContract.fetchPublicMatches).toBe(fetchPublicMatches);
     expect(publicContract.fetchPublicMatchDetail).toBe(fetchPublicMatchDetail);
     expect(publicContract.fetchPublicLeaderboard).toBe(fetchPublicLeaderboard);
@@ -78,6 +101,80 @@ describe("public api extraction seam", () => {
     expect(publicContract.PublicMatchHistoryError).toBe(PublicMatchHistoryError);
     expect(publicContract.MatchReplayTickError).toBe(MatchReplayTickError);
   });
+});
+
+describe("public fetch helper failure normalization", () => {
+  const transportCases = [
+    {
+      name: "fetchPublicMatches",
+      invoke: (fetchImpl: typeof fetch) => fetchPublicMatches(fetchImpl),
+      expected: new PublicMatchesError("Unable to load public matches right now.")
+    },
+    {
+      name: "fetchPublicMatchDetail",
+      invoke: (fetchImpl: typeof fetch) => fetchPublicMatchDetail("match-alpha", fetchImpl),
+      expected: new PublicMatchDetailError("Unable to load this public match right now.", "unavailable")
+    },
+    {
+      name: "fetchCompletedMatches",
+      invoke: (fetchImpl: typeof fetch) => fetchCompletedMatches(fetchImpl),
+      expected: new CompletedMatchesError("Unable to load completed matches right now.")
+    },
+    {
+      name: "fetchPublicLeaderboard",
+      invoke: (fetchImpl: typeof fetch) => fetchPublicLeaderboard(fetchImpl),
+      expected: new PublicLeaderboardError("Unable to load the public leaderboard right now.")
+    },
+    {
+      name: "fetchPublicAgentProfile",
+      invoke: (fetchImpl: typeof fetch) => fetchPublicAgentProfile("agent-player-2", fetchImpl),
+      expected: new PublicAgentProfileError("Unable to load this agent profile right now.", "unavailable")
+    },
+    {
+      name: "fetchPublicHumanProfile",
+      invoke: (fetchImpl: typeof fetch) =>
+        fetchPublicHumanProfile("human:00000000-0000-0000-0000-000000000301", fetchImpl),
+      expected: new PublicHumanProfileError("Unable to load this human profile right now.", "unavailable")
+    },
+    {
+      name: "fetchPublicMatchHistory",
+      invoke: (fetchImpl: typeof fetch) => fetchPublicMatchHistory("match-complete", fetchImpl),
+      expected: new PublicMatchHistoryError("Unable to load match history right now.", "unavailable")
+    },
+    {
+      name: "fetchMatchReplayTick",
+      invoke: (fetchImpl: typeof fetch) => fetchMatchReplayTick("match-complete", 155, fetchImpl),
+      expected: new MatchReplayTickError("Unable to load this replay tick right now.", "unavailable")
+    }
+  ] satisfies Array<{
+    name: string;
+    invoke: (fetchImpl: typeof fetch) => Promise<unknown>;
+    expected: Error;
+  }>;
+
+  it.each(transportCases)(
+    "maps transport failures for $name to the deterministic exported public error",
+    async ({ invoke, expected }) => {
+      const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("fetch failed"));
+
+      await expect(invoke(fetchImpl)).rejects.toEqual(expected);
+    }
+  );
+
+  it.each(transportCases)(
+    "maps malformed successful json for $name to the deterministic exported public error",
+    async ({ invoke, expected }) => {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError("Unexpected token < in JSON");
+        }
+      } as unknown as Response);
+
+      await expect(invoke(fetchImpl)).rejects.toEqual(expected);
+    }
+  );
 });
 
 describe("authenticated api extraction seam", () => {
