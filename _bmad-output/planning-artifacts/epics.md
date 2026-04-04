@@ -2556,3 +2556,47 @@ So that I can tell which routes I can explore immediately, which actions need a 
 **And Given** this is a launch-polish slice rather than a new backend feature
 **When** the story ships
 **Then** the implementation stays client/docs-only, behavior-first tested, and aligned with the already shipped public contracts.
+
+## Epic 54: Client API Boundary Decomposition
+
+Use the next maintainability slice to reduce risk on the shipped browser contract surface without changing user-visible behavior. The client now has multiple stable public and authenticated route families, but `client/src/lib/api.ts` still concentrates public reads, websocket parsing, lobby flows, account API-key management, and guided-agent writes in one oversized file. Break that boundary along already-shipped contract families so later client iteration can stay simpler and safer.
+
+### Story 54.1: Extract client public read and live parse helpers out of `client/src/lib/api.ts`
+
+As a client maintainer,
+I want the public read and websocket-envelope parsing helpers separated from the authenticated write surface,
+So that `client/src/lib/api.ts` stops concentrating unrelated browser-contract responsibilities in one oversized file.
+
+**Acceptance Criteria:**
+
+**Given** the public match/profile/history/replay fetch helpers plus websocket-envelope parsing helpers
+**When** the first Epic 54 slice lands
+**Then** they live behind a focused module under `client/src/lib/api/` while `client/src/lib/api.ts` continues to expose the same public exports for current callers.
+
+**And Given** the public client contract is already shipped
+**When** focused client tests run
+**Then** API-base resolution, deterministic public error mapping, not-found handling, replay/history parsing, and websocket error parsing remain unchanged at the browser-contract boundary.
+
+**And Given** this is a maintainability slice rather than a new feature
+**When** the story ships
+**Then** it stays client-only, avoids caller import churn outside the lib boundary, and materially shrinks `client/src/lib/api.ts` without introducing a generic client abstraction.
+
+### Story 54.2: Extract authenticated client write and account-management helpers out of `client/src/lib/api.ts`
+
+As a client maintainer,
+I want the authenticated lobby, account API-key, guided-agent, and write helpers grouped by route family,
+So that `client/src/lib/api.ts` can become a thin compatibility facade over a few boring modules instead of a monolithic contract file.
+
+**Acceptance Criteria:**
+
+**Given** the authenticated client helper families already ship through `client/src/lib/api.ts`
+**When** the second Epic 54 slice lands
+**Then** they move into route-family modules under `client/src/lib/api/` while the existing `./api` import surface still works for current pages and tests.
+
+**And Given** bearer-token and request-shape semantics are already covered in the client suite
+**When** focused tests and the repo gate run
+**Then** authenticated lobby, message/order/diplomacy submission, owned API-key lifecycle, and guided-agent helper behavior remain unchanged.
+
+**And Given** this follow-on exists to finish the decomposition cleanly
+**When** the story ships
+**Then** the resulting `client/src/lib/api.ts` is a thin export facade and no new account/client-service abstraction is introduced.
