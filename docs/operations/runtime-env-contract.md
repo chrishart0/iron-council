@@ -20,6 +20,9 @@ This story does **not** claim autoscaling, managed secrets, HA orchestration, bl
 | `HUMAN_JWT_ISSUER` | Human-authenticated HTTP or websocket flows are enabled | Expected JWT issuer. |
 | `HUMAN_JWT_AUDIENCE` | Human-authenticated HTTP or websocket flows are enabled | Expected JWT audience. |
 | `HUMAN_JWT_REQUIRED_ROLE` | Optional in practice, but part of the auth contract | Defaults to `authenticated`; set explicitly in shared runtimes so the contract is visible. |
+| `IRON_COUNCIL_AUTHENTICATED_WRITE_MAX_BODY_BYTES` | Optional in practice, but part of the launch abuse-control contract | Defaults to `65536`; authenticated write routes reject larger request bodies with a structured `413 payload_too_large` API error. |
+| `IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT` | Optional in practice, but part of the launch abuse-control contract | Defaults to `30`; authenticated write routes allow this many requests per caller per guarded route inside the current local window before returning `429 rate_limit_exceeded`. |
+| `IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS` | Optional in practice, but part of the launch abuse-control contract | Defaults to `10`; defines the server-local burst window paired with `IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT`. |
 
 ## Optional server variables
 
@@ -28,6 +31,15 @@ This story does **not** claim autoscaling, managed secrets, HA orchestration, bl
 | `IRON_COUNCIL_ENV_FILE` | Env file path that the server launcher should load | Defaults to `.env.local`; point it at `.env.runtime` or another private file for shared/hosted operation. |
 | `IRON_COUNCIL_BROWSER_ORIGINS` | CORS/browser allowlist for the API process | Defaults to `http://127.0.0.1:3000,http://localhost:3000`. Set it explicitly when the client runs on a different origin. |
 | `IRON_COUNCIL_DB_LANE` | Deterministic DB suffix for parallel local lanes | Local-only. Leave unset in shared or hosted runs. |
+
+## Authenticated write abuse controls
+
+Story 52.1 adds only one intentionally boring abuse-control seam for launch:
+
+- Authenticated write routes enforce `IRON_COUNCIL_AUTHENTICATED_WRITE_MAX_BODY_BYTES` before processing oversized request bodies.
+- The same routes enforce a server-local burst window keyed by the already-authenticated API key or human Bearer caller boundary.
+- Structured failures stay on the existing `ApiError` contract: `413 payload_too_large` and `429 rate_limit_exceeded`.
+- This contract is local-process only. It does not claim Redis-backed quotas, global coordination, or public/websocket throttling yet.
 
 ## Launcher-only operator knobs
 

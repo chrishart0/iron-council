@@ -76,6 +76,9 @@ def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_a
     assert "HUMAN_JWT_AUDIENCE" in runtime_env
     assert "HUMAN_JWT_REQUIRED_ROLE" in runtime_env
     assert "IRON_COUNCIL_BROWSER_ORIGINS" in runtime_env
+    assert "IRON_COUNCIL_AUTHENTICATED_WRITE_MAX_BODY_BYTES" in runtime_env
+    assert "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT" in runtime_env
+    assert "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS" in runtime_env
     assert "IRON_COUNCIL_SERVER_PORT" in runtime_env
     assert "IRON_COUNCIL_CLIENT_PORT" in runtime_env
 
@@ -83,6 +86,11 @@ def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_a
     assert "compose.support-services.yaml" in env_contract
     assert "IRON_COUNCIL_ENV_FILE" in env_contract
     assert "IRON_COUNCIL_DB_LANE" in env_contract
+    assert "IRON_COUNCIL_AUTHENTICATED_WRITE_MAX_BODY_BYTES" in env_contract
+    assert "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT" in env_contract
+    assert "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS" in env_contract
+    assert "413 payload_too_large" in env_contract
+    assert "429 rate_limit_exceeded" in env_contract
     assert "client-build" in env_contract
     assert "client-start" in env_contract
 

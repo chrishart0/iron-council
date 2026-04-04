@@ -20,6 +20,7 @@ from server.models.api import (
     MatchLobbyStartResponse,
 )
 
+from .abuse import authenticated_write_abuse_dependency, authenticated_write_abuse_error_responses
 from .app_services import ApiKeyHeader, AppServices, AuthorizationHeader
 from .errors import API_ERROR_RESPONSE_SCHEMA, ApiError
 
@@ -33,6 +34,7 @@ def _authenticated_lobby_route_responses(
     return {
         int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
         **{int(status_code): API_ERROR_RESPONSE_SCHEMA for status_code in status_codes},
+        **authenticated_write_abuse_error_responses(),
     }
 
 
@@ -56,6 +58,7 @@ def build_authenticated_lobby_router(
             HTTPStatus.FORBIDDEN,
             HTTPStatus.SERVICE_UNAVAILABLE,
         ),
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def create_match_lobby_route(
         create_request: MatchLobbyCreateRequest,
@@ -127,6 +130,7 @@ def build_authenticated_lobby_router(
             HTTPStatus.CONFLICT,
             HTTPStatus.SERVICE_UNAVAILABLE,
         ),
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def start_match_lobby_route(
         match_id: str,

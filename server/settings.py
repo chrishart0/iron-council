@@ -4,7 +4,7 @@ import hashlib
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy.engine import make_url
@@ -15,11 +15,26 @@ ENV_FILE_VARIABLE = "IRON_COUNCIL_ENV_FILE"
 DB_LANE_VARIABLE = "IRON_COUNCIL_DB_LANE"
 MATCH_REGISTRY_BACKEND_VARIABLE = "IRON_COUNCIL_MATCH_REGISTRY_BACKEND"
 BROWSER_ORIGINS_VARIABLE = "IRON_COUNCIL_BROWSER_ORIGINS"
+AUTHENTICATED_WRITE_MAX_BODY_BYTES_VARIABLE = "IRON_COUNCIL_AUTHENTICATED_WRITE_MAX_BODY_BYTES"
+AUTHENTICATED_WRITE_RATE_LIMIT_VARIABLE = "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT"
+AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS_VARIABLE = (
+    "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS"
+)
 DEFAULT_BROWSER_ORIGINS = (
     "http://127.0.0.1:3000",
     "http://localhost:3000",
 )
+DEFAULT_AUTHENTICATED_WRITE_MAX_BODY_BYTES = 64 * 1024
+DEFAULT_AUTHENTICATED_WRITE_RATE_LIMIT = 30
+DEFAULT_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS = 10
 _MAX_IDENTIFIER_LENGTH = 63
+
+
+@dataclass(frozen=True)
+class AuthenticatedWriteAbuseSettings:
+    max_body_bytes: int = DEFAULT_AUTHENTICATED_WRITE_MAX_BODY_BYTES
+    rate_limit: int = DEFAULT_AUTHENTICATED_WRITE_RATE_LIMIT
+    rate_window_seconds: int = DEFAULT_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS
 
 
 @dataclass(frozen=True)
@@ -31,6 +46,9 @@ class Settings:
     human_jwt_issuer: str | None = None
     human_jwt_audience: str | None = None
     human_jwt_required_role: str = "authenticated"
+    authenticated_write_abuse: AuthenticatedWriteAbuseSettings = field(
+        default_factory=AuthenticatedWriteAbuseSettings
+    )
 
 
 def get_settings(
@@ -65,6 +83,26 @@ def get_settings(
         human_jwt_required_role=current_env.get("HUMAN_JWT_REQUIRED_ROLE")
         or file_values.get("HUMAN_JWT_REQUIRED_ROLE")
         or "authenticated",
+        authenticated_write_abuse=AuthenticatedWriteAbuseSettings(
+            max_body_bytes=_load_positive_int(
+                value=current_env.get(AUTHENTICATED_WRITE_MAX_BODY_BYTES_VARIABLE)
+                or file_values.get(AUTHENTICATED_WRITE_MAX_BODY_BYTES_VARIABLE),
+                default=DEFAULT_AUTHENTICATED_WRITE_MAX_BODY_BYTES,
+                variable_name=AUTHENTICATED_WRITE_MAX_BODY_BYTES_VARIABLE,
+            ),
+            rate_limit=_load_positive_int(
+                value=current_env.get(AUTHENTICATED_WRITE_RATE_LIMIT_VARIABLE)
+                or file_values.get(AUTHENTICATED_WRITE_RATE_LIMIT_VARIABLE),
+                default=DEFAULT_AUTHENTICATED_WRITE_RATE_LIMIT,
+                variable_name=AUTHENTICATED_WRITE_RATE_LIMIT_VARIABLE,
+            ),
+            rate_window_seconds=_load_positive_int(
+                value=current_env.get(AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS_VARIABLE)
+                or file_values.get(AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS_VARIABLE),
+                default=DEFAULT_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS,
+                variable_name=AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS_VARIABLE,
+            ),
+        ),
     )
 
 
@@ -119,6 +157,16 @@ def _load_browser_origins(configured_value: str | None) -> tuple[str, ...]:
     if parsed_origins:
         return parsed_origins
     return DEFAULT_BROWSER_ORIGINS
+
+
+def _load_positive_int(*, default: int, variable_name: str, value: str | None) -> int:
+    if value is None:
+        return default
+
+    parsed_value = int(value)
+    if parsed_value <= 0:
+        raise ValueError(f"{variable_name} must be a positive integer.")
+    return parsed_value
 
 
 def _build_worktree_identity(*, worktree_path: Path, lane: str | None) -> str:

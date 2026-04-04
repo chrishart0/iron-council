@@ -1,6 +1,6 @@
 # Story 52.1: Add authenticated write abuse guardrails
 
-Status: ready
+Status: done
 
 ## Story
 
@@ -22,10 +22,10 @@ So that the shipped server resists obvious abuse on orders, messaging, guidance,
 
 ## Tasks / Subtasks
 
-- [ ] Add focused failing API-boundary tests for oversized authenticated writes and bursty repeated writes. (AC: 1, 2)
-- [ ] Add settings/env knobs plus one reusable abuse-guard helper for request-size and rate-window enforcement. (AC: 1, 2, 3)
-- [ ] Apply the guardrail seam to authenticated write routes without changing existing auth or domain behavior beyond the new structured errors. (AC: 1, 2, 3)
-- [ ] Update runtime contract docs/env examples, run focused verification plus `make quality`, and record the real outcomes here. (AC: 3, 4)
+- [x] Add focused failing API-boundary tests for oversized authenticated writes and bursty repeated writes. (AC: 1, 2)
+- [x] Add settings/env knobs plus one reusable abuse-guard helper for request-size and rate-window enforcement. (AC: 1, 2, 3)
+- [x] Apply the guardrail seam to authenticated write routes without changing existing auth or domain behavior beyond the new structured errors. (AC: 1, 2, 3)
+- [x] Update runtime contract docs/env examples, run focused verification plus `make quality`, and record the real outcomes here. (AC: 3, 4)
 
 ## Dev Notes
 
@@ -50,16 +50,38 @@ So that the shipped server resists obvious abuse on orders, messaging, guidance,
 ## Change Log
 
 - 2026-04-04: Drafted Story 52.1 to start the post-launch-hardening abuse-control slice with authenticated write guardrails first.
+- 2026-04-04: Added authenticated write abuse guardrails, focused API-boundary regressions, and runtime-contract documentation updates; verified with focused tests and `make quality`.
 
 ## Debug Log References
 
-- Pending implementation.
+- `source .venv/bin/activate && uv run pytest --no-cov tests/api/test_authenticated_write_abuse.py tests/test_runtime_contract_docs.py -q` -> PASS (`4 passed`).
+- `source .venv/bin/activate && make quality` initially failed because custom router-only tests built FastAPI apps without `authenticated_write_abuse_guard` / `app_services` / `match_registry` state, so the new dependency raised `AttributeError`; fixed the dependency to no-op when that app-level seam is absent and reran.
+- `source .venv/bin/activate && uv run pytest --no-cov tests/api/test_authenticated_write_abuse.py tests/api/test_agent_api.py tests/test_runtime_contract_docs.py -k 'authenticated_write_abuse or db_url_fallback_without_session_factory or orders_only_command_envelope_does_not_broadcast_match_refresh or rate_limit_uses_human_identity' -q` -> PASS (`5 passed`).
+- `source .venv/bin/activate && make quality` then failed on Ruff `E501` for the new regression name in `tests/api/test_authenticated_write_abuse.py`; shortened the test name and reran.
+- `source .venv/bin/activate && make quality` -> PASS (`484 passed, 1 skipped`, coverage `95.27%`, client lint/test/build green).
 
 ## Completion Notes
 
-- Pending implementation.
+- Added `server/api/abuse.py` plus new settings/env knobs so authenticated HTTP write routes can reject oversized request bodies with `413 payload_too_large` and bursty repeated writes with `429 rate_limit_exceeded` using one server-local, settings-backed seam.
+- Wired the guard dependency across authenticated write surfaces only: lobby create/start, key lifecycle, join/orders, owned-agent guidance/override, commands, messages, group-chat writes, treaties, and alliances.
+- Kept compatibility with narrower router-only test apps by treating the abuse guard dependency as a no-op when those custom apps do not seed the full `create_app()` state seam.
+- Added API-boundary regressions for oversized bodies, human write bursts, and the human-auth fallback path when a bogus `X-API-Key` accompanies valid bearer auth, then updated runtime env docs and example vars with the shipped abuse-control contract.
 
 ## File List
 
 - `_bmad-output/implementation-artifacts/52-1-add-authenticated-write-abuse-guardrails.md`
-- `docs/plans/2026-04-04-epic-52-runtime-abuse-guardrails.md`
+- `README.md`
+- `docs/operations/runtime-env-contract.md`
+- `env.runtime.example`
+- `server/api/abuse.py`
+- `server/api/authenticated_lobby_routes.py`
+- `server/api/authenticated_match_alliance_routes.py`
+- `server/api/authenticated_match_command_routes.py`
+- `server/api/authenticated_match_messaging_routes.py`
+- `server/api/authenticated_match_route_helpers.py`
+- `server/api/authenticated_match_treaty_routes.py`
+- `server/api/authenticated_write_routes.py`
+- `server/main.py`
+- `server/settings.py`
+- `tests/api/test_authenticated_write_abuse.py`
+- `tests/test_runtime_contract_docs.py`

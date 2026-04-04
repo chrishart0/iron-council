@@ -28,6 +28,7 @@ from server.models.api import (
 from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
 
+from .abuse import authenticated_write_abuse_dependency, authenticated_write_abuse_error_responses
 from .app_services import ApiKeyHeader, AppServices, AuthorizationHeader
 from .errors import API_ERROR_RESPONSE_SCHEMA, ApiError
 
@@ -40,6 +41,7 @@ def _authenticated_write_route_responses(
     return {
         int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
         **{int(status_code): API_ERROR_RESPONSE_SCHEMA for status_code in status_codes},
+        **authenticated_write_abuse_error_responses(),
     }
 
 
@@ -60,7 +62,9 @@ def build_authenticated_write_router(
             int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
             int(HTTPStatus.FORBIDDEN): API_ERROR_RESPONSE_SCHEMA,
             int(HTTPStatus.SERVICE_UNAVAILABLE): API_ERROR_RESPONSE_SCHEMA,
+            **authenticated_write_abuse_error_responses(),
         },
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def create_authenticated_human_api_key(
         authorization: AuthorizationHeader = None,
@@ -93,7 +97,9 @@ def build_authenticated_write_router(
             int(HTTPStatus.UNAUTHORIZED): API_ERROR_RESPONSE_SCHEMA,
             int(HTTPStatus.NOT_FOUND): API_ERROR_RESPONSE_SCHEMA,
             int(HTTPStatus.SERVICE_UNAVAILABLE): API_ERROR_RESPONSE_SCHEMA,
+            **authenticated_write_abuse_error_responses(),
         },
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def revoke_authenticated_human_api_key(
         key_id: str,
@@ -131,6 +137,7 @@ def build_authenticated_write_router(
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
         ),
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def join_match(
         match_id: str,
@@ -211,6 +218,7 @@ def build_authenticated_write_router(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.NOT_FOUND,
         ),
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def submit_orders(
         match_id: str,
@@ -277,6 +285,7 @@ def build_authenticated_write_router(
             HTTPStatus.SERVICE_UNAVAILABLE,
             HTTPStatus.UNPROCESSABLE_ENTITY,
         ),
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def post_owned_agent_guidance(
         match_id: str,
@@ -359,6 +368,7 @@ def build_authenticated_write_router(
             HTTPStatus.SERVICE_UNAVAILABLE,
             HTTPStatus.UNPROCESSABLE_ENTITY,
         ),
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def post_owned_agent_override(
         match_id: str,

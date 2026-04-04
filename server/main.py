@@ -23,6 +23,7 @@ from server.api import (
     register_public_metadata_routes,
     register_realtime_routes,
 )
+from server.api.abuse import AuthenticatedWriteAbuseGuard
 from server.api.errors import ApiError
 from server.db.player_ids import build_human_actor_id
 from server.db.registry import load_match_registry_from_database, persist_advanced_match_tick
@@ -155,6 +156,10 @@ def create_app(
         app.state.match_runtime = match_runtime
         app.state.runtime_observability = runtime_observability
         app.state.settings = settings
+        app.state.app_services = app_services
+        app.state.authenticated_write_abuse_guard = AuthenticatedWriteAbuseGuard(
+            settings=settings.authenticated_write_abuse
+        )
         app.state.history_database_url = history_database_url
         runtime_observability.record_startup_recovery()
         await match_runtime.start()
@@ -171,6 +176,10 @@ def create_app(
     app.state.match_runtime = match_runtime
     app.state.runtime_observability = runtime_observability
     app.state.settings = settings
+    app.state.app_services = app_services
+    app.state.authenticated_write_abuse_guard = AuthenticatedWriteAbuseGuard(
+        settings=settings.authenticated_write_abuse
+    )
     app.state.history_database_url = history_database_url
     app.add_middleware(
         CORSMiddleware,

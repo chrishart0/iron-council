@@ -16,11 +16,12 @@ from server.models.api import (
     AuthenticatedAgentContext,
 )
 
+from .abuse import authenticated_write_abuse_dependency
 from .app_services import AppServices
 from .authenticated_match_route_helpers import (
     BroadcastCurrentMatch,
     MatchRecordResolver,
-    authenticated_route_responses,
+    authenticated_write_route_responses,
 )
 from .errors import ApiError
 
@@ -40,22 +41,24 @@ def build_authenticated_match_command_router(
         "/matches/{match_id}/command",
         response_model=AgentCommandEnvelopeResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses=authenticated_route_responses(
+        responses=authenticated_write_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
         ),
+        dependencies=[authenticated_write_abuse_dependency],
     )
     @router.post(
         "/matches/{match_id}/commands",
         response_model=AgentCommandEnvelopeResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses=authenticated_route_responses(
+        responses=authenticated_write_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
         ),
         include_in_schema=False,
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def post_match_command(
         match_id: str,

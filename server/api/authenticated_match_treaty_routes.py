@@ -11,11 +11,13 @@ from server.models.api import (
     TreatyListResponse,
 )
 
+from .abuse import authenticated_write_abuse_dependency
 from .app_services import AppServices
 from .authenticated_match_route_helpers import (
     BroadcastCurrentMatch,
     MatchRecordResolver,
     authenticated_route_responses,
+    authenticated_write_route_responses,
 )
 from .errors import ApiError
 
@@ -56,11 +58,12 @@ def build_authenticated_match_treaty_router(
         "/matches/{match_id}/treaties",
         response_model=TreatyActionAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses=authenticated_route_responses(
+        responses=authenticated_write_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
         ),
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def post_match_treaty(
         match_id: str,

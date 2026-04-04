@@ -17,11 +17,13 @@ from server.models.api import (
     MessageAcceptanceResponse,
 )
 
+from .abuse import authenticated_write_abuse_dependency
 from .app_services import AppServices
 from .authenticated_match_route_helpers import (
     BroadcastCurrentMatch,
     MatchRecordResolver,
     authenticated_route_responses,
+    authenticated_write_route_responses,
 )
 from .errors import ApiError
 
@@ -96,11 +98,12 @@ def build_authenticated_match_messaging_router(
         "/matches/{match_id}/group-chats",
         response_model=GroupChatCreateAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses=authenticated_route_responses(
+        responses=authenticated_write_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
         ),
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def post_match_group_chat(
         match_id: str,
@@ -197,12 +200,13 @@ def build_authenticated_match_messaging_router(
         "/matches/{match_id}/group-chats/{group_chat_id}/messages",
         response_model=GroupChatMessageAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses=authenticated_route_responses(
+        responses=authenticated_write_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.FORBIDDEN,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
         ),
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def post_match_group_chat_message(
         match_id: str,
@@ -262,11 +266,12 @@ def build_authenticated_match_messaging_router(
         "/matches/{match_id}/messages",
         response_model=MessageAcceptanceResponse,
         status_code=HTTPStatus.ACCEPTED,
-        responses=authenticated_route_responses(
+        responses=authenticated_write_route_responses(
             HTTPStatus.BAD_REQUEST,
             HTTPStatus.NOT_FOUND,
             HTTPStatus.UNPROCESSABLE_ENTITY,
         ),
+        dependencies=[authenticated_write_abuse_dependency],
     )
     async def post_match_message(
         match_id: str,
