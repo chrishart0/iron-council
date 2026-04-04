@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from math import floor
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -68,11 +68,6 @@ def settle_completed_match_if_needed(*, session: Session, match: Match) -> None:
                     .order_by(ApiKey.id)
                 ).all()
             }
-            winner_alliance = (
-                session.get(Alliance, match.winner_alliance)
-                if match.winner_alliance is not None
-                else None
-            )
             state = MatchState.model_validate(match.state)
             persisted_player_mapping = build_persisted_player_mapping(
                 canonical_player_ids=sorted(state.players),
@@ -82,7 +77,19 @@ def settle_completed_match_if_needed(*, session: Session, match: Match) -> None:
                 persisted_player_id: canonical_player_id
                 for persisted_player_id, canonical_player_id in persisted_player_mapping.items()
             }
-            winner_player_ids = _winner_player_ids(match=match, players=players)
+            winner_alliance = _winner_alliance_for_settlement(
+                session=session,
+                match=match,
+                players=players,
+                state=state,
+                canonical_player_by_persisted=canonical_player_by_persisted,
+            )
+            winner_player_ids = _winner_player_ids(
+                match=match,
+                players=players,
+                state=state,
+                canonical_player_by_persisted=canonical_player_by_persisted,
+            )
             winner_city_counts = {
                 player_id: _territory_count_for_player(
                     canonical_player_id=canonical_player_by_persisted.get(player_id),
@@ -130,7 +137,20 @@ def settle_completed_match_if_needed(*, session: Session, match: Match) -> None:
                         api_key.elo_rating = elo_after
             session.flush()
     except IntegrityError:
-        return
+        verification_session = Session(session.get_bind())
+        try:
+            if verification_session.get(MatchSettlement, match.id) is None:
+                raise
+            participant_count = verification_session.scalar(
+                select(func.count())
+                .select_from(PlayerMatchSettlement)
+                .where(PlayerMatchSettlement.match_id == match.id)
+            )
+            if participant_count == len(players):
+                return
+        finally:
+            verification_session.close()
+        raise
 
 
 def load_settlement_aggregates_by_identity(
@@ -169,17 +189,100 @@ def latest_human_settled_elo(*, session: Session, user_id: str) -> int | None:
     return int(latest.elo_after)
 
 
-def _winner_player_ids(*, match: Match, players: Sequence[Player]) -> set[str]:
-    if match.winner_alliance is None:
-        return set()
-    alliance_winners = {
-        str(player.id)
-        for player in players
-        if player.alliance_id is not None and str(player.alliance_id) == str(match.winner_alliance)
-    }
-    if alliance_winners:
-        return alliance_winners
-    return {str(player.id) for player in players if str(player.id) == str(match.winner_alliance)}
+def _winner_player_ids(
+    *,
+    match: Match,
+    players: Sequence[Player],
+    state: MatchState,
+    canonical_player_by_persisted: dict[str, str],
+) -> set[str]:
+    for winner_identity in _winner_identity_candidates(match=match, state=state):
+        alliance_winners = {
+            str(player.id)
+            for player in players
+            if _player_is_member_of_winner(
+                player=player,
+                winner_identity=winner_identity,
+                state=state,
+                canonical_player_by_persisted=canonical_player_by_persisted,
+            )
+        }
+        if alliance_winners:
+            return alliance_winners
+
+        direct_persisted_winner = {
+            str(player.id) for player in players if str(player.id) == winner_identity
+        }
+        if direct_persisted_winner:
+            return direct_persisted_winner
+
+        direct_canonical_winner = {
+            str(player.id)
+            for player in players
+            if canonical_player_by_persisted.get(str(player.id)) == winner_identity
+        }
+        if direct_canonical_winner:
+            return direct_canonical_winner
+
+    return set()
+
+
+def _winner_alliance_for_settlement(
+    *,
+    session: Session,
+    match: Match,
+    players: Sequence[Player],
+    state: MatchState,
+    canonical_player_by_persisted: dict[str, str],
+) -> Alliance | None:
+    for winner_identity in _winner_identity_candidates(match=match, state=state):
+        if (winner_alliance := session.get(Alliance, winner_identity)) is not None:
+            return winner_alliance
+
+        for player in players:
+            if not _player_is_member_of_winner(
+                player=player,
+                winner_identity=winner_identity,
+                state=state,
+                canonical_player_by_persisted=canonical_player_by_persisted,
+            ):
+                continue
+            if player.alliance_id is None:
+                continue
+            winner_alliance = session.get(Alliance, player.alliance_id)
+            if winner_alliance is not None:
+                return winner_alliance
+
+    return None
+
+
+def _player_is_member_of_winner(
+    *,
+    player: Player,
+    winner_identity: str,
+    state: MatchState,
+    canonical_player_by_persisted: dict[str, str],
+) -> bool:
+    if player.alliance_id is not None and str(player.alliance_id) == winner_identity:
+        return True
+
+    canonical_player_id = canonical_player_by_persisted.get(str(player.id))
+    if canonical_player_id is None:
+        return False
+
+    player_state = state.players.get(canonical_player_id)
+    return player_state is not None and player_state.alliance_id == winner_identity
+
+
+def _winner_identity_candidates(*, match: Match, state: MatchState) -> list[str]:
+    winner_identities: list[str] = []
+    if state.victory.leading_alliance is not None:
+        winner_identities.append(str(state.victory.leading_alliance))
+    if match.winner_alliance is not None:
+        persisted_winner = str(match.winner_alliance)
+        if persisted_winner not in winner_identities:
+            winner_identities.append(persisted_winner)
+    return winner_identities
 
 
 def _outcome_for_player(*, player_id: str, winner_player_ids: set[str]) -> str:

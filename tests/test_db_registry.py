@@ -33,8 +33,12 @@ from server.db.identity import (
     build_user_backed_agent_id,
     resolve_owned_agent_context_from_db,
 )
-from server.db.models import Match, MatchSettlement, Player
-from server.db.rating_settlement import settle_completed_match_if_needed
+from server.db.models import Match, MatchSettlement, Player, PlayerMatchSettlement
+from server.db.rating_settlement import (
+    latest_human_settled_elo,
+    load_settlement_aggregates_by_identity,
+    settle_completed_match_if_needed,
+)
 from server.db.registry import (
     MatchHistoryNotFoundError,
     MatchLobbyCreationError,
@@ -62,7 +66,7 @@ from server.models.domain import MatchStatus
 from server.models.orders import OrderEnvelope
 from server.models.state import MatchState
 from server.runtime import MatchRuntime
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -2489,6 +2493,9 @@ def test_settle_completed_match_if_needed_tolerates_duplicate_match_settlement_i
             public_player_id="player-1",
         )
 
+    with Session(engine) as session, session.begin():
+        match = session.get(Match, match_id)
+        assert match is not None
         original_flush = session.flush
         race_triggered = False
 
@@ -2498,7 +2505,12 @@ def test_settle_completed_match_if_needed_tolerates_duplicate_match_settlement_i
                 isinstance(instance, MatchSettlement) for instance in session.new
             ):
                 race_triggered = True
-                raise IntegrityError("duplicate settlement", params={}, orig=Exception("duplicate"))
+                with Session(engine) as competing_session, competing_session.begin():
+                    competing_match = competing_session.get(Match, match_id)
+                    assert competing_match is not None
+                    settle_completed_match_if_needed(
+                        session=competing_session, match=competing_match
+                    )
             original_flush(objects)
 
         monkeypatch.setattr(session, "flush", flush_with_duplicate_race)
@@ -2533,12 +2545,541 @@ def test_settle_completed_match_if_needed_tolerates_duplicate_match_settlement_i
         )
 
     assert race_triggered is True
-    assert settlement_count == 0
-    assert participant_count == 0
+    assert settlement_count == 1
+    assert participant_count == 3
     assert agent_ratings == [
-        ("00000000-0000-0000-0000-000000000202", 1190),
-        ("00000000-0000-0000-0000-000000000203", 1175),
+        ("00000000-0000-0000-0000-000000000202", 1178),
+        ("00000000-0000-0000-0000-000000000203", 1163),
     ]
+
+
+def test_settle_completed_match_if_needed_reraises_unexpected_integrity_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-settlement-unexpected-integrity.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    engine = create_engine(database_url)
+    match_id = "00000000-0000-0000-0000-000000000101"
+
+    with Session(engine) as session, session.begin():
+        match = session.get(Match, match_id)
+        assert match is not None
+        state = MatchState.model_validate(match.state)
+        state.tick = 143
+        state.cities["manchester"].owner = "player-1"
+        state.cities["birmingham"].owner = "player-1"
+        state.players["player-1"].cities_owned = ["london", "manchester", "birmingham"]
+        state.players["player-1"].alliance_id = None
+        state.players["player-2"].cities_owned = []
+        state.players["player-2"].alliance_id = None
+        state.players["player-3"].cities_owned = []
+        state.victory.leading_alliance = "player-1"
+        state.victory.threshold = 3
+        state.victory.countdown_ticks_remaining = 0
+        match.status = MatchStatus.COMPLETED.value
+        match.current_tick = 143
+        match.state = state.model_dump(mode="json")
+        match.winner_alliance = build_persisted_player_id(
+            match_id=match_id,
+            public_player_id="player-1",
+        )
+
+    with Session(engine) as session, session.begin():
+        match = session.get(Match, match_id)
+        assert match is not None
+        original_flush = session.flush
+
+        def flush_with_unexpected_integrity_error(objects: Sequence[object] | None = None) -> None:
+            if any(isinstance(instance, MatchSettlement) for instance in session.new):
+                raise IntegrityError(
+                    "unexpected integrity failure", params={}, orig=Exception("boom")
+                )
+            original_flush(objects)
+
+        monkeypatch.setattr(session, "flush", flush_with_unexpected_integrity_error)
+
+        with pytest.raises(IntegrityError, match="unexpected integrity failure"):
+            settle_completed_match_if_needed(session=session, match=match)
+
+
+def test_settle_completed_match_if_needed_uses_canonical_alliance_winner_for_tenure_weighting(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-settlement-canonical-alliance.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    engine = create_engine(database_url)
+    match_id = "00000000-0000-0000-0000-000000000101"
+
+    with Session(engine) as session, session.begin():
+        match = session.get(Match, match_id)
+        assert match is not None
+        state = MatchState.model_validate(match.state)
+        state.tick = 143
+        state.cities["london"].owner = "player-1"
+        state.cities["manchester"].owner = "player-1"
+        state.cities["birmingham"].owner = "player-2"
+        state.players["player-1"].cities_owned = ["london", "manchester"]
+        state.players["player-1"].alliance_id = "alliance-red"
+        state.players["player-2"].cities_owned = ["birmingham"]
+        state.players["player-2"].alliance_id = "alliance-red"
+        state.players["player-3"].cities_owned = []
+        state.players["player-3"].alliance_id = None
+        state.victory.leading_alliance = "alliance-red"
+        state.victory.threshold = 3
+        state.victory.countdown_ticks_remaining = 0
+        match.status = MatchStatus.COMPLETED.value
+        match.current_tick = 143
+        match.state = state.model_dump(mode="json")
+        match.winner_alliance = build_persisted_player_id(
+            match_id=match_id,
+            public_player_id="player-3",
+        )
+
+        players = session.scalars(
+            select(Player).where(Player.match_id == match_id).order_by(Player.id)
+        ).all()
+        for player in players:
+            if str(player.id) == build_persisted_player_id(
+                match_id=match_id,
+                public_player_id="player-1",
+            ):
+                player.alliance_id = "00000000-0000-0000-0000-000000000401"
+                player.alliance_joined_tick = 120
+            elif str(player.id) == build_persisted_player_id(
+                match_id=match_id,
+                public_player_id="player-2",
+            ):
+                player.alliance_id = "00000000-0000-0000-0000-000000000401"
+                player.alliance_joined_tick = 143
+            else:
+                player.alliance_id = None
+                player.alliance_joined_tick = None
+
+        settle_completed_match_if_needed(session=session, match=match)
+
+    with engine.connect() as connection:
+        settlement_rows = (
+            connection.execute(
+                text(
+                    """
+                    SELECT player_id, outcome, elo_before, elo_after
+                    FROM player_match_settlements
+                    WHERE match_id = :match_id
+                    ORDER BY player_id
+                    """
+                ),
+                {"match_id": match_id},
+            )
+            .tuples()
+            .all()
+        )
+
+    assert settlement_rows == [
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-1"),
+            "win",
+            1210,
+            1231,
+        ),
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-2"),
+            "win",
+            1190,
+            1201,
+        ),
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-3"),
+            "loss",
+            1175,
+            1163,
+        ),
+    ]
+
+
+def test_settle_completed_match_if_needed_uses_canonical_solo_winner_when_db_winner_is_missing(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-settlement-canonical-solo.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    engine = create_engine(database_url)
+    match_id = "00000000-0000-0000-0000-000000000101"
+
+    with Session(engine) as session, session.begin():
+        match = session.get(Match, match_id)
+        assert match is not None
+        state = MatchState.model_validate(match.state)
+        state.tick = 143
+        state.cities["london"].owner = "player-1"
+        state.cities["manchester"].owner = "player-1"
+        state.cities["birmingham"].owner = "player-1"
+        state.players["player-1"].cities_owned = ["london", "manchester", "birmingham"]
+        state.players["player-1"].alliance_id = None
+        state.players["player-2"].cities_owned = []
+        state.players["player-2"].alliance_id = None
+        state.players["player-3"].cities_owned = []
+        state.players["player-3"].alliance_id = None
+        state.victory.leading_alliance = "player-1"
+        state.victory.threshold = 3
+        state.victory.countdown_ticks_remaining = 0
+        match.status = MatchStatus.COMPLETED.value
+        match.current_tick = 143
+        match.state = state.model_dump(mode="json")
+        match.winner_alliance = None
+
+        players = session.scalars(
+            select(Player).where(Player.match_id == match_id).order_by(Player.id)
+        ).all()
+        for player in players:
+            player.alliance_id = None
+            player.alliance_joined_tick = None
+
+        settle_completed_match_if_needed(session=session, match=match)
+
+    with engine.connect() as connection:
+        settlement_rows = (
+            connection.execute(
+                text(
+                    """
+                    SELECT player_id, outcome, elo_before, elo_after
+                    FROM player_match_settlements
+                    WHERE match_id = :match_id
+                    ORDER BY player_id
+                    """
+                ),
+                {"match_id": match_id},
+            )
+            .tuples()
+            .all()
+        )
+
+    assert settlement_rows == [
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-1"),
+            "win",
+            1210,
+            1234,
+        ),
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-2"),
+            "loss",
+            1190,
+            1178,
+        ),
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-3"),
+            "loss",
+            1175,
+            1163,
+        ),
+    ]
+
+
+def test_settle_completed_match_if_needed_records_draw_when_no_winner_identity_exists(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-settlement-draw.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    engine = create_engine(database_url)
+    match_id = "00000000-0000-0000-0000-000000000101"
+
+    with Session(engine) as session, session.begin():
+        match = session.get(Match, match_id)
+        assert match is not None
+        state = MatchState.model_validate(match.state)
+        state.tick = 143
+        for city in state.cities.values():
+            city.owner = None
+        for player_id in ("player-1", "player-2", "player-3"):
+            state.players[player_id].cities_owned = []
+            state.players[player_id].alliance_id = None
+        state.victory.leading_alliance = None
+        state.victory.threshold = 3
+        state.victory.countdown_ticks_remaining = 0
+        match.status = MatchStatus.COMPLETED.value
+        match.current_tick = 143
+        match.state = state.model_dump(mode="json")
+        match.winner_alliance = None
+
+        players = session.scalars(
+            select(Player).where(Player.match_id == match_id).order_by(Player.id)
+        ).all()
+        for player in players:
+            player.alliance_id = None
+            player.alliance_joined_tick = None
+
+        settle_completed_match_if_needed(session=session, match=match)
+
+    with engine.connect() as connection:
+        settlement_rows = (
+            connection.execute(
+                text(
+                    """
+                    SELECT player_id, outcome, elo_before, elo_after
+                    FROM player_match_settlements
+                    WHERE match_id = :match_id
+                    ORDER BY player_id
+                    """
+                ),
+                {"match_id": match_id},
+            )
+            .tuples()
+            .all()
+        )
+
+    assert settlement_rows == [
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-1"),
+            "draw",
+            1210,
+            1210,
+        ),
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-2"),
+            "draw",
+            1190,
+            1190,
+        ),
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-3"),
+            "draw",
+            1175,
+            1175,
+        ),
+    ]
+
+
+def test_settle_completed_match_if_needed_uses_equal_share_when_winner_rows_have_no_territory(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-settlement-zero-territory.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    engine = create_engine(database_url)
+    match_id = "00000000-0000-0000-0000-000000000101"
+
+    with Session(engine) as session, session.begin():
+        match = session.get(Match, match_id)
+        assert match is not None
+        state = MatchState.model_validate(match.state)
+        state.tick = 143
+        for city in state.cities.values():
+            city.owner = None
+        state.players["player-1"].cities_owned = []
+        state.players["player-1"].alliance_id = "alliance-red"
+        state.players["player-2"].cities_owned = []
+        state.players["player-2"].alliance_id = "alliance-red"
+        state.players["player-3"].cities_owned = []
+        state.players["player-3"].alliance_id = None
+        state.victory.leading_alliance = "alliance-red"
+        state.victory.threshold = 0
+        state.victory.countdown_ticks_remaining = 0
+        match.status = MatchStatus.COMPLETED.value
+        match.current_tick = 143
+        match.state = state.model_dump(mode="json")
+        match.winner_alliance = "00000000-0000-0000-0000-000000000401"
+
+        players = session.scalars(
+            select(Player).where(Player.match_id == match_id).order_by(Player.id)
+        ).all()
+        for player in players:
+            if str(player.id) == build_persisted_player_id(
+                match_id=match_id,
+                public_player_id="player-3",
+            ):
+                player.alliance_id = None
+                player.alliance_joined_tick = None
+            else:
+                player.alliance_id = "00000000-0000-0000-0000-000000000401"
+                player.alliance_joined_tick = 120
+
+        settle_completed_match_if_needed(session=session, match=match)
+
+    with engine.connect() as connection:
+        settlement_rows = (
+            connection.execute(
+                text(
+                    """
+                    SELECT player_id, outcome, elo_before, elo_after
+                    FROM player_match_settlements
+                    WHERE match_id = :match_id
+                    ORDER BY player_id
+                    """
+                ),
+                {"match_id": match_id},
+            )
+            .tuples()
+            .all()
+        )
+
+    assert settlement_rows == [
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-1"),
+            "win",
+            1210,
+            1230,
+        ),
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-2"),
+            "win",
+            1190,
+            1210,
+        ),
+        (
+            build_persisted_player_id(match_id=match_id, public_player_id="player-3"),
+            "loss",
+            1175,
+            1163,
+        ),
+    ]
+
+
+def test_latest_human_settled_elo_and_identity_aggregate_ignore_agent_rows_and_break_ties_stably(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'registry-latest-human-settlement.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+    insert_completed_match_fixture(database_url)
+    human_user_id = "00000000-0000-0000-0000-000000000301"
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        seed_state = json.loads(
+            connection.execute(
+                text("SELECT state FROM matches WHERE id = :match_id"),
+                {"match_id": "00000000-0000-0000-0000-000000000201"},
+            ).scalar_one()
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO matches (
+                    id, config, status, current_tick, state, winner_alliance, created_at, updated_at
+                ) VALUES (
+                    :id, :config, :status, :current_tick, :state, :winner_alliance,
+                    :created_at, :updated_at
+                )
+                """
+            ),
+            {
+                "id": "00000000-0000-0000-0000-000000000204",
+                "config": json.dumps({"map": "britain", "max_players": 4, "turn_seconds": 30}),
+                "status": "completed",
+                "current_tick": 188,
+                "state": json.dumps({**seed_state, "tick": 188}),
+                "winner_alliance": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000204",
+                    public_player_id="player-1",
+                ),
+                "created_at": "2026-03-29 08:10:00+00:00",
+                "updated_at": "2026-03-29 08:30:00+00:00",
+            },
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO match_settlements (
+                    match_id, settled_at
+                ) VALUES (
+                    :match_id, :settled_at
+                )
+                """
+            ),
+            {
+                "match_id": "00000000-0000-0000-0000-000000000204",
+                "settled_at": "2026-03-29 08:30:00+00:00",
+            },
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO players (
+                    id, user_id, match_id, display_name, is_agent, api_key_id, elo_rating,
+                    alliance_id, alliance_joined_tick, eliminated_at
+                ) VALUES (
+                    :id, :user_id, :match_id, :display_name, :is_agent, :api_key_id, :elo_rating,
+                    :alliance_id, :alliance_joined_tick, :eliminated_at
+                )
+                """
+            ),
+            {
+                "id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000204",
+                    public_player_id="player-1",
+                ),
+                "user_id": human_user_id,
+                "match_id": "00000000-0000-0000-0000-000000000204",
+                "display_name": "Arthur",
+                "is_agent": False,
+                "api_key_id": None,
+                "elo_rating": 1234,
+                "alliance_id": None,
+                "alliance_joined_tick": None,
+                "eliminated_at": None,
+            },
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO player_match_settlements (
+                    player_id, match_id, user_id, api_key_id, display_name, is_agent,
+                    outcome, elo_before, elo_after, settled_at
+                ) VALUES (
+                    :player_id, :match_id, :user_id, :api_key_id, :display_name, :is_agent,
+                    :outcome, :elo_before, :elo_after, :settled_at
+                )
+                """
+            ),
+            {
+                "player_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000204",
+                    public_player_id="player-1",
+                ),
+                "match_id": "00000000-0000-0000-0000-000000000204",
+                "user_id": human_user_id,
+                "api_key_id": None,
+                "display_name": "Arthur",
+                "is_agent": False,
+                "outcome": "win",
+                "elo_before": 1234,
+                "elo_after": 1240,
+                "settled_at": "2026-03-29 08:30:00+00:00",
+            },
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE player_match_settlements
+                SET user_id = :user_id
+                WHERE player_id = :player_id
+                """
+            ),
+            {
+                "user_id": human_user_id,
+                "player_id": build_persisted_player_id(
+                    match_id="00000000-0000-0000-0000-000000000201",
+                    public_player_id="player-2",
+                ),
+            },
+        )
+
+    with Session(engine) as session:
+        settlement_rows = session.scalars(
+            select(PlayerMatchSettlement)
+            .where(PlayerMatchSettlement.user_id == human_user_id)
+            .order_by(PlayerMatchSettlement.settled_at, PlayerMatchSettlement.player_id)
+        ).all()
+
+        aggregate = load_settlement_aggregates_by_identity(settlement_rows)[
+            f"human:{human_user_id}"
+        ]
+
+        assert latest_human_settled_elo(session=session, user_id=human_user_id) == 1240
+        assert aggregate.display_name == "Arthur"
+        assert aggregate.elo == 1240
+        assert aggregate.matches_played == 2
+        assert aggregate.wins == 2
+        assert aggregate.losses == 0
+        assert aggregate.draws == 0
 
 
 def test_get_match_history_returns_deterministic_tick_entries_with_match_metadata(
