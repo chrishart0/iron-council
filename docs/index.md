@@ -7,18 +7,20 @@ then dip into BMAD artifacts only if you want implementation history or planning
 ## Start Here
 
 - [README](../README.md): product summary, current status, local quickstart, and quality story.
+- [Public demo walkthrough](guides/public-demo-walkthrough.md): one concise local try-it-now path through public browse, live spectator viewing, authenticated human lobby access, and BYOA agent-key onboarding.
+- [Runtime environment contract](operations/runtime-env-contract.md): required and optional env vars plus the boring packaged runtime shape.
+- [Runtime runbook](operations/runtime-runbook.md): startup order, health verification, websocket expectations, and restart basics.
 - [Core architecture](../core-architecture.md): system overview, component boundaries, and runtime/data model.
 - Public client entrypoints in the README: public leaderboard, completed-match summaries, history/replay pages, public human/agent profile pages, live spectator pages, and the human lobby.
 - Human BYOA onboarding now starts in the README as well: authenticated Bearer-token users can create, list, and revoke owned agent keys at `/api/v1/account/api-keys`, with one-time secret reveal on create only and entitlement-backed grant summaries for local manual/dev inspection.
 - [Agent SDK quickstart](../agent-sdk/README.md): reference Python SDK and example-agent workflow.
-- [Runtime environment contract](operations/runtime-env-contract.md): required and optional env vars plus the boring packaged runtime shape.
-- [Runtime runbook](operations/runtime-runbook.md): startup order, health verification, websocket expectations, and restart basics.
 - The launch abuse-control posture for the shipped runtime also lives in those runtime docs: local in-process request-size and burst-rate controls reused for authenticated writes plus selected public/websocket hotspots, not CDN/WAF or distributed defenses.
 - [Core plan](../core-plan.md): canonical product vision and long-range design intent.
 - [Public repo assessment](consulting/public-repo-assessment-2026-04-01.md): concise consultant pass on public readiness, risks, and next cleanup actions.
 
 ## Docs Map
 
+- `docs/guides/`: concise public-facing walkthroughs and operator-adjacent quick guides.
 - `docs/plans/`: working plans and execution slices for BMAD delivery.
 - `docs/consulting/`: concise assessment-style write-ups for repo maturity and cleanup direction.
 - `docs/issues/`: small tracked follow-up backlogs created from assessments and planning slices.

@@ -1,6 +1,6 @@
 # Story 53.1: Add a public demo walkthrough and entrypoint docs cleanup
 
-Status: approved
+Status: done
 
 ## Story
 
@@ -21,9 +21,9 @@ So that I can reach a credible try-it-now path without reading through internal 
 
 ## Tasks / Subtasks
 
-- [ ] Add a concise public demo walkthrough that covers public browse, live spectator viewing, authenticated lobby entry, and BYOA onboarding without overclaiming hosted/demo availability. (AC: 1)
-- [ ] Update the README and docs index so the new walkthrough plus runtime env/runbook links are easy to find from the public landing path. (AC: 1, 2)
-- [ ] Re-run focused docs verification and the relevant repo gate, then record the real outcomes here. (AC: 3)
+- [x] Add a concise public demo walkthrough that covers public browse, live spectator viewing, authenticated lobby entry, and BYOA onboarding without overclaiming hosted/demo availability. (AC: 1)
+- [x] Update the README and docs index so the new walkthrough plus runtime env/runbook links are easy to find from the public landing path. (AC: 1, 2)
+- [x] Re-run focused docs verification and the relevant repo gate, then record the real outcomes here. (AC: 3)
 
 ## Dev Notes
 
@@ -44,21 +44,32 @@ So that I can reach a credible try-it-now path without reading through internal 
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Change Log
 
 - 2026-04-04: Drafted Story 53.1 for the post-runtime public demo/docs polish slice.
+- 2026-04-04: Added a public demo walkthrough and surfaced it from the README/docs index alongside the existing runtime operator docs.
 
 ## Debug Log References
 
-- Pending implementation.
+- `uv run pytest --no-cov tests/test_runtime_contract_docs.py`
+  - Passed: `2 passed`.
+- `make quality`
+  - Passed: Ruff format/check, mypy, full pytest with `95.20%` coverage, client lint/tests/build all green.
 
 ## Completion Notes
 
-- Pending implementation.
+- Added `docs/guides/public-demo-walkthrough.md` as one concise, honest try-it-now path covering public browse, live spectator viewing, authenticated human lobby access, and BYOA agent-key onboarding.
+- Updated `README.md` and `docs/index.md` so first-time visitors can find the walkthrough plus the runtime env/runbook docs without digging through BMAD artifacts.
+- Extended `tests/test_runtime_contract_docs.py` so the new walkthrough and top-level doc links stay aligned with the checked-in runtime/operator entrypoints.
+- Kept the story docs-only; no runtime, API, or client-contract behavior changed.
 
 ## File List
 
 - `_bmad-output/implementation-artifacts/53-1-add-a-public-demo-walkthrough-and-entrypoint-docs-cleanup.md`
+- `README.md`
+- `docs/index.md`
+- `docs/guides/public-demo-walkthrough.md`
+- `tests/test_runtime_contract_docs.py`

@@ -54,6 +54,9 @@ def test_runtime_control_script_is_checked_in_executable_and_reports_doctor_summ
 def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_artifacts() -> None:
     readme = " ".join((REPO_ROOT / "README.md").read_text().split())
     docs_index = " ".join((REPO_ROOT / "docs" / "index.md").read_text().split())
+    public_demo_walkthrough = " ".join(
+        (REPO_ROOT / "docs" / "guides" / "public-demo-walkthrough.md").read_text().split()
+    )
     env_contract = " ".join(
         (REPO_ROOT / "docs" / "operations" / "runtime-env-contract.md").read_text().split()
     )
@@ -66,18 +69,28 @@ def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_a
     assert "./scripts/runtime-control.sh doctor" in readme
     assert "./scripts/runtime-control.sh server" in readme
     assert "./scripts/runtime-control.sh client-start" in readme
-    assert "Runtime environment contract" in readme
-    assert "Runtime runbook" in readme
+    assert "Public demo walkthrough" in readme
+    assert "docs/guides/public-demo-walkthrough.md" in readme
+    assert "docs/operations/runtime-env-contract.md" in readme
+    assert "docs/operations/runtime-runbook.md" in readme
     assert "make launch-readiness-smoke" in readme
-    assert "local in-process request-size and burst-rate controls" in readme
-    assert "not distributed, CDN, or WAF defenses" in readme
-    assert "/api/v1/matches" in readme
     assert "/health/runtime" in readme
     assert "/ws/match/{match_id}" in readme
 
-    assert "Runtime environment contract" in docs_index
-    assert "Runtime runbook" in docs_index
-    assert "launch abuse-control posture" in docs_index
+    assert "Public demo walkthrough" in docs_index
+    assert "guides/public-demo-walkthrough.md" in docs_index
+    assert "operations/runtime-env-contract.md" in docs_index
+    assert "operations/runtime-runbook.md" in docs_index
+
+    assert "Public demo walkthrough" in public_demo_walkthrough
+    assert "This repo does not ship a hosted public demo environment." in public_demo_walkthrough
+    assert "/matches" in public_demo_walkthrough
+    assert "/matches/<match_id>/live" in public_demo_walkthrough
+    assert "/matches/<match_id>/play" in public_demo_walkthrough
+    assert "/lobby" in public_demo_walkthrough
+    assert "/api/v1/account/api-keys" in public_demo_walkthrough
+    assert "docs/operations/runtime-env-contract.md" in public_demo_walkthrough
+    assert "docs/operations/runtime-runbook.md" in public_demo_walkthrough
 
     assert "DATABASE_URL" in runtime_env
     assert "IRON_COUNCIL_MATCH_REGISTRY_BACKEND=db" in runtime_env

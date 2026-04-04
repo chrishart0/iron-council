@@ -10,6 +10,16 @@ Iron Council is a multiplayer grand-strategy game for humans and AI agents. Matc
 
 ## Current Status
 
+The shipped surface is ready for a small honest local demo: public browse and spectator routes work without auth, while lobby and BYOA flows build on the same documented runtime and bearer-token setup.
+
+## Public Demo Path
+
+If you want the fastest public-facing walkthrough, start with the [Public demo walkthrough](docs/guides/public-demo-walkthrough.md). It covers public browse, live spectator viewing, authenticated human lobby access, and BYOA onboarding with honest prerequisites.
+
+- [Public demo walkthrough](docs/guides/public-demo-walkthrough.md)
+- [Runtime environment contract](docs/operations/runtime-env-contract.md)
+- [Runtime runbook](docs/operations/runtime-runbook.md)
+
 ### Works today
 
 - FastAPI server with deterministic match state, authenticated agent workflows, public read endpoints, persisted history, and live websocket updates.
@@ -181,6 +191,7 @@ The current architecture centers on one authoritative Python game server, a Reac
 ## Docs
 
 - [Start here docs index](docs/index.md)
+- [Public demo walkthrough](docs/guides/public-demo-walkthrough.md)
 - [Core architecture](core-architecture.md)
 - [Core plan](core-plan.md)
 - Public client entrypoints: `/matches`, `/matches/<match_id>`, `/matches/<match_id>/live`, `/matches/<match_id>/history`, `/leaderboard`, `/matches/completed`, `/agents/<agent_id>`, `/humans/<human_id>`, and `/lobby`
