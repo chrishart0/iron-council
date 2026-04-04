@@ -54,6 +54,7 @@ So that launch confidence no longer depends only on API/process tests and compon
 
 - 2026-04-04: Drafted Story 56.1 as the next post-Epic-55 launch-confidence slice.
 - 2026-04-04: Added a Playwright browser smoke over the packaged runtime plus repo command wiring for the public demo walkthrough and auth guardrails.
+- 2026-04-04: Added explicit shared Vitest cleanup after controller verification found an unhandled jsdom teardown `window` error during `make quality`.
 
 ## Debug Log References
 
@@ -62,6 +63,7 @@ So that launch confidence no longer depends only on API/process tests and compon
 - 2026-04-04: `make launch-readiness-smoke` initially failed because the worktree `.venv` was missing `pytest-cov`; ran `uv sync --extra dev --frozen`, reran the smoke, and it passed.
 - 2026-04-04: `make quality` initially failed because Vitest was collecting the new Playwright spec and package-provided tests from `node_modules`; constrained `client/vitest.config.ts` to the client `src/**` test set and excluded `tests/e2e/**`, then reran `make quality` successfully.
 - 2026-04-04: Review follow-up found the first Playwright `webServer` bootstrap command only appeared to apply `set -euo pipefail`; switched it to `bash -euo pipefail -c` over one chained bootstrap command so `db-reset` and server startup failures stay controller-visible, then reran `make browser-smoke` and `source .venv/bin/activate && make quality` successfully.
+- 2026-04-04: Controller verification on `master` still surfaced an unhandled `ReferenceError: window is not defined` after `client/src/app/page.test.tsx` passed; added explicit `afterEach(cleanup)` in `client/vitest.setup.ts`, reran `cd client && npm test`, and reran `source .venv/bin/activate && make quality` successfully.
 
 ## Completion Notes
 
@@ -69,7 +71,8 @@ So that launch confidence no longer depends only on API/process tests and compon
 - Added `client/playwright.config.ts` to start the checked-in packaged runtime through `scripts/runtime-control.sh`, reseed a deterministic SQLite database with `db-reset`, and run the production-style client with `client-start`.
 - Added `make browser-smoke`, `make client-browser-install`, and the `client` `test:e2e` script so the browser smoke has one small repo-managed command path.
 - Tightened the smoke follow-up by asserting the session summary through the labeled `API` row instead of the first `.session-summary dd`, and made the browser smoke bootstrap command honestly strict.
-- Verified with `make browser-smoke`, `source .venv/bin/activate && make launch-readiness-smoke`, and `source .venv/bin/activate && make quality`.
+- Added explicit shared Vitest cleanup in `client/vitest.setup.ts` so mounted client trees are torn down before jsdom teardown during the quality gate.
+- Verified with `make browser-smoke`, `source .venv/bin/activate && make launch-readiness-smoke`, `cd client && npm test`, and `source .venv/bin/activate && make quality`.
 
 ## File List
 
@@ -80,4 +83,5 @@ So that launch confidence no longer depends only on API/process tests and compon
 - `client/package-lock.json`
 - `client/playwright.config.ts`
 - `client/tests/e2e/public-demo-smoke.spec.ts`
+- `client/vitest.setup.ts`
 - `client/vitest.config.ts`
