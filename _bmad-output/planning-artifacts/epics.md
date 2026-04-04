@@ -2644,3 +2644,51 @@ So that future public-contract changes can be reviewed and debugged in smaller, 
 **And Given** this follow-on exists to improve maintainability rather than widen scope
 **When** the story ships
 **Then** no production browser behavior changes, no new generic test harness abstraction is introduced, and the repo `make quality` gate still passes with the smaller, route-family-aligned suite layout.
+
+## Epic 56: Browser Launch Confidence and Human Live Maintainability
+
+Now that the public demo/docs path and the client API contract seams are shipped, close the remaining launch-confidence gap by proving the documented browser walkthrough against the real local runtime and then shrinking the largest remaining client hotspot. The first slice should add one small, honest browser smoke over the packaged runtime and existing public/auth-required routes; the second should use that protection to decompose the oversized human live page and test surface without changing user-visible behavior.
+
+### Story 56.1: Add a browser smoke for the public demo walkthrough and auth-required route guardrails
+
+As a delivery lead,
+I want one real-browser smoke that follows the documented local demo path against the packaged runtime,
+So that launch confidence no longer depends only on API/process tests and component-level client checks.
+
+**Acceptance Criteria:**
+
+**Given** the checked-in runtime flow and public demo walkthrough already describe `/matches`, match detail/history/live routes, and the browser session panel
+**When** the new browser smoke runs against the packaged local runtime
+**Then** it boots the existing server/client entrypoints, verifies the public browse path in a real browser, and confirms the spectator live route renders against the running API.
+
+**And Given** authenticated human routes are intentionally bearer-token protected
+**When** the same browser smoke opens `/lobby` and `/matches/<match_id>/play` without a saved bearer token
+**Then** it sees the shipped auth-required guardrail copy instead of a blank crash, redirect loop, or misleading success state.
+
+**And Given** the browser session panel is part of the documented operator/demo flow
+**When** the smoke saves the API base URL and reloads or revisits a later route
+**Then** the saved origin persists and the browser continues using the intended API endpoint.
+
+**And Given** this story exists to improve launch confidence rather than add product scope
+**When** the story ships
+**Then** it adds the smallest honest browser harness and command path possible, preserves existing public/auth contracts, and keeps the repo-managed quality workflow straightforward to run locally.
+
+### Story 56.2: Refactor the human live page into smaller route-owned slices behind the shipped browser contract
+
+As a client maintainer,
+I want the oversized authenticated human live page and its monolithic regression surface split into smaller route-owned modules,
+So that future gameplay/UI changes can land with lower regression risk and simpler review boundaries.
+
+**Acceptance Criteria:**
+
+**Given** `client/src/components/matches/human-match-live-snapshot.tsx` and `client/src/components/matches/human-match-live-page.test.tsx` currently concentrate most authenticated live-match behavior
+**When** the follow-on refactor lands
+**Then** that behavior is split into smaller modules and focused tests aligned to stable UI seams while preserving the shipped websocket/session/order/diplomacy behavior.
+
+**And Given** Story 56.1 establishes a real-browser smoke over the public/runtime path
+**When** Story 56.2 ships
+**Then** the refactor keeps that smoke green alongside the focused client suites and `make quality`.
+
+**And Given** this is maintainability work rather than a new feature lane
+**When** the story ships
+**Then** it avoids generic framework abstractions, keeps behavior-first tests at the browser/API boundary where feasible, and leaves the client in a simpler coherent state than the pre-story baseline.

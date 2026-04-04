@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: null
+next_story: 56-1-add-a-browser-smoke-for-the-public-demo-walkthrough-and-auth-required-route-guardrails
 
 development_status:
   public-readiness-epic: done
@@ -274,3 +274,7 @@ development_status:
   55-1-extract-public-client-route-families-out-of-client-src-lib-api-public-contract-ts: done
   55-2-split-client-src-lib-api-test-ts-into-focused-module-aligned-suites: done
   epic-55-retrospective: optional
+
+  epic-56: ready
+  56-1-add-a-browser-smoke-for-the-public-demo-walkthrough-and-auth-required-route-guardrails: ready-for-dev
+  56-2-refactor-the-human-live-page-into-smaller-route-owned-slices-behind-the-shipped-browser-contract: backlog
