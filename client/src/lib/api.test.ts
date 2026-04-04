@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import * as publicContract from "./api/public-contract";
 import {
   buildPlayerMatchWebSocketUrl,
   buildSpectatorMatchWebSocketUrl,
@@ -44,6 +45,30 @@ import {
   submitTreatyAction,
   startMatchLobby
 } from "./api";
+
+describe("public api extraction seam", () => {
+  it("keeps the extracted public contract helpers available through both modules", () => {
+    expect(publicContract.fetchPublicMatches).toBe(fetchPublicMatches);
+    expect(publicContract.fetchPublicMatchDetail).toBe(fetchPublicMatchDetail);
+    expect(publicContract.fetchPublicLeaderboard).toBe(fetchPublicLeaderboard);
+    expect(publicContract.fetchPublicAgentProfile).toBe(fetchPublicAgentProfile);
+    expect(publicContract.fetchPublicHumanProfile).toBe(fetchPublicHumanProfile);
+    expect(publicContract.fetchCompletedMatches).toBe(fetchCompletedMatches);
+    expect(publicContract.fetchPublicMatchHistory).toBe(fetchPublicMatchHistory);
+    expect(publicContract.fetchMatchReplayTick).toBe(fetchMatchReplayTick);
+    expect(publicContract.parsePlayerMatchEnvelope).toBe(parsePlayerMatchEnvelope);
+    expect(publicContract.parseSpectatorMatchEnvelope).toBe(parseSpectatorMatchEnvelope);
+    expect(publicContract.parseWebSocketApiErrorEnvelope).toBe(parseWebSocketApiErrorEnvelope);
+    expect(publicContract.PublicMatchesError).toBe(PublicMatchesError);
+    expect(publicContract.PublicMatchDetailError).toBe(PublicMatchDetailError);
+    expect(publicContract.PublicLeaderboardError).toBe(PublicLeaderboardError);
+    expect(publicContract.PublicAgentProfileError).toBe(PublicAgentProfileError);
+    expect(publicContract.PublicHumanProfileError).toBe(PublicHumanProfileError);
+    expect(publicContract.CompletedMatchesError).toBe(CompletedMatchesError);
+    expect(publicContract.PublicMatchHistoryError).toBe(PublicMatchHistoryError);
+    expect(publicContract.MatchReplayTickError).toBe(MatchReplayTickError);
+  });
+});
 
 describe("fetchPublicMatches", () => {
   it("returns the compact public browse payload from the existing matches endpoint", async () => {

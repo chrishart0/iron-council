@@ -70,27 +70,30 @@ import type {
   LeaderboardEntry
 } from "./types";
 import { DEFAULT_API_BASE_URL, normalizeApiBaseUrl } from "./session-storage";
+export {
+  CompletedMatchesError,
+  MatchReplayTickError,
+  PublicAgentProfileError,
+  PublicHumanProfileError,
+  PublicLeaderboardError,
+  PublicMatchDetailError,
+  PublicMatchHistoryError,
+  PublicMatchesError,
+  fetchCompletedMatches,
+  fetchMatchReplayTick,
+  fetchPublicAgentProfile,
+  fetchPublicHumanProfile,
+  fetchPublicLeaderboard,
+  fetchPublicMatchDetail,
+  fetchPublicMatchHistory,
+  fetchPublicMatches,
+  parsePlayerMatchEnvelope,
+  parseSpectatorMatchEnvelope,
+  parseWebSocketApiErrorEnvelope
+} from "./api/public-contract";
 
-const PUBLIC_MATCHES_ERROR_MESSAGE = "Unable to load public matches right now.";
-const PUBLIC_MATCH_DETAIL_ERROR_MESSAGE = "Unable to load this public match right now.";
-const PUBLIC_LEADERBOARD_ERROR_MESSAGE = "Unable to load the public leaderboard right now.";
-const PUBLIC_AGENT_PROFILE_ERROR_MESSAGE = "Unable to load this agent profile right now.";
-const PUBLIC_HUMAN_PROFILE_ERROR_MESSAGE = "Unable to load this human profile right now.";
-const COMPLETED_MATCHES_ERROR_MESSAGE = "Unable to load completed matches right now.";
 const PUBLIC_MATCH_DETAIL_NOT_FOUND_MESSAGE =
   "This match is unavailable. It may not exist or may already be completed.";
-const PUBLIC_MATCH_HISTORY_ERROR_MESSAGE = "Unable to load match history right now.";
-const PUBLIC_MATCH_HISTORY_NOT_FOUND_MESSAGE =
-  "This completed match history is unavailable. It may not exist.";
-const PUBLIC_AGENT_PROFILE_NOT_FOUND_MESSAGE =
-  "This agent profile is unavailable. It may not exist.";
-const PUBLIC_HUMAN_PROFILE_NOT_FOUND_MESSAGE =
-  "This human profile is unavailable. It may not exist.";
-const MATCH_REPLAY_TICK_ERROR_MESSAGE = "Unable to load this replay tick right now.";
-const MATCH_REPLAY_TICK_NOT_FOUND_MESSAGE =
-  "This replay tick is unavailable for the selected match.";
-const PLAYER_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse player live match update.";
-const SPECTATOR_MATCH_UPDATE_ERROR_MESSAGE = "Unable to parse spectator live match update.";
 const MATCH_LOBBY_ERROR_MESSAGE = "Unable to complete the requested lobby action right now.";
 const COMMAND_SUBMISSION_ERROR_MESSAGE = "Unable to submit orders right now.";
 const MESSAGE_SUBMISSION_ERROR_MESSAGE = "Unable to submit message right now.";
@@ -103,77 +106,6 @@ const HUMAN_NOT_JOINED_MESSAGE =
 const INVALID_WEBSOCKET_AUTH_MESSAGE =
   "This live player page requires a valid human bearer token before it can connect.";
 const PLAYER_AUTH_MISMATCH_MESSAGE = "This bearer token does not belong to the requested player.";
-
-export class PublicMatchesError extends Error {
-  constructor(message = PUBLIC_MATCHES_ERROR_MESSAGE) {
-    super(message);
-    this.name = "PublicMatchesError";
-  }
-}
-
-export class PublicMatchDetailError extends Error {
-  constructor(
-    message = PUBLIC_MATCH_DETAIL_ERROR_MESSAGE,
-    readonly kind: "not_found" | "unavailable" = "unavailable"
-  ) {
-    super(message);
-    this.name = "PublicMatchDetailError";
-  }
-}
-
-export class PublicLeaderboardError extends Error {
-  constructor(message = PUBLIC_LEADERBOARD_ERROR_MESSAGE) {
-    super(message);
-    this.name = "PublicLeaderboardError";
-  }
-}
-
-export class PublicAgentProfileError extends Error {
-  constructor(
-    message = PUBLIC_AGENT_PROFILE_ERROR_MESSAGE,
-    readonly kind: "not_found" | "unavailable" = "unavailable"
-  ) {
-    super(message);
-    this.name = "PublicAgentProfileError";
-  }
-}
-
-export class PublicHumanProfileError extends Error {
-  constructor(
-    message = PUBLIC_HUMAN_PROFILE_ERROR_MESSAGE,
-    readonly kind: "not_found" | "unavailable" = "unavailable"
-  ) {
-    super(message);
-    this.name = "PublicHumanProfileError";
-  }
-}
-
-export class CompletedMatchesError extends Error {
-  constructor(message = COMPLETED_MATCHES_ERROR_MESSAGE) {
-    super(message);
-    this.name = "CompletedMatchesError";
-  }
-}
-
-export class PublicMatchHistoryError extends Error {
-  constructor(
-    message = PUBLIC_MATCH_HISTORY_ERROR_MESSAGE,
-    readonly kind: "not_found" | "unavailable" = "unavailable"
-  ) {
-    super(message);
-    this.name = "PublicMatchHistoryError";
-  }
-}
-
-export class MatchReplayTickError extends Error {
-  constructor(
-    message = MATCH_REPLAY_TICK_ERROR_MESSAGE,
-    readonly kind: "match_not_found" | "tick_not_found" | "unavailable" = "unavailable"
-  ) {
-    super(message);
-    this.name = "MatchReplayTickError";
-  }
-}
 
 export class LobbyActionError extends Error {
   constructor(
@@ -250,264 +182,6 @@ export class GuidedAgentControlsError extends Error {
     super(message);
     this.name = "GuidedAgentControlsError";
   }
-}
-
-export async function fetchPublicMatches(
-  fetchImpl: typeof fetch = fetch,
-  options?: { apiBaseUrl?: string }
-): Promise<MatchListResponse> {
-  const response = await fetchImpl(`${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches`, {
-    cache: "no-store",
-    headers: {
-      accept: "application/json"
-    }
-  });
-
-  if (!response.ok) {
-    throw new PublicMatchesError();
-  }
-
-  const payload: unknown = await response.json();
-
-  if (!isMatchListResponse(payload)) {
-    throw new PublicMatchesError();
-  }
-
-  return payload;
-}
-
-export async function fetchPublicMatchDetail(
-  matchId: string,
-  fetchImpl: typeof fetch = fetch,
-  options?: { apiBaseUrl?: string }
-): Promise<PublicMatchDetailResponse> {
-  const response = await fetchImpl(
-    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(matchId)}`,
-    {
-      cache: "no-store",
-      headers: {
-        accept: "application/json"
-      }
-    }
-  );
-
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null);
-
-    if (response.status === 404 && isApiNotFoundError(payload)) {
-      throw new PublicMatchDetailError(PUBLIC_MATCH_DETAIL_NOT_FOUND_MESSAGE, "not_found");
-    }
-
-    throw new PublicMatchDetailError(PUBLIC_MATCH_DETAIL_ERROR_MESSAGE, "unavailable");
-  }
-
-  const payload: unknown = await response.json();
-
-  if (!isPublicMatchDetailResponse(payload)) {
-    throw new PublicMatchDetailError(PUBLIC_MATCH_DETAIL_ERROR_MESSAGE, "unavailable");
-  }
-
-  return payload;
-}
-
-export async function fetchPublicLeaderboard(
-  fetchImpl: typeof fetch = fetch,
-  options?: { apiBaseUrl?: string }
-): Promise<PublicLeaderboardResponse> {
-  const response = await fetchImpl(`${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/leaderboard`, {
-    cache: "no-store",
-    headers: {
-      accept: "application/json"
-    }
-  });
-
-  if (!response.ok) {
-    throw new PublicLeaderboardError();
-  }
-
-  const payload: unknown = await response.json();
-
-  if (!isPublicLeaderboardResponse(payload)) {
-    throw new PublicLeaderboardError();
-  }
-
-  return payload;
-}
-
-export async function fetchPublicAgentProfile(
-  agentId: string,
-  fetchImpl: typeof fetch = fetch,
-  options?: { apiBaseUrl?: string }
-): Promise<PublicAgentProfileResponse> {
-  const response = await fetchImpl(
-    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/agents/${encodeURIComponent(agentId)}/profile`,
-    {
-      cache: "no-store",
-      headers: {
-        accept: "application/json"
-      }
-    }
-  );
-
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null);
-
-    if (response.status === 404 && hasApiErrorCode(payload, "agent_not_found")) {
-      throw new PublicAgentProfileError(PUBLIC_AGENT_PROFILE_NOT_FOUND_MESSAGE, "not_found");
-    }
-
-    throw new PublicAgentProfileError(PUBLIC_AGENT_PROFILE_ERROR_MESSAGE, "unavailable");
-  }
-
-  const payload: unknown = await response.json();
-
-  if (!isPublicAgentProfileResponse(payload)) {
-    throw new PublicAgentProfileError(PUBLIC_AGENT_PROFILE_ERROR_MESSAGE, "unavailable");
-  }
-
-  return payload;
-}
-
-export async function fetchPublicHumanProfile(
-  humanId: string,
-  fetchImpl: typeof fetch = fetch,
-  options?: { apiBaseUrl?: string }
-): Promise<PublicHumanProfileResponse> {
-  const response = await fetchImpl(
-    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/humans/${encodeURIComponent(humanId)}/profile`,
-    {
-      cache: "no-store",
-      headers: {
-        accept: "application/json"
-      }
-    }
-  );
-
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null);
-
-    if (response.status === 404 && hasApiErrorCode(payload, "human_not_found")) {
-      throw new PublicHumanProfileError(PUBLIC_HUMAN_PROFILE_NOT_FOUND_MESSAGE, "not_found");
-    }
-
-    throw new PublicHumanProfileError(PUBLIC_HUMAN_PROFILE_ERROR_MESSAGE, "unavailable");
-  }
-
-  const payload: unknown = await response.json();
-
-  if (!isPublicHumanProfileResponse(payload)) {
-    throw new PublicHumanProfileError(PUBLIC_HUMAN_PROFILE_ERROR_MESSAGE, "unavailable");
-  }
-
-  return payload;
-}
-
-export async function fetchCompletedMatches(
-  fetchImpl: typeof fetch = fetch,
-  options?: { apiBaseUrl?: string }
-): Promise<CompletedMatchSummaryListResponse> {
-  const response = await fetchImpl(
-    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/completed`,
-    {
-      cache: "no-store",
-      headers: {
-        accept: "application/json"
-      }
-    }
-  );
-
-  if (!response.ok) {
-    throw new CompletedMatchesError();
-  }
-
-  const payload: unknown = await response.json();
-
-  if (!isCompletedMatchSummaryListResponse(payload)) {
-    throw new CompletedMatchesError();
-  }
-
-  return {
-    matches: payload.matches.map((match) => ({
-      ...match,
-      winning_competitors: Array.isArray(match.winning_competitors) ? match.winning_competitors : []
-    }))
-  };
-}
-
-export async function fetchPublicMatchHistory(
-  matchId: string,
-  fetchImpl: typeof fetch = fetch,
-  options?: { apiBaseUrl?: string }
-): Promise<PublicMatchHistoryResponse> {
-  const response = await fetchImpl(
-    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(matchId)}/history`,
-    {
-      cache: "no-store",
-      headers: {
-        accept: "application/json"
-      }
-    }
-  );
-
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null);
-
-    if (response.status === 404 && hasApiErrorCode(payload, "match_not_found")) {
-      throw new PublicMatchHistoryError(PUBLIC_MATCH_HISTORY_NOT_FOUND_MESSAGE, "not_found");
-    }
-
-    throw new PublicMatchHistoryError(PUBLIC_MATCH_HISTORY_ERROR_MESSAGE, "unavailable");
-  }
-
-  const payload: unknown = await response.json();
-
-  if (!isPublicMatchHistoryResponse(payload)) {
-    throw new PublicMatchHistoryError(PUBLIC_MATCH_HISTORY_ERROR_MESSAGE, "unavailable");
-  }
-
-  return {
-    ...payload,
-    competitors: Array.isArray(payload.competitors) ? payload.competitors : []
-  };
-}
-
-export async function fetchMatchReplayTick(
-  matchId: string,
-  tick: number,
-  fetchImpl: typeof fetch = fetch,
-  options?: { apiBaseUrl?: string }
-): Promise<MatchReplayTickResponse> {
-  const response = await fetchImpl(
-    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(matchId)}/history/${tick}`,
-    {
-      cache: "no-store",
-      headers: {
-        accept: "application/json"
-      }
-    }
-  );
-
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null);
-
-    if (response.status === 404 && hasApiErrorCode(payload, "tick_not_found")) {
-      throw new MatchReplayTickError(MATCH_REPLAY_TICK_NOT_FOUND_MESSAGE, "tick_not_found");
-    }
-
-    if (response.status === 404 && hasApiErrorCode(payload, "match_not_found")) {
-      throw new MatchReplayTickError(PUBLIC_MATCH_HISTORY_NOT_FOUND_MESSAGE, "match_not_found");
-    }
-
-    throw new MatchReplayTickError(MATCH_REPLAY_TICK_ERROR_MESSAGE, "unavailable");
-  }
-
-  const payload: unknown = await response.json();
-
-  if (!isMatchReplayTickResponse(payload)) {
-    throw new MatchReplayTickError(MATCH_REPLAY_TICK_ERROR_MESSAGE, "unavailable");
-  }
-
-  return payload;
 }
 
 export async function createMatchLobby(
@@ -904,26 +578,6 @@ export function buildPlayerMatchWebSocketUrl(
   httpUrl.searchParams.set("viewer", "player");
   httpUrl.searchParams.set("token", bearerToken);
   return httpUrl.toString();
-}
-
-export function parsePlayerMatchEnvelope(payload: unknown): PlayerMatchEnvelope {
-  if (!isPlayerMatchEnvelope(payload)) {
-    throw new Error(PLAYER_MATCH_UPDATE_ERROR_MESSAGE);
-  }
-
-  return payload;
-}
-
-export function parseSpectatorMatchEnvelope(payload: unknown): SpectatorMatchEnvelope {
-  if (!isSpectatorMatchEnvelope(payload)) {
-    throw new Error(SPECTATOR_MATCH_UPDATE_ERROR_MESSAGE);
-  }
-
-  return payload;
-}
-
-export function parseWebSocketApiErrorEnvelope(payload: unknown): ApiErrorEnvelope | null {
-  return isApiErrorEnvelope(payload) ? payload : null;
 }
 
 export function getPlayerWebSocketCloseMessage(reason: string): string | null {
@@ -1380,130 +1034,6 @@ function resolveApiBaseUrl(explicitBaseUrl?: string): string {
   return DEFAULT_API_BASE_URL;
 }
 
-function isMatchListResponse(payload: unknown): payload is MatchListResponse {
-  if (!isRecord(payload) || !Array.isArray(payload.matches)) {
-    return false;
-  }
-
-  return payload.matches.every(isMatchSummary);
-}
-
-function isPublicLeaderboardResponse(payload: unknown): payload is PublicLeaderboardResponse {
-  if (!isRecord(payload) || !Array.isArray(payload.leaderboard)) {
-    return false;
-  }
-
-  return payload.leaderboard.every(isLeaderboardEntry);
-}
-
-function isPublicAgentProfileResponse(payload: unknown): payload is PublicAgentProfileResponse {
-  return (
-    isRecord(payload) &&
-    typeof payload.agent_id === "string" &&
-    typeof payload.display_name === "string" &&
-    typeof payload.is_seeded === "boolean" &&
-    isAgentProfileRating(payload.rating) &&
-    isAgentProfileHistory(payload.history) &&
-    isTreatyReputation(payload.treaty_reputation)
-  );
-}
-
-function isPublicHumanProfileResponse(payload: unknown): payload is PublicHumanProfileResponse {
-  return (
-    isRecord(payload) &&
-    typeof payload.human_id === "string" &&
-    typeof payload.display_name === "string" &&
-    isAgentProfileRating(payload.rating) &&
-    isAgentProfileHistory(payload.history) &&
-    isTreatyReputation(payload.treaty_reputation)
-  );
-}
-
-function isTreatyReputation(payload: unknown): payload is TreatyReputation {
-  return (
-    isRecord(payload) &&
-    isTreatyReputationSummary(payload.summary) &&
-    Array.isArray(payload.history) &&
-    payload.history.every(isTreatyHistoryRecord)
-  );
-}
-
-function isTreatyReputationSummary(payload: unknown): payload is TreatyReputationSummary {
-  return (
-    isRecord(payload) &&
-    typeof payload.signed === "number" &&
-    typeof payload.active === "number" &&
-    typeof payload.honored === "number" &&
-    typeof payload.withdrawn === "number" &&
-    typeof payload.broken_by_self === "number" &&
-    typeof payload.broken_by_counterparty === "number"
-  );
-}
-
-function isTreatyHistoryRecord(payload: unknown): payload is TreatyHistoryRecord {
-  return (
-    isRecord(payload) &&
-    typeof payload.match_id === "string" &&
-    typeof payload.counterparty_display_name === "string" &&
-    typeof payload.treaty_type === "string" &&
-    isTreatyHistoryStatus(payload.status) &&
-    typeof payload.signed_tick === "number" &&
-    (payload.ended_tick === null || typeof payload.ended_tick === "number") &&
-    typeof payload.broken_by_self === "boolean"
-  );
-}
-
-function isTreatyHistoryStatus(payload: unknown): payload is TreatyHistoryRecord["status"] {
-  return (
-    payload === "proposed" ||
-    payload === "active" ||
-    payload === "honored" ||
-    payload === "broken_by_a" ||
-    payload === "broken_by_b" ||
-    payload === "withdrawn"
-  );
-}
-
-function isCompletedMatchSummaryListResponse(
-  payload: unknown
-): payload is CompletedMatchSummaryListResponse {
-  if (!isRecord(payload) || !Array.isArray(payload.matches)) {
-    return false;
-  }
-
-  return payload.matches.every(isCompletedMatchSummary);
-}
-
-function isPublicMatchHistoryResponse(payload: unknown): payload is PublicMatchHistoryResponse {
-  return (
-    isRecord(payload) &&
-    typeof payload.match_id === "string" &&
-    typeof payload.status === "string" &&
-    typeof payload.current_tick === "number" &&
-    typeof payload.tick_interval_seconds === "number" &&
-    (payload.competitors === undefined ||
-      (Array.isArray(payload.competitors) && payload.competitors.every(isPublicCompetitorSummary))) &&
-    Array.isArray(payload.history) &&
-    payload.history.every(isMatchHistoryEntry)
-  );
-}
-
-function isMatchHistoryEntry(payload: unknown): payload is MatchHistoryEntry {
-  return isRecord(payload) && typeof payload.tick === "number";
-}
-
-function isMatchReplayTickResponse(payload: unknown): payload is MatchReplayTickResponse {
-  return (
-    isRecord(payload) &&
-    typeof payload.match_id === "string" &&
-    typeof payload.tick === "number" &&
-    isReplayFieldRecord(payload.state_snapshot) &&
-    isReplayFieldRecord(payload.orders) &&
-    (isReplayFieldRecord(payload.events) ||
-      (Array.isArray(payload.events) && payload.events.every(isReplayFieldRecord)))
-  );
-}
-
 function isMatchSummary(payload: unknown): payload is MatchSummary {
   if (!isRecord(payload)) {
     return false;
@@ -1521,94 +1051,8 @@ function isMatchSummary(payload: unknown): payload is MatchSummary {
   );
 }
 
-function isLeaderboardEntry(payload: unknown): payload is LeaderboardEntry {
-  if (!isRecord(payload)) {
-    return false;
-  }
-
-  const hasValidSharedFields =
-    typeof payload.rank === "number" &&
-    typeof payload.display_name === "string" &&
-    (payload.competitor_kind === "human" || payload.competitor_kind === "agent") &&
-    typeof payload.elo === "number" &&
-    typeof payload.provisional === "boolean" &&
-    typeof payload.matches_played === "number" &&
-    typeof payload.wins === "number" &&
-    typeof payload.losses === "number" &&
-    typeof payload.draws === "number";
-
-  if (!hasValidSharedFields) {
-    return false;
-  }
-
-  if (payload.competitor_kind === "human") {
-    return payload.agent_id === null && typeof payload.human_id === "string";
-  }
-
-  return typeof payload.agent_id === "string" && payload.human_id === null;
-}
-
-function isAgentProfileRating(payload: unknown): payload is AgentProfileRating {
-  return isRecord(payload) && typeof payload.elo === "number" && typeof payload.provisional === "boolean";
-}
-
-function isAgentProfileHistory(payload: unknown): payload is AgentProfileHistory {
-  return (
-    isRecord(payload) &&
-    typeof payload.matches_played === "number" &&
-    typeof payload.wins === "number" &&
-    typeof payload.losses === "number" &&
-    typeof payload.draws === "number"
-  );
-}
-
-function isCompletedMatchSummary(payload: unknown): payload is CompletedMatchSummary {
-  if (!isRecord(payload)) {
-    return false;
-  }
-
-  return (
-    typeof payload.match_id === "string" &&
-    typeof payload.map === "string" &&
-    typeof payload.final_tick === "number" &&
-    typeof payload.tick_interval_seconds === "number" &&
-    typeof payload.player_count === "number" &&
-    typeof payload.completed_at === "string" &&
-    (typeof payload.winning_alliance_name === "string" || payload.winning_alliance_name === null) &&
-    Array.isArray(payload.winning_player_display_names) &&
-    payload.winning_player_display_names.every((entry) => typeof entry === "string") &&
-    (payload.winning_competitors === undefined ||
-      (Array.isArray(payload.winning_competitors) &&
-        payload.winning_competitors.every(isPublicCompetitorSummary)))
-  );
-}
-
-function isPublicCompetitorSummary(payload: unknown): payload is {
-  display_name: string;
-  competitor_kind: "human" | "agent";
-  agent_id: string | null;
-  human_id: string | null;
-} {
-  if (!isRecord(payload)) {
-    return false;
-  }
-
-  const hasValidSharedFields =
-    typeof payload.display_name === "string" &&
-    (payload.competitor_kind === "human" || payload.competitor_kind === "agent");
-
-  if (!hasValidSharedFields) {
-    return false;
-  }
-
-  if (payload.competitor_kind === "human") {
-    return payload.agent_id === null && typeof payload.human_id === "string";
-  }
-
-  return typeof payload.agent_id === "string" && payload.human_id === null;
-}
-
 function isOrderBatch(payload: unknown): payload is {
+
   movements: { army_id: string; destination: string }[];
   recruitment: { city: string; troops: number }[];
   upgrades: { city: string; track: string; target_tier: number }[];
