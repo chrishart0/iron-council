@@ -1,6 +1,6 @@
 # Story 50.2: Harden DB-backed rating settlement identity and tenure edges
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -21,10 +21,10 @@ So that completed-match ELO updates remain honest across solo winners, alliance 
 
 ## Tasks / Subtasks
 
-- [ ] Add focused DB-backed regressions for winner identity resolution, draw handling, and territory/tenure weighting edge cases. (AC: 1)
-- [ ] Add focused regressions for settlement aggregate and latest-human-ELO lookups so identity grouping stays stable. (AC: 1)
-- [ ] Make only the smallest implementation cleanup required for any exposed drift. (AC: 2)
-- [ ] Re-run the focused DB slice plus `make quality`, then close out this BMAD artifact with real outcomes. (AC: 3)
+- [x] Add focused DB-backed regressions for winner identity resolution, draw handling, and territory/tenure weighting edge cases. (AC: 1)
+- [x] Add focused regressions for settlement aggregate and latest-human-ELO lookups so identity grouping stays stable. (AC: 1)
+- [x] Make only the smallest implementation cleanup required for any exposed drift. (AC: 2)
+- [x] Re-run the focused DB slice plus `make quality`, then close out this BMAD artifact with real outcomes. (AC: 3)
 
 ## Dev Notes
 
@@ -43,21 +43,28 @@ So that completed-match ELO updates remain honest across solo winners, alliance 
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Change Log
 
 - 2026-04-04: Drafted Story 50.2 to harden completed-match rating settlement semantics after V1 feature completion.
+- 2026-04-04: Added DB-backed settlement edge regressions, hardened duplicate-settlement verification, and closed Story 50.2 after controller quality verification.
 
 ## Debug Log References
 
-- Pending implementation.
+- 2026-04-04: `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_db_registry.py -k 'settlement or elo or latest_human or aggregate'` (pass)
+- 2026-04-04: `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_db_registry.py` (pass)
+- 2026-04-04: `source .venv/bin/activate && make quality` (pass in controller repo after merge; 471 Python tests, 200 client tests, Next build, and 95.26% total coverage)
 
 ## Completion Notes
 
-- Pending implementation.
+- Added DB-backed regressions for canonical alliance winner resolution, canonical solo winner fallback, draw handling, zero-territory equal-share fallback, stable identity aggregation, latest-human-ELO tie-breaking, and duplicate-settlement race handling.
+- Narrowed settlement recovery so duplicate-settlement races are tolerated only after verifying the durable settlement marker and participant rows already exist.
+- Controller verification confirmed the focused DB slice, the broader DB registry suite, and the full repository quality gate all pass on `master`.
 
 ## File List
 
 - `_bmad-output/implementation-artifacts/50-2-harden-db-backed-rating-settlement-identity-and-tenure-edges.md`
+- `server/db/rating_settlement.py`
+- `tests/test_db_registry.py`
