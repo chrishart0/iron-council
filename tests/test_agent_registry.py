@@ -3,11 +3,13 @@ from __future__ import annotations
 from server import agent_registry_diplomacy
 from server.agent_registry import (
     AdvancedMatchTick,
+    AllianceTransitionError,
     GroupChatAccessError,
     InMemoryMatchRegistry,
     MatchAccessError,
     MatchJoinError,
     MatchRecord,
+    TreatyTransitionError,
     build_seeded_agent_api_key,
     build_seeded_agent_profiles,
     build_seeded_match_records,
@@ -529,6 +531,310 @@ def test_registry_alliance_helpers_preserve_leader_reassignment_and_empty_remova
 
     assert removed_alliance is None
     assert registry.list_alliances(match_id="match-alpha") == []
+
+
+def test_registry_diplomacy_edges_preserve_input_errors_and_latest_tick_filtering() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    try:
+        registry.apply_alliance_action(
+            match_id="match-alpha",
+            action=AllianceActionRequest.model_construct(
+                match_id="match-alpha",
+                action="create",
+                alliance_id=None,
+                name=None,
+            ),
+            player_id="player-3",
+        )
+    except AllianceTransitionError as exc:
+        assert exc.code == "alliance_name_required"
+        assert exc.message == "Alliance creation requires a non-empty name."
+    else:
+        raise AssertionError("expected alliance create without a name to fail")
+
+    try:
+        registry.apply_alliance_action(
+            match_id="match-alpha",
+            action=AllianceActionRequest.model_construct(
+                match_id="match-alpha",
+                action="join",
+                alliance_id=None,
+                name=None,
+            ),
+            player_id="player-3",
+        )
+    except AllianceTransitionError as exc:
+        assert exc.code == "alliance_id_required"
+        assert exc.message == "Alliance join requires an alliance_id."
+    else:
+        raise AssertionError("expected alliance join without an id to fail")
+
+    try:
+        registry.apply_treaty_action(
+            match_id="match-alpha",
+            action=TreatyActionRequest(
+                match_id="match-alpha",
+                counterparty_id="player-3",
+                action="accept",
+                treaty_type="trade",
+            ),
+            player_id="player-2",
+        )
+    except TreatyTransitionError as exc:
+        assert exc.code == "unsupported_treaty_transition"
+        assert exc.message == "Cannot accept treaty 'trade' for players 'player-2' and 'player-3'."
+    else:
+        raise AssertionError("expected treaty accept without a proposal to fail")
+
+    try:
+        registry.apply_treaty_action(
+            match_id="match-alpha",
+            action=TreatyActionRequest(
+                match_id="match-alpha",
+                counterparty_id="player-3",
+                action="withdraw",
+                treaty_type="trade",
+            ),
+            player_id="player-2",
+        )
+    except TreatyTransitionError as exc:
+        assert exc.code == "treaty_not_found"
+        assert exc.message == (
+            "No treaty exists for players 'player-2' and 'player-3' with type 'trade'."
+        )
+    else:
+        raise AssertionError("expected treaty withdraw without an existing treaty to fail")
+
+    registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-3",
+            action="propose",
+            treaty_type="trade",
+        ),
+        player_id="player-2",
+    )
+    registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-2",
+            action="accept",
+            treaty_type="trade",
+        ),
+        player_id="player-3",
+    )
+
+    match = registry.get_match("match-alpha")
+    assert match is not None
+    match.state.tick = 143
+
+    withdrawn_treaty = registry.apply_treaty_action(
+        match_id="match-alpha",
+        action=TreatyActionRequest(
+            match_id="match-alpha",
+            counterparty_id="player-3",
+            action="withdraw",
+            treaty_type="trade",
+        ),
+        player_id="player-2",
+    )
+
+    assert withdrawn_treaty.status == "withdrawn"
+    assert [
+        treaty.model_dump(mode="json") for treaty in registry.list_treaties(match_id="match-alpha")
+    ] == [
+        {
+            "treaty_id": 0,
+            "player_a_id": "player-2",
+            "player_b_id": "player-3",
+            "treaty_type": "trade",
+            "status": "withdrawn",
+            "proposed_by": "player-2",
+            "proposed_tick": 142,
+            "signed_tick": 142,
+            "withdrawn_by": "player-2",
+            "withdrawn_tick": 143,
+        }
+    ]
+    assert [
+        treaty.treaty_id
+        for treaty in registry.list_treaties(match_id="match-alpha", since_tick=143)
+    ] == [0]
+    assert registry.list_treaties(match_id="match-alpha", since_tick=144) == []
+
+    try:
+        registry.apply_treaty_action(
+            match_id="match-alpha",
+            action=TreatyActionRequest(
+                match_id="match-alpha",
+                counterparty_id="player-2",
+                action="accept",
+                treaty_type="trade",
+            ),
+            player_id="player-3",
+        )
+    except TreatyTransitionError as exc:
+        assert exc.code == "unsupported_treaty_transition"
+        assert exc.message == "Cannot accept treaty 'trade' for players 'player-2' and 'player-3'."
+    else:
+        raise AssertionError("expected treaty accept after withdrawal to fail")
+
+
+def test_registry_record_message_rejects_invalid_recipients_without_mutating_history() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    before_state = registry.snapshot_match("match-alpha")
+
+    try:
+        registry.record_message(
+            match_id="match-alpha",
+            message=MatchMessageCreateRequest.model_validate(
+                {
+                    "match_id": "match-alpha",
+                    "tick": 142,
+                    "channel": "world",
+                    "recipient_id": "player-2",
+                    "content": "This should fail.",
+                }
+            ),
+            sender_id="player-1",
+        )
+    except MatchAccessError as exc:
+        assert exc.code == "unsupported_recipient"
+        assert exc.message == "World messages do not support recipient_id."
+    else:
+        raise AssertionError("expected world message recipient validation to fail")
+
+    try:
+        registry.record_message(
+            match_id="match-alpha",
+            message=MatchMessageCreateRequest.model_validate(
+                {
+                    "match_id": "match-alpha",
+                    "tick": 142,
+                    "channel": "direct",
+                    "recipient_id": "player-missing",
+                    "content": "This should also fail.",
+                }
+            ),
+            sender_id="player-1",
+        )
+    except MatchAccessError as exc:
+        assert exc.code == "unsupported_recipient"
+        assert exc.message == (
+            "Direct messages require a recipient_id for a player in match 'match-alpha'."
+        )
+    else:
+        raise AssertionError("expected direct message recipient validation to fail")
+
+    after_state = registry.snapshot_match("match-alpha")
+    assert after_state == before_state
+
+
+def test_registry_briefing_and_group_message_views_hide_non_member_chat_activity() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    visible_group_chat = registry.create_group_chat(
+        match_id="match-alpha",
+        request=GroupChatCreateRequest(
+            match_id="match-alpha",
+            tick=142,
+            name="Visible Channel",
+            member_ids=["player-3"],
+        ),
+        creator_id="player-2",
+    )
+    hidden_group_chat = registry.create_group_chat(
+        match_id="match-alpha",
+        request=GroupChatCreateRequest(
+            match_id="match-alpha",
+            tick=142,
+            name="Hidden Channel",
+            member_ids=["player-4"],
+        ),
+        creator_id="player-1",
+    )
+    registry.record_group_chat_message(
+        match_id="match-alpha",
+        group_chat_id=visible_group_chat.group_chat_id,
+        message=GroupChatMessageCreateRequest(
+            match_id="match-alpha",
+            tick=142,
+            content="Visible note.",
+        ),
+        sender_id="player-2",
+    )
+    registry.record_group_chat_message(
+        match_id="match-alpha",
+        group_chat_id=hidden_group_chat.group_chat_id,
+        message=GroupChatMessageCreateRequest(
+            match_id="match-alpha",
+            tick=142,
+            content="Hidden note.",
+        ),
+        sender_id="player-1",
+    )
+    registry.record_message(
+        match_id="match-alpha",
+        message=MatchMessageCreateRequest.model_validate(
+            {
+                "match_id": "match-alpha",
+                "tick": 142,
+                "channel": "direct",
+                "recipient_id": "player-2",
+                "content": "Private ping.",
+            }
+        ),
+        sender_id="player-1",
+    )
+
+    briefing = registry.list_briefing_messages(
+        match_id="match-alpha",
+        player_id="player-3",
+        since_tick=142,
+    )
+
+    assert [message.content for message in briefing.direct] == []
+    assert [message.content for message in briefing.world] == []
+    assert [
+        (message.group_chat_id, message.content)
+        for message in registry.list_visible_group_chat_messages(
+            match_id="match-alpha",
+            player_id="player-3",
+            since_tick=142,
+        )
+    ] == [(visible_group_chat.group_chat_id, "Visible note.")]
+    assert [(message.group_chat_id, message.content) for message in briefing.group] == [
+        (visible_group_chat.group_chat_id, "Visible note.")
+    ]
+
+    try:
+        registry.record_group_chat_message(
+            match_id="match-alpha",
+            group_chat_id=hidden_group_chat.group_chat_id,
+            message=GroupChatMessageCreateRequest(
+                match_id="match-alpha",
+                tick=142,
+                content="Intrusion attempt.",
+            ),
+            sender_id="player-3",
+        )
+    except GroupChatAccessError as exc:
+        assert exc.code == "group_chat_not_visible"
+        assert exc.message == (
+            f"Group chat '{hidden_group_chat.group_chat_id}' is not visible to player 'player-3'."
+        )
+    else:
+        raise AssertionError("expected hidden group chat send to fail for non-member")
 
 
 def test_get_agent_profile_returns_stable_seeded_placeholder_shape() -> None:

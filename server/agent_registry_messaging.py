@@ -24,9 +24,20 @@ from server.models.api import (
 def record_message(
     *,
     record: MatchRecord,
+    match_id: str,
     message: MatchMessageCreateRequest,
     sender_id: str,
 ) -> MatchMessageRecord:
+    validate_command_message(
+        record=record,
+        match_id=match_id,
+        message=AgentCommandMessage(
+            channel=message.channel,
+            recipient_id=message.recipient_id,
+            content=message.content,
+        ),
+        player_id=sender_id,
+    )
     stored_message = append_message(
         record=record,
         channel=message.channel,

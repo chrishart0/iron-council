@@ -142,6 +142,7 @@ def apply_command_envelope_mutations(
 
         accepted_message = agent_registry_messaging.record_message(
             record=record,
+            match_id=match_id,
             message=MatchMessageCreateRequest(
                 match_id=match_id,
                 tick=command.tick,

@@ -1,6 +1,6 @@
 # Story 50.1: Harden in-memory diplomacy and messaging contract edges
 
-Status: drafted
+Status: in_progress
 
 ## Story
 
@@ -21,9 +21,9 @@ So that treaty/alliance transitions and chat visibility rules stay deterministic
 
 ## Tasks / Subtasks
 
-- [ ] Add focused regressions for alliance/treaty transition edge cases and `since_tick` filtering at the `AgentRegistry` boundary. (AC: 1)
-- [ ] Add focused regressions for messaging recipient validation, group membership enforcement, and briefing visibility/grouping behavior. (AC: 2)
-- [ ] Make the smallest implementation cleanup needed for any exposed drift, keeping the registry surface boring and convention-aligned. (AC: 1, 2)
+- [x] Add focused regressions for alliance/treaty transition edge cases and `since_tick` filtering at the `AgentRegistry` boundary. (AC: 1)
+- [x] Add focused regressions for messaging recipient validation, group membership enforcement, and briefing visibility/grouping behavior. (AC: 2)
+- [x] Make the smallest implementation cleanup needed for any exposed drift, keeping the registry surface boring and convention-aligned. (AC: 1, 2)
 - [ ] Re-run the focused test slice plus `make quality`, then close out this BMAD artifact with real outcomes. (AC: 3)
 
 ## Dev Notes
@@ -50,15 +50,21 @@ So that treaty/alliance transitions and chat visibility rules stay deterministic
 ## Change Log
 
 - 2026-04-04: Drafted Story 50.1 to harden high-risk in-memory diplomacy and messaging behaviors after the guided-agent milestone.
+- 2026-04-04: Added a focused AgentRegistry regression for unsupported treaty withdrawal without an existing treaty and verified the full `tests/test_agent_registry.py` contract slice on `story/50-1-contract-hardening`.
 
 ## Debug Log References
 
-- Pending implementation.
+- 2026-04-04: `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_agent_registry.py -k 'treaty or alliance or message or group_chat or briefing'` (pass)
+- 2026-04-04: `uv run pytest --override-ini addopts='-q --strict-config --strict-markers' tests/test_agent_registry.py` (pass)
+- 2026-04-04: `make quality` (fails in baseline mypy environment with widespread third-party import resolution errors such as missing `pydantic`, `fastapi`, and `sqlalchemy` stubs; not caused by this story-local regression)
 
 ## Completion Notes
 
-- Pending implementation.
+- Existing production behavior already rejected unsupported withdraws at the AgentRegistry boundary with `treaty_not_found`; the follow-up only needed a missing regression test, not a production change.
+- The unsupported treaty withdraw regression stays story-local in `tests/test_agent_registry.py` and leaves unrelated legacy test coverage untouched.
+- Story closeout remains blocked on the repo-wide `make quality` failure, so the artifact stays in progress despite the targeted registry regressions passing.
 
 ## File List
 
 - `_bmad-output/implementation-artifacts/50-1-harden-in-memory-diplomacy-and-messaging-contract-edges.md`
+- `tests/test_agent_registry.py`

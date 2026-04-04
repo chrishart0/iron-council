@@ -364,6 +364,7 @@ class InMemoryMatchRegistry:
     ) -> MatchMessageRecord:
         return agent_registry_messaging.record_message(
             record=self._matches[match_id],
+            match_id=match_id,
             message=message,
             sender_id=sender_id,
         )
