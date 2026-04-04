@@ -19,6 +19,7 @@ from server.models.api import (
 )
 from server.models.domain import MatchStatus
 
+from .abuse import public_entrypoint_abuse_dependency, public_entrypoint_abuse_error_responses
 from .errors import API_ERROR_RESPONSE_SCHEMA, ApiError
 
 RegistryProvider = Callable[..., InMemoryMatchRegistry]
@@ -36,7 +37,12 @@ def build_public_match_router(
     router = APIRouter()
     registry_dependency = Depends(match_registry_provider)
 
-    @router.get("/matches", response_model=MatchListResponse)
+    @router.get(
+        "/matches",
+        response_model=MatchListResponse,
+        responses=public_entrypoint_abuse_error_responses(),
+        dependencies=[public_entrypoint_abuse_dependency],
+    )
     async def list_matches(
         registry: InMemoryMatchRegistry = registry_dependency,
     ) -> MatchListResponse:

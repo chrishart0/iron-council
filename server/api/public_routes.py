@@ -6,6 +6,7 @@ from fastapi import APIRouter, FastAPI
 
 from server.models.api import RuntimeObservabilityResponse
 
+from .abuse import public_entrypoint_abuse_dependency, public_entrypoint_abuse_error_responses
 from .public_history_routes import build_public_history_router
 from .public_match_routes import (
     PublicRosterBuilder,
@@ -33,7 +34,12 @@ def register_public_metadata_routes(
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/health/runtime", response_model=RuntimeObservabilityResponse)
+    @app.get(
+        "/health/runtime",
+        response_model=RuntimeObservabilityResponse,
+        responses=public_entrypoint_abuse_error_responses(),
+        dependencies=[public_entrypoint_abuse_dependency],
+    )
     async def runtime_health() -> RuntimeObservabilityResponse:
         return runtime_status_provider()
 

@@ -230,3 +230,115 @@ async def test_mixed_auth_write_routes_preserve_invalid_api_key_semantics_with_b
     assert first_response.json() == expected_error
     assert second_response.status_code == HTTPStatus.UNAUTHORIZED
     assert second_response.json() == expected_error
+
+
+@pytest.mark.asyncio
+async def test_public_match_list_route_rate_limits_repeated_requests_with_structured_429() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    app = create_app(
+        match_registry=registry,
+        settings_override={
+            "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT": "2",
+            "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS": "60",
+        },
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        first_response = await client.get("/api/v1/matches")
+        second_response = await client.get("/api/v1/matches")
+        third_response = await client.get("/api/v1/matches")
+
+    assert first_response.status_code == HTTPStatus.OK
+    assert second_response.status_code == HTTPStatus.OK
+    assert third_response.status_code == HTTPStatus.TOO_MANY_REQUESTS
+    assert third_response.json() == {
+        "error": {
+            "code": "rate_limit_exceeded",
+            "message": (
+                "Public entrypoint burst limit exceeded for this caller on this route. "
+                "Retry after the current 60-second window."
+            ),
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_runtime_health_route_rate_limits_repeated_requests_with_structured_429() -> None:
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    app = create_app(
+        match_registry=registry,
+        settings_override={
+            "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT": "1",
+            "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS": "60",
+        },
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        first_response = await client.get("/health/runtime")
+        second_response = await client.get("/health/runtime")
+
+    assert first_response.status_code == HTTPStatus.OK
+    assert second_response.status_code == HTTPStatus.TOO_MANY_REQUESTS
+    assert second_response.json() == {
+        "error": {
+            "code": "rate_limit_exceeded",
+            "message": (
+                "Public entrypoint burst limit exceeded for this caller on this route. "
+                "Retry after the current 60-second window."
+            ),
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_public_entrypoint_rate_limit_uses_direct_client_identity_over_forwarded_for() -> (
+    None
+):
+    registry = InMemoryMatchRegistry()
+    for record in build_seeded_match_records():
+        registry.seed_match(record)
+
+    app = create_app(
+        match_registry=registry,
+        settings_override={
+            "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT": "1",
+            "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS": "60",
+        },
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        first_response = await client.get(
+            "/api/v1/matches",
+            headers={"X-Forwarded-For": "198.51.100.10"},
+        )
+        second_response = await client.get(
+            "/api/v1/matches",
+            headers={"X-Forwarded-For": "203.0.113.77"},
+        )
+
+    assert first_response.status_code == HTTPStatus.OK
+    assert second_response.status_code == HTTPStatus.TOO_MANY_REQUESTS
+    assert second_response.json() == {
+        "error": {
+            "code": "rate_limit_exceeded",
+            "message": (
+                "Public entrypoint burst limit exceeded for this caller on this route. "
+                "Retry after the current 60-second window."
+            ),
+        }
+    }

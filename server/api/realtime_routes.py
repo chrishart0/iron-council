@@ -10,6 +10,7 @@ from server.agent_registry import InMemoryMatchRegistry
 from server.models.realtime import RealtimeViewerRole
 from server.websocket import MatchWebSocketManager, build_match_realtime_envelope
 
+from .abuse import enforce_websocket_handshake_abuse
 from .app_services import AppServices
 from .errors import ApiError
 
@@ -32,12 +33,12 @@ def register_realtime_routes(
         player_id: str | None = Query(default=None),
         token: str | None = Query(default=None),
     ) -> None:
-        record = registry.get_match(match_id)
-        if record is None:
-            await websocket.close(code=1008, reason="match_not_found")
-            return
-
         try:
+            enforce_websocket_handshake_abuse(websocket)
+            record = registry.get_match(match_id)
+            if record is None:
+                await websocket.close(code=1008, reason="match_not_found")
+                return
             if viewer not in {"player", "spectator"}:
                 raise ApiError(
                     status_code=HTTPStatus.BAD_REQUEST,

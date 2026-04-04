@@ -7127,6 +7127,63 @@ def test_match_websocket_rejects_invalid_viewer_and_unknown_match(
             pass
 
 
+def test_match_websocket_rate_limit_is_shared_by_canonical_and_legacy_routes(
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    app = create_app(
+        match_registry=seeded_registry,
+        settings_override={
+            "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT": "1",
+            "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS": "60",
+            "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+            "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+            "HUMAN_JWT_AUDIENCE": "authenticated",
+            "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+        },
+    )
+
+    with TestClient(app, base_url="http://testserver") as client:
+        with client.websocket_connect("/ws/match/match-alpha?viewer=spectator") as websocket:
+            initial_payload = websocket.receive_json()
+
+        assert initial_payload["type"] == "tick_update"
+        assert initial_payload["data"]["viewer_role"] == "spectator"
+
+        with pytest.raises(WebSocketDisconnect) as throttled_connection:
+            with client.websocket_connect("/ws/matches/match-alpha?viewer=spectator"):
+                pass
+
+    assert throttled_connection.value.code == 1008
+
+
+def test_match_websocket_rate_limit_applies_before_unknown_match_lookup(
+    seeded_registry: InMemoryMatchRegistry,
+) -> None:
+    app = create_app(
+        match_registry=seeded_registry,
+        settings_override={
+            "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT": "1",
+            "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS": "60",
+            "HUMAN_JWT_SECRET": "test-human-secret-key-material-1234",
+            "HUMAN_JWT_ISSUER": "https://supabase.test/auth/v1",
+            "HUMAN_JWT_AUDIENCE": "authenticated",
+            "HUMAN_JWT_REQUIRED_ROLE": "authenticated",
+        },
+    )
+
+    with TestClient(app, base_url="http://testserver") as client:
+        with pytest.raises(WebSocketDisconnect) as unknown_match_disconnect:
+            with client.websocket_connect("/ws/match/match-missing?viewer=spectator"):
+                pass
+
+        with pytest.raises(WebSocketDisconnect) as throttled_connection:
+            with client.websocket_connect("/ws/match/match-alpha?viewer=spectator"):
+                pass
+
+    assert unknown_match_disconnect.value.code == 1008
+    assert throttled_connection.value.code == 1008
+
+
 def test_world_message_broadcasts_refresh_to_connected_player_and_spectator(
     websocket_client: TestClient,
 ) -> None:
