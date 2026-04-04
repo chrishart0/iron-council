@@ -28,6 +28,7 @@ from server.api import (
 )
 from server.auth import hash_api_key
 from server.db import tick_persistence as db_tick_persistence_module
+from server.db.guidance import append_owned_agent_guidance
 from server.db.identity import build_non_seeded_display_name
 from server.db.registry import load_match_registry_from_database, persist_advanced_match_tick
 from server.db.testing import provision_seeded_database
@@ -2035,6 +2036,17 @@ async def test_owned_agent_guided_session_route_returns_owned_agent_snapshot_and
         ),
         sender_id="player-2",
     )
+    append_owned_agent_guidance(
+        database_url=database_url,
+        match_id=record.match_id,
+        owner_user_id="00000000-0000-0000-0000-000000000302",
+        agent_player_id=build_persisted_player_id(
+            match_id=record.match_id,
+            public_player_id="player-2",
+        ),
+        tick=record.state.tick,
+        content="Hold London unless the coast opens.",
+    )
     registry.apply_alliance_action(
         match_id=record.match_id,
         action=AllianceActionRequest.model_validate(
@@ -2112,6 +2124,16 @@ async def test_owned_agent_guided_session_route_returns_owned_agent_snapshot_and
         "upgrades": [],
         "transfers": [],
     }
+    assert payload["guidance"] == [
+        {
+            "guidance_id": payload["guidance"][0]["guidance_id"],
+            "match_id": "00000000-0000-0000-0000-000000000101",
+            "player_id": "player-2",
+            "tick": 142,
+            "content": "Hold London unless the coast opens.",
+            "created_at": payload["guidance"][0]["created_at"],
+        }
+    ]
     assert payload["group_chats"] == [
         {
             "group_chat_id": "group-chat-1",

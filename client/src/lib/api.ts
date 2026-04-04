@@ -31,6 +31,11 @@ import type {
   MatchReplayTickResponse,
   MessageAcceptanceResponse,
   OrderAcceptanceResponse,
+  OwnedAgentGuidanceAcceptanceResponse,
+  OwnedAgentGuidanceCreateRequest,
+  OwnedAgentGuidedSessionResponse,
+  OwnedAgentOverrideAcceptanceResponse,
+  OwnedAgentOverrideCreateRequest,
   OwnedApiKeyCreateResponse,
   OwnedApiKeyListResponse,
   OwnedApiKeySummary,
@@ -42,6 +47,7 @@ import type {
   PublicHumanProfileResponse,
   PublicMatchDetailResponse,
   PublicMatchRosterRow,
+  GuidedSessionGuidanceRecord,
   ReplayFieldRecord,
   ReplayFieldValue,
   ResourceState,
@@ -91,6 +97,7 @@ const MESSAGE_SUBMISSION_ERROR_MESSAGE = "Unable to submit message right now.";
 const GROUP_CHAT_CREATE_ERROR_MESSAGE = "Unable to create group chat right now.";
 const DIPLOMACY_SUBMISSION_ERROR_MESSAGE = "Unable to submit diplomacy action right now.";
 const API_KEY_LIFECYCLE_ERROR_MESSAGE = "Unable to manage account API keys right now.";
+const GUIDED_AGENT_CONTROLS_ERROR_MESSAGE = "Unable to load guided agent controls right now.";
 const HUMAN_NOT_JOINED_MESSAGE =
   "Join this match as a human player before opening the authenticated live page.";
 const INVALID_WEBSOCKET_AUTH_MESSAGE =
@@ -231,6 +238,17 @@ export class ApiKeyLifecycleError extends Error {
   ) {
     super(message);
     this.name = "ApiKeyLifecycleError";
+  }
+}
+
+export class GuidedAgentControlsError extends Error {
+  constructor(
+    message = GUIDED_AGENT_CONTROLS_ERROR_MESSAGE,
+    readonly code: string = "guided_agent_controls_unavailable",
+    readonly statusCode: number = 500
+  ) {
+    super(message);
+    this.name = "GuidedAgentControlsError";
   }
 }
 
@@ -778,6 +796,96 @@ export async function submitAllianceAction(
   return handleDiplomacySubmissionResponse(response, isAllianceActionAcceptanceResponse);
 }
 
+export async function fetchOwnedAgentGuidedSession(
+  matchId: string,
+  agentId: string,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<OwnedAgentGuidedSessionResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(matchId)}/agents/${encodeURIComponent(agentId)}/guided-session`,
+    {
+      cache: "no-store",
+      headers: buildAuthenticatedHeaders(bearerToken)
+    }
+  ).catch(() => {
+    throw new GuidedAgentControlsError(
+      GUIDED_AGENT_CONTROLS_ERROR_MESSAGE,
+      "guided_agent_controls_unavailable",
+      500
+    );
+  });
+
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    throw toGuidedAgentControlsError(payload, response.status);
+  }
+
+  const payload: unknown = await response.json();
+  if (!isOwnedAgentGuidedSessionResponse(payload)) {
+    throw new GuidedAgentControlsError(
+      GUIDED_AGENT_CONTROLS_ERROR_MESSAGE,
+      "invalid_guided_session_response",
+      response.status
+    );
+  }
+
+  return payload;
+}
+
+export async function submitOwnedAgentGuidance(
+  request: OwnedAgentGuidanceCreateRequest,
+  agentId: string,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<OwnedAgentGuidanceAcceptanceResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(request.match_id)}/agents/${encodeURIComponent(agentId)}/guidance`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: buildAuthenticatedJsonHeaders(bearerToken),
+      body: JSON.stringify(request)
+    }
+  ).catch(() => {
+    throw new GuidedAgentControlsError(
+      GUIDED_AGENT_CONTROLS_ERROR_MESSAGE,
+      "guided_agent_controls_unavailable",
+      500
+    );
+  });
+
+  return handleGuidedAgentControlsResponse(response, isOwnedAgentGuidanceAcceptanceResponse);
+}
+
+export async function submitOwnedAgentOverride(
+  request: OwnedAgentOverrideCreateRequest,
+  agentId: string,
+  bearerToken: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiBaseUrl?: string }
+): Promise<OwnedAgentOverrideAcceptanceResponse> {
+  const response = await fetchImpl(
+    `${resolveApiBaseUrl(options?.apiBaseUrl)}/api/v1/matches/${encodeURIComponent(request.match_id)}/agents/${encodeURIComponent(agentId)}/override`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: buildAuthenticatedJsonHeaders(bearerToken),
+      body: JSON.stringify(request)
+    }
+  ).catch(() => {
+    throw new GuidedAgentControlsError(
+      GUIDED_AGENT_CONTROLS_ERROR_MESSAGE,
+      "guided_agent_controls_unavailable",
+      500
+    );
+  });
+
+  return handleGuidedAgentControlsResponse(response, isOwnedAgentOverrideAcceptanceResponse);
+}
+
 export function buildSpectatorMatchWebSocketUrl(
   matchId: string,
   options?: { apiBaseUrl?: string }
@@ -963,6 +1071,27 @@ async function handleApiKeyLifecycleResponse<T>(
   return payload;
 }
 
+async function handleGuidedAgentControlsResponse<T>(
+  response: ResponseLike,
+  validator: (payload: unknown) => payload is T
+): Promise<T> {
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    throw toGuidedAgentControlsError(payload, response.status);
+  }
+
+  const payload: unknown = await response.json();
+  if (!validator(payload)) {
+    throw new GuidedAgentControlsError(
+      GUIDED_AGENT_CONTROLS_ERROR_MESSAGE,
+      "invalid_guided_response",
+      response.status
+    );
+  }
+
+  return payload;
+}
+
 type ResponseLike = {
   ok: boolean;
   status: number;
@@ -1032,6 +1161,18 @@ function toApiKeyLifecycleError(payload: unknown, status: number): ApiKeyLifecyc
   return new ApiKeyLifecycleError(
     API_KEY_LIFECYCLE_ERROR_MESSAGE,
     "api_key_lifecycle_unavailable",
+    status
+  );
+}
+
+function toGuidedAgentControlsError(payload: unknown, status: number): GuidedAgentControlsError {
+  if (isApiErrorEnvelope(payload)) {
+    return new GuidedAgentControlsError(payload.error.message, payload.error.code, status);
+  }
+
+  return new GuidedAgentControlsError(
+    GUIDED_AGENT_CONTROLS_ERROR_MESSAGE,
+    "guided_agent_controls_unavailable",
     status
   );
 }
@@ -1164,6 +1305,55 @@ function isOwnedApiKeySummary(payload: unknown): payload is OwnedApiKeySummary {
     typeof payload.elo_rating === "number" &&
     typeof payload.is_active === "boolean" &&
     typeof payload.created_at === "string"
+  );
+}
+
+function isOwnedAgentGuidedSessionResponse(payload: unknown): payload is OwnedAgentGuidedSessionResponse {
+  return (
+    isRecord(payload) &&
+    typeof payload.match_id === "string" &&
+    typeof payload.agent_id === "string" &&
+    typeof payload.player_id === "string" &&
+    isPlayerMatchState(payload.state) &&
+    isOrderBatch(payload.queued_orders) &&
+    Array.isArray(payload.guidance) &&
+    payload.guidance.every(isGuidedSessionGuidanceRecord) &&
+    Array.isArray(payload.group_chats) &&
+    payload.group_chats.every(isGroupChatRecord) &&
+    isAgentBriefingMessageBuckets(payload.messages) &&
+    isGuidedSessionRecentActivity(payload.recent_activity)
+  );
+}
+
+function isOwnedAgentGuidanceAcceptanceResponse(
+  payload: unknown
+): payload is OwnedAgentGuidanceAcceptanceResponse {
+  return (
+    isRecord(payload) &&
+    payload.status === "accepted" &&
+    typeof payload.guidance_id === "string" &&
+    typeof payload.match_id === "string" &&
+    typeof payload.agent_id === "string" &&
+    typeof payload.player_id === "string" &&
+    typeof payload.tick === "number" &&
+    typeof payload.content === "string"
+  );
+}
+
+function isOwnedAgentOverrideAcceptanceResponse(
+  payload: unknown
+): payload is OwnedAgentOverrideAcceptanceResponse {
+  return (
+    isRecord(payload) &&
+    payload.status === "accepted" &&
+    typeof payload.override_id === "string" &&
+    typeof payload.match_id === "string" &&
+    typeof payload.agent_id === "string" &&
+    typeof payload.player_id === "string" &&
+    typeof payload.tick === "number" &&
+    typeof payload.submission_index === "number" &&
+    typeof payload.superseded_submission_count === "number" &&
+    isOrderBatch(payload.orders)
   );
 }
 
@@ -1403,6 +1593,96 @@ function isPublicCompetitorSummary(payload: unknown): payload is {
   return typeof payload.agent_id === "string" && payload.human_id === null;
 }
 
+function isOrderBatch(payload: unknown): payload is {
+  movements: { army_id: string; destination: string }[];
+  recruitment: { city: string; troops: number }[];
+  upgrades: { city: string; track: string; target_tier: number }[];
+  transfers: { to: string; resource: string; amount: number }[];
+} {
+  return (
+    isRecord(payload) &&
+    Array.isArray(payload.movements) &&
+    payload.movements.every(isMovementOrder) &&
+    Array.isArray(payload.recruitment) &&
+    payload.recruitment.every(isRecruitmentOrder) &&
+    Array.isArray(payload.upgrades) &&
+    payload.upgrades.every(isUpgradeOrder) &&
+    Array.isArray(payload.transfers) &&
+    payload.transfers.every(isTransferOrder)
+  );
+}
+
+function isMovementOrder(payload: unknown): payload is { army_id: string; destination: string } {
+  return isRecord(payload) && typeof payload.army_id === "string" && typeof payload.destination === "string";
+}
+
+function isRecruitmentOrder(payload: unknown): payload is { city: string; troops: number } {
+  return isRecord(payload) && typeof payload.city === "string" && typeof payload.troops === "number";
+}
+
+function isUpgradeOrder(payload: unknown): payload is {
+  city: string;
+  track: string;
+  target_tier: number;
+} {
+  return (
+    isRecord(payload) &&
+    typeof payload.city === "string" &&
+    typeof payload.track === "string" &&
+    typeof payload.target_tier === "number"
+  );
+}
+
+function isTransferOrder(payload: unknown): payload is { to: string; resource: string; amount: number } {
+  return (
+    isRecord(payload) &&
+    typeof payload.to === "string" &&
+    typeof payload.resource === "string" &&
+    typeof payload.amount === "number"
+  );
+}
+
+function isGuidedSessionGuidanceRecord(payload: unknown): payload is GuidedSessionGuidanceRecord {
+  return (
+    isRecord(payload) &&
+    typeof payload.guidance_id === "string" &&
+    typeof payload.match_id === "string" &&
+    typeof payload.player_id === "string" &&
+    typeof payload.tick === "number" &&
+    typeof payload.content === "string" &&
+    typeof payload.created_at === "string"
+  );
+}
+
+function isGuidedSessionRecentActivity(payload: unknown): payload is {
+  alliances: AllianceRecord[];
+  treaties: TreatyRecord[];
+} {
+  return (
+    isRecord(payload) &&
+    Array.isArray(payload.alliances) &&
+    payload.alliances.every(isAllianceRecord) &&
+    Array.isArray(payload.treaties) &&
+    payload.treaties.every(isTreatyRecord)
+  );
+}
+
+function isAgentBriefingMessageBuckets(payload: unknown): payload is {
+  world: WorldMessageRecord[];
+  direct: DirectMessageRecord[];
+  group: GroupMessageRecord[];
+} {
+  return (
+    isRecord(payload) &&
+    Array.isArray(payload.world) &&
+    payload.world.every(isWorldMessageRecord) &&
+    Array.isArray(payload.direct) &&
+    payload.direct.every(isDirectMessageRecord) &&
+    Array.isArray(payload.group) &&
+    payload.group.every(isGroupMessageRecord)
+  );
+}
+
 function isPublicMatchDetailResponse(payload: unknown): payload is PublicMatchDetailResponse {
   if (!isRecord(payload)) {
     return false;
@@ -1425,7 +1705,9 @@ function isRosterRow(payload: unknown): payload is PublicMatchRosterRow {
   return (
     typeof payload.player_id === "string" &&
     typeof payload.display_name === "string" &&
-    (payload.competitor_kind === "human" || payload.competitor_kind === "agent")
+    (payload.competitor_kind === "human" || payload.competitor_kind === "agent") &&
+    (payload.agent_id === undefined || payload.agent_id === null || typeof payload.agent_id === "string") &&
+    (payload.human_id === undefined || payload.human_id === null || typeof payload.human_id === "string")
   );
 }
 

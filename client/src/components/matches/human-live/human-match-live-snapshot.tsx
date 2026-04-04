@@ -3,9 +3,12 @@
 import { useEffect, useState } from "react";
 import {
   CommandSubmissionError,
+  GuidedAgentControlsError,
   DiplomacySubmissionError,
   GroupChatCreateError,
   MessageSubmissionError,
+  submitOwnedAgentGuidance,
+  submitOwnedAgentOverride,
   submitAllianceAction,
   submitGroupChatCreate,
   submitGroupChatMessage,
@@ -36,11 +39,13 @@ import {
 import { HumanLiveDiplomacyPanel } from "./human-live-diplomacy-panel";
 import { HumanLiveMessagingPanel } from "./human-live-messaging-panel";
 import { HumanLiveOrdersPanel } from "./human-live-orders-panel";
+import { HumanLiveGuidedPanel } from "./human-live-guided-panel";
 import { HumanMatchLiveSelectionPanel } from "./human-match-live-selection-panel";
 import { HumanMatchLiveSummaryPanels } from "./human-match-live-summary-panels";
 import type {
   AllianceDraftState,
   AsyncSubmissionFeedback,
+  GuidedSessionState,
   GroupChatCreateDraftState,
   LiveMessagingChannel,
   MapSelection,
@@ -345,13 +350,17 @@ export function HumanMatchLiveSnapshot({
   mapLayout,
   apiBaseUrl,
   bearerToken,
-  liveStatus
+  liveStatus,
+  guidedState,
+  refreshGuidedSession
 }: {
   envelope: PlayerMatchEnvelope;
   mapLayout: BritainMapLayout;
   apiBaseUrl: string;
   bearerToken: string | null;
   liveStatus: "live" | "not_live";
+  guidedState: GuidedSessionState;
+  refreshGuidedSession: () => void;
 }) {
   const [drafts, setDrafts] = useState<OrderDraftState>(() => emptyDraftState());
   const [submissionFeedback, setSubmissionFeedback] = useState<SubmissionFeedback>({
@@ -374,6 +383,13 @@ export function HumanMatchLiveSnapshot({
     emptyGroupChatCreateDraft()
   );
   const [groupChatCreateFeedback, setGroupChatCreateFeedback] = useState<AsyncSubmissionFeedback>({
+    status: "idle"
+  });
+  const [guidanceDraft, setGuidanceDraft] = useState("");
+  const [guidanceFeedback, setGuidanceFeedback] = useState<AsyncSubmissionFeedback>({
+    status: "idle"
+  });
+  const [guidedOverrideFeedback, setGuidedOverrideFeedback] = useState<AsyncSubmissionFeedback>({
     status: "idle"
   });
   const [treatyDraft, setTreatyDraft] = useState<TreatyDraftState>(() =>
@@ -461,6 +477,17 @@ export function HumanMatchLiveSnapshot({
     liveStatus === "live" && bearerToken !== null && treatySubmissionFeedback.status !== "submitting";
   const canSubmitAlliance =
     liveStatus === "live" && bearerToken !== null && allianceSubmissionFeedback.status !== "submitting";
+  const canSubmitGuidance =
+    liveStatus === "live" &&
+    bearerToken !== null &&
+    guidedState.status === "ready" &&
+    guidanceFeedback.status !== "submitting" &&
+    guidanceDraft.trim().length > 0;
+  const canSubmitGuidedOverride =
+    liveStatus === "live" &&
+    bearerToken !== null &&
+    guidedState.status === "ready" &&
+    guidedOverrideFeedback.status !== "submitting";
 
   useEffect(() => {
     setMessageDraft((currentDraft) => {
@@ -765,6 +792,11 @@ export function HumanMatchLiveSnapshot({
       ...currentDraft,
       ...updates
     }));
+  };
+
+  const updateGuidanceDraft = (value: string) => {
+    setGuidanceFeedback({ status: "idle" });
+    setGuidanceDraft(value);
   };
 
   const selectCity = (city: MatchLiveMapCityDatum) => {
@@ -1175,6 +1207,147 @@ export function HumanMatchLiveSnapshot({
     }
   };
 
+  const submitGuidanceDraft = async () => {
+    if (bearerToken === null) {
+      setGuidanceFeedback({
+        status: "error",
+        message: "A stored bearer token is required before sending guidance.",
+        code: "auth_missing",
+        statusCode: 401
+      });
+      return;
+    }
+
+    if (guidedState.status !== "ready") {
+      setGuidanceFeedback({
+        status: "error",
+        message: "Guided controls are not ready yet.",
+        code: "guided_controls_unavailable",
+        statusCode: 409
+      });
+      return;
+    }
+
+    const content = guidanceDraft.trim();
+    if (content.length === 0) {
+      setGuidanceFeedback({
+        status: "error",
+        message: "Guidance message is required before submitting.",
+        code: "invalid_guidance_draft",
+        statusCode: 400
+      });
+      return;
+    }
+
+    setGuidanceFeedback({ status: "submitting" });
+
+    try {
+      const accepted = await submitOwnedAgentGuidance(
+        {
+          match_id: envelope.data.match_id,
+          tick: envelope.data.state.tick,
+          content
+        },
+        guidedState.agentId,
+        bearerToken,
+        fetch,
+        { apiBaseUrl }
+      );
+
+      setGuidanceDraft("");
+      setGuidanceFeedback({
+        status: "success",
+        message: `Guidance accepted for tick ${accepted.tick}.`
+      });
+      refreshGuidedSession();
+    } catch (error: unknown) {
+      if (error instanceof GuidedAgentControlsError) {
+        setGuidanceFeedback({
+          status: "error",
+          message: error.message,
+          code: error.code,
+          statusCode: error.statusCode
+        });
+        return;
+      }
+
+      setGuidanceFeedback({
+        status: "error",
+        message: "Unable to load guided agent controls right now.",
+        code: "guided_agent_controls_unavailable",
+        statusCode: 500
+      });
+    }
+  };
+
+  const submitGuidedOverrideDraft = async () => {
+    if (bearerToken === null) {
+      setGuidedOverrideFeedback({
+        status: "error",
+        message: "A stored bearer token is required before submitting a guided override.",
+        code: "auth_missing",
+        statusCode: 401
+      });
+      return;
+    }
+
+    if (guidedState.status !== "ready") {
+      setGuidedOverrideFeedback({
+        status: "error",
+        message: "Guided controls are not ready yet.",
+        code: "guided_controls_unavailable",
+        statusCode: 409
+      });
+      return;
+    }
+
+    const nextRequest = buildOrderRequest(envelope, drafts);
+    if (!nextRequest.ok) {
+      setGuidedOverrideFeedback({
+        status: "error",
+        message: nextRequest.message,
+        code: "invalid_order_draft",
+        statusCode: 400
+      });
+      return;
+    }
+
+    setGuidedOverrideFeedback({ status: "submitting" });
+
+    try {
+      const accepted = await submitOwnedAgentOverride(
+        nextRequest.request,
+        guidedState.agentId,
+        bearerToken,
+        fetch,
+        { apiBaseUrl }
+      );
+
+      setGuidedOverrideFeedback({
+        status: "success",
+        message: `Guided override accepted for tick ${accepted.tick}.`
+      });
+      refreshGuidedSession();
+    } catch (error: unknown) {
+      if (error instanceof GuidedAgentControlsError) {
+        setGuidedOverrideFeedback({
+          status: "error",
+          message: error.message,
+          code: error.code,
+          statusCode: error.statusCode
+        });
+        return;
+      }
+
+      setGuidedOverrideFeedback({
+        status: "error",
+        message: "Unable to load guided agent controls right now.",
+        code: "guided_agent_controls_unavailable",
+        statusCode: 500
+      });
+    }
+  };
+
   return (
     <>
       <HumanMatchLiveSummaryPanels
@@ -1209,6 +1382,18 @@ export function HumanMatchLiveSnapshot({
         selectedCity={selectedCity}
         selectedArmy={selectedArmy}
         selectionGuidance={selectionGuidance}
+      />
+
+      <HumanLiveGuidedPanel
+        guidedState={guidedState}
+        guidanceDraft={guidanceDraft}
+        guidanceFeedback={guidanceFeedback}
+        guidedOverrideFeedback={guidedOverrideFeedback}
+        canSubmitGuidance={canSubmitGuidance}
+        canSubmitGuidedOverride={canSubmitGuidedOverride}
+        updateGuidanceDraft={updateGuidanceDraft}
+        submitGuidanceDraft={submitGuidanceDraft}
+        submitGuidedOverrideDraft={submitGuidedOverrideDraft}
       />
 
       <HumanLiveMessagingPanel

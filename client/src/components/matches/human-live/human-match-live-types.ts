@@ -1,4 +1,5 @@
 import type {
+  OwnedAgentGuidedSessionResponse,
   PlayerMatchEnvelope,
   PublicMatchDetailResponse,
   ResourceType,
@@ -39,6 +40,26 @@ export type LiveConnectionState =
       status: "not_live";
       envelope: PlayerMatchEnvelope | null;
       message: string;
+    };
+
+export type GuidedSessionState =
+  | {
+      status: "idle" | "loading";
+      guidedSession: null;
+      errorMessage: null;
+      agentId: string | null;
+    }
+  | {
+      status: "ready";
+      guidedSession: OwnedAgentGuidedSessionResponse;
+      errorMessage: null;
+      agentId: string;
+    }
+  | {
+      status: "error";
+      guidedSession: null;
+      errorMessage: string;
+      agentId: string;
     };
 
 export type MovementDraft = {

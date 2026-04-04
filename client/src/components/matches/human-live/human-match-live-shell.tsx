@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { BritainMapLayout } from "../../../lib/britain-map";
-import type { LiveConnectionState, MatchDetailState } from "./human-match-live-types";
+import type { GuidedSessionState, LiveConnectionState, MatchDetailState } from "./human-match-live-types";
 import { HumanMatchLiveSnapshot } from "./human-match-live-snapshot";
 import { MatchLiveMap } from "../match-live-map";
 
@@ -13,6 +13,8 @@ type HumanMatchLiveShellProps = {
   bearerToken: string | null;
   matchState: MatchDetailState;
   liveState: LiveConnectionState;
+  guidedState: GuidedSessionState;
+  refreshGuidedSession: () => void;
 };
 
 export function HumanMatchLiveShell({
@@ -21,7 +23,9 @@ export function HumanMatchLiveShell({
   apiBaseUrl,
   bearerToken,
   matchState,
-  liveState
+  liveState,
+  guidedState,
+  refreshGuidedSession
 }: HumanMatchLiveShellProps) {
   const statusPanel =
     matchState.status === "loading" ? (
@@ -73,6 +77,8 @@ export function HumanMatchLiveShell({
           apiBaseUrl={apiBaseUrl}
           bearerToken={bearerToken}
           liveStatus={liveState.status === "live" ? "live" : "not_live"}
+          guidedState={guidedState}
+          refreshGuidedSession={refreshGuidedSession}
         />
       ) : null}
     </>

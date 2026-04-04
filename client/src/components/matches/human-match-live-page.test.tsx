@@ -273,7 +273,71 @@ function makePublicMatchDetailResponse() {
     current_player_count: 3,
     max_player_count: 5,
     open_slot_count: 2,
-    roster: []
+    roster: [
+      {
+        player_id: "player-2",
+        display_name: "Agent Two",
+        competitor_kind: "agent",
+        agent_id: "agent-player-2"
+      }
+    ]
+  };
+}
+
+function makeGuidedSessionResponse(options?: {
+  guidanceContent?: string;
+  queuedDestination?: string;
+}) {
+  return {
+    match_id: "match-alpha",
+    agent_id: "agent-player-2",
+    player_id: "player-2",
+    state: {
+      match_id: "match-alpha",
+      player_id: "player-2",
+      tick: 144,
+      resources: {
+        food: 120,
+        production: 80,
+        money: 200
+      },
+      cities: {},
+      visible_armies: [],
+      alliance_id: "alliance-red",
+      alliance_members: ["player-1", "player-2"],
+      victory: {
+        leading_alliance: "alliance-red",
+        cities_held: 9,
+        threshold: 13,
+        countdown_ticks_remaining: 4
+      }
+    },
+    queued_orders: {
+      movements: [{ army_id: "army-1", destination: options?.queuedDestination ?? "york" }],
+      recruitment: [],
+      upgrades: [],
+      transfers: []
+    },
+    guidance: [
+      {
+        guidance_id: "guidance-7",
+        match_id: "match-alpha",
+        player_id: "player-2",
+        tick: 144,
+        content: options?.guidanceContent ?? "Hold the north.",
+        created_at: "2026-04-04T12:00:00Z"
+      }
+    ],
+    group_chats: [],
+    messages: {
+      world: [],
+      direct: [],
+      group: []
+    },
+    recent_activity: {
+      alliances: [],
+      treaties: []
+    }
   };
 }
 
@@ -283,6 +347,41 @@ function makeJsonResponse(payload: unknown, status = 200) {
     status,
     json: async () => payload
   };
+}
+
+function makeFetchSpyWithGuidedSession(...responses: ReturnType<typeof makeJsonResponse>[]) {
+  const queuedResponses = [...responses];
+
+  return vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+    const url = String(input);
+
+    if (url.endsWith("/guided-session")) {
+      return makeJsonResponse(makeGuidedSessionResponse());
+    }
+
+    const nextResponse = queuedResponses.shift();
+    if (nextResponse === undefined) {
+      throw new Error(`Unexpected fetch call: ${url}`);
+    }
+
+    return nextResponse;
+  });
+}
+
+function expectFetchCall(
+  fetchSpy: ReturnType<typeof vi.fn>,
+  url: string,
+  init: RequestInit,
+  occurrence = 1
+) {
+  const matchingCalls = fetchSpy.mock.calls.filter(([calledUrl]) => String(calledUrl) === url);
+  expect(matchingCalls.length).toBeGreaterThanOrEqual(occurrence);
+  expect(matchingCalls[occurrence - 1]).toEqual([url, init]);
+}
+
+function expectNoFetchCall(fetchSpy: ReturnType<typeof vi.fn>, url: string) {
+  const matchingCalls = fetchSpy.mock.calls.filter(([calledUrl]) => String(calledUrl) === url);
+  expect(matchingCalls).toHaveLength(0);
 }
 
 afterEach(() => {
@@ -568,25 +667,23 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("posts group-chat creation to the shipped route with the current websocket tick", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
-            status: "accepted",
-            match_id: "match-alpha",
-            group_chat: {
-              group_chat_id: "council-gold",
-              name: "Gold Council",
-              member_ids: ["player-2", "player-3"],
-              created_by: "player-2",
-              created_tick: 144
-            }
-          },
-          202
-        )
-      );
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse(
+        {
+          status: "accepted",
+          match_id: "match-alpha",
+          group_chat: {
+            group_chat_id: "council-gold",
+            name: "Gold Council",
+            member_ids: ["player-2", "player-3"],
+            created_by: "player-2",
+            created_tick: 144
+          }
+        },
+        202
+      )
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -617,8 +714,8 @@ describe("HumanMatchLivePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create group chat" }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenNthCalledWith(
-        2,
+      expectFetchCall(
+        fetchSpy,
         "http://127.0.0.1:8000/api/v1/matches/match-alpha/group-chats",
         {
           method: "POST",
@@ -640,25 +737,23 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("shows accepted group-chat metadata without mutating the visible group-chat list before websocket refresh", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
-            status: "accepted",
-            match_id: "match-alpha",
-            group_chat: {
-              group_chat_id: "council-gold",
-              name: "Gold Council",
-              member_ids: ["player-2", "player-3"],
-              created_by: "player-2",
-              created_tick: 144
-            }
-          },
-          202
-        )
-      );
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse(
+        {
+          status: "accepted",
+          match_id: "match-alpha",
+          group_chat: {
+            group_chat_id: "council-gold",
+            name: "Gold Council",
+            member_ids: ["player-2", "player-3"],
+            created_by: "player-2",
+            created_tick: 144
+          }
+        },
+        202
+      )
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -701,20 +796,18 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("preserves the group-chat draft and shows structured creation errors", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
-            error: {
-              code: "tick_mismatch",
-              message: "Group chat payload tick '143' does not match current match tick '144'."
-            }
-          },
-          400
-        )
-      );
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse(
+        {
+          error: {
+            code: "tick_mismatch",
+            message: "Group chat payload tick '143' does not match current match tick '144'."
+          }
+        },
+        400
+      )
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -790,33 +883,29 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("posts world and direct messages to the shipped match-message endpoint with the current live tick", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse({
-          status: "accepted",
-          match_id: "match-alpha",
-          message_id: 51,
-          channel: "world",
-          sender_id: "player-2",
-          recipient_id: null,
-          tick: 144,
-          content: "Stand ready."
-        }, 202)
-      )
-      .mockResolvedValueOnce(
-        makeJsonResponse({
-          status: "accepted",
-          match_id: "match-alpha",
-          message_id: 52,
-          channel: "direct",
-          sender_id: "player-2",
-          recipient_id: "player-3",
-          tick: 144,
-          content: "Hold the western road."
-        }, 202)
-      );
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse({
+        status: "accepted",
+        match_id: "match-alpha",
+        message_id: 51,
+        channel: "world",
+        sender_id: "player-2",
+        recipient_id: null,
+        tick: 144,
+        content: "Stand ready."
+      }, 202),
+      makeJsonResponse({
+        status: "accepted",
+        match_id: "match-alpha",
+        message_id: 52,
+        channel: "direct",
+        sender_id: "player-2",
+        recipient_id: "player-3",
+        tick: 144,
+        content: "Hold the western road."
+      }, 202)
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -847,7 +936,7 @@ describe("HumanMatchLivePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit message" }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenNthCalledWith(2, "http://127.0.0.1:8000/api/v1/matches/match-alpha/messages", {
+      expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/messages", {
         method: "POST",
         cache: "no-store",
         headers: {
@@ -862,7 +951,7 @@ describe("HumanMatchLivePage", () => {
           recipient_id: null,
           content: "Stand ready."
         })
-      });
+      }, 1);
     });
 
     fireEvent.change(screen.getByLabelText("Channel"), { target: { value: "direct" } });
@@ -873,7 +962,7 @@ describe("HumanMatchLivePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit message" }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenNthCalledWith(3, "http://127.0.0.1:8000/api/v1/matches/match-alpha/messages", {
+      expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/messages", {
         method: "POST",
         cache: "no-store",
         headers: {
@@ -888,28 +977,26 @@ describe("HumanMatchLivePage", () => {
           recipient_id: "player-3",
           content: "Hold the western road."
         })
-      });
+      }, 2);
     });
   });
 
   it("posts group chat messages to the shipped group-message endpoint with the current live tick", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse({
-          status: "accepted",
-          match_id: "match-alpha",
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse({
+        status: "accepted",
+        match_id: "match-alpha",
+        group_chat_id: "council-red",
+        message: {
+          message_id: 81,
           group_chat_id: "council-red",
-          message: {
-            message_id: 81,
-            group_chat_id: "council-red",
-            sender_id: "player-2",
-            tick: 144,
-            content: "Reinforce York at dawn."
-          }
-        }, 202)
-      );
+          sender_id: "player-2",
+          tick: 144,
+          content: "Reinforce York at dawn."
+        }
+      }, 202)
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -942,8 +1029,8 @@ describe("HumanMatchLivePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit message" }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenNthCalledWith(
-        2,
+      expectFetchCall(
+        fetchSpy,
         "http://127.0.0.1:8000/api/v1/matches/match-alpha/group-chats/council-red/messages",
         {
           method: "POST",
@@ -964,21 +1051,19 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("shows deterministic acceptance metadata and clears only the accepted message draft", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse({
-          status: "accepted",
-          match_id: "match-alpha",
-          message_id: 51,
-          channel: "world",
-          sender_id: "player-2",
-          recipient_id: null,
-          tick: 144,
-          content: "Stand ready."
-        }, 202)
-      );
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse({
+        status: "accepted",
+        match_id: "match-alpha",
+        message_id: 51,
+        channel: "world",
+        sender_id: "player-2",
+        recipient_id: null,
+        tick: 144,
+        content: "Stand ready."
+      }, 202)
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -1017,20 +1102,18 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("preserves the current draft and shows structured message errors", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
-            error: {
-              code: "tick_mismatch",
-              message: "Message payload tick '143' does not match current match tick '144'."
-            }
-          },
-          400
-        )
-      );
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse(
+        {
+          error: {
+            code: "tick_mismatch",
+            message: "Message payload tick '143' does not match current match tick '144'."
+          }
+        },
+        400
+      )
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -1107,30 +1190,28 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("posts treaty actions to the shipped route with the current websocket state and shows accepted metadata only", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
-            status: "accepted",
-            match_id: "match-alpha",
-            treaty: {
-              treaty_id: 8,
-              player_a_id: "player-2",
-              player_b_id: "player-3",
-              treaty_type: "trade",
-              status: "proposed",
-              proposed_by: "player-2",
-              proposed_tick: 144,
-              signed_tick: null,
-              withdrawn_by: null,
-              withdrawn_tick: null
-            }
-          },
-          202
-        )
-      );
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse(
+        {
+          status: "accepted",
+          match_id: "match-alpha",
+          treaty: {
+            treaty_id: 8,
+            player_a_id: "player-2",
+            player_b_id: "player-3",
+            treaty_type: "trade",
+            status: "proposed",
+            proposed_by: "player-2",
+            proposed_tick: 144,
+            signed_tick: null,
+            withdrawn_by: null,
+            withdrawn_tick: null
+          }
+        },
+        202
+      )
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -1159,7 +1240,7 @@ describe("HumanMatchLivePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit treaty" }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenNthCalledWith(2, "http://127.0.0.1:8000/api/v1/matches/match-alpha/treaties", {
+      expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/treaties", {
         method: "POST",
         cache: "no-store",
         headers: {
@@ -1191,30 +1272,28 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("reports treaty acceptance against the other player when the current player accepts", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse(
+        {
+          status: "accepted",
+          match_id: "match-alpha",
+          treaty: {
+            treaty_id: 8,
+            player_a_id: "player-2",
+            player_b_id: "player-3",
+            treaty_type: "trade",
             status: "accepted",
-            match_id: "match-alpha",
-            treaty: {
-              treaty_id: 8,
-              player_a_id: "player-2",
-              player_b_id: "player-3",
-              treaty_type: "trade",
-              status: "accepted",
-              proposed_by: "player-3",
-              proposed_tick: 143,
-              signed_tick: 144,
-              withdrawn_by: null,
-              withdrawn_tick: null
-            }
-          },
-          202
-        )
-      );
+            proposed_by: "player-3",
+            proposed_tick: 143,
+            signed_tick: 144,
+            withdrawn_by: null,
+            withdrawn_tick: null
+          }
+        },
+        202
+      )
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -1253,20 +1332,18 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("preserves treaty draft state and surfaces structured treaty errors", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
-            error: {
-              code: "tick_mismatch",
-              message: "Treaty action no longer matches the current diplomacy tick."
-            }
-          },
-          409
-        )
-      );
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse(
+        {
+          error: {
+            code: "tick_mismatch",
+            message: "Treaty action no longer matches the current diplomacy tick."
+          }
+        },
+        409
+      )
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -1340,63 +1417,57 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("posts alliance create, join, and leave actions using the shipped route shapes", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
-            status: "accepted",
-            match_id: "match-alpha",
-            player_id: "player-2",
-            alliance: {
-              alliance_id: "alliance-blue",
-              name: "Blue League",
-              leader_id: "player-2",
-              formed_tick: 144,
-              members: [{ player_id: "player-2", joined_tick: 144 }]
-            }
-          },
-          202
-        )
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse(
+        {
+          status: "accepted",
+          match_id: "match-alpha",
+          player_id: "player-2",
+          alliance: {
+            alliance_id: "alliance-blue",
+            name: "Blue League",
+            leader_id: "player-2",
+            formed_tick: 144,
+            members: [{ player_id: "player-2", joined_tick: 144 }]
+          }
+        },
+        202
+      ),
+      makeJsonResponse(
+        {
+          status: "accepted",
+          match_id: "match-alpha",
+          player_id: "player-2",
+          alliance: {
+            alliance_id: "alliance-red",
+            name: "alliance-red",
+            leader_id: "player-1",
+            formed_tick: 140,
+            members: [
+              { player_id: "player-1", joined_tick: 140 },
+              { player_id: "player-2", joined_tick: 144 }
+            ]
+          }
+        },
+        202
+      ),
+      makeJsonResponse(
+        {
+          status: "accepted",
+          match_id: "match-alpha",
+          player_id: "player-2",
+          alliance: {
+            alliance_id: "alliance-red",
+            name: "alliance-red",
+            leader_id: "player-1",
+            formed_tick: 140,
+            members: [{ player_id: "player-1", joined_tick: 140 }]
+          }
+        },
+        202
       )
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
-            status: "accepted",
-            match_id: "match-alpha",
-            player_id: "player-2",
-            alliance: {
-              alliance_id: "alliance-red",
-              name: "alliance-red",
-              leader_id: "player-1",
-              formed_tick: 140,
-              members: [
-                { player_id: "player-1", joined_tick: 140 },
-                { player_id: "player-2", joined_tick: 144 }
-              ]
-            }
-          },
-          202
-        )
-      )
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
-            status: "accepted",
-            match_id: "match-alpha",
-            player_id: "player-2",
-            alliance: {
-              alliance_id: "alliance-red",
-              name: "alliance-red",
-              leader_id: "player-1",
-              formed_tick: 140,
-              members: [{ player_id: "player-1", joined_tick: 140 }]
-            }
-          },
-          202
-        )
-      );
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -1424,7 +1495,7 @@ describe("HumanMatchLivePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit alliance" }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenNthCalledWith(2, "http://127.0.0.1:8000/api/v1/matches/match-alpha/alliances", {
+      expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/alliances", {
         method: "POST",
         cache: "no-store",
         headers: {
@@ -1437,7 +1508,7 @@ describe("HumanMatchLivePage", () => {
           action: "create",
           name: "Blue League"
         })
-      });
+      }, 1);
     });
 
     await waitFor(() => {
@@ -1457,7 +1528,7 @@ describe("HumanMatchLivePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit alliance" }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenNthCalledWith(3, "http://127.0.0.1:8000/api/v1/matches/match-alpha/alliances", {
+      expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/alliances", {
         method: "POST",
         cache: "no-store",
         headers: {
@@ -1470,7 +1541,7 @@ describe("HumanMatchLivePage", () => {
           action: "join",
           alliance_id: "alliance-red"
         })
-      });
+      }, 2);
     });
 
     await waitFor(() => {
@@ -1487,7 +1558,7 @@ describe("HumanMatchLivePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit alliance" }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenNthCalledWith(4, "http://127.0.0.1:8000/api/v1/matches/match-alpha/alliances", {
+      expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/alliances", {
         method: "POST",
         cache: "no-store",
         headers: {
@@ -1499,7 +1570,7 @@ describe("HumanMatchLivePage", () => {
           match_id: "match-alpha",
           action: "leave"
         })
-      });
+      }, 3);
     });
 
     await waitFor(() => {
@@ -1513,29 +1584,27 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("shows accepted alliance metadata while the websocket snapshot remains authoritative for visible alliance state", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
-            status: "accepted",
-            match_id: "match-alpha",
-            player_id: "player-2",
-            alliance: {
-              alliance_id: "alliance-red",
-              name: "alliance-red",
-              leader_id: "player-1",
-              formed_tick: 140,
-              members: [
-                { player_id: "player-1", joined_tick: 140 },
-                { player_id: "player-2", joined_tick: 144 }
-              ]
-            }
-          },
-          202
-        )
-      );
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse(
+        {
+          status: "accepted",
+          match_id: "match-alpha",
+          player_id: "player-2",
+          alliance: {
+            alliance_id: "alliance-red",
+            name: "alliance-red",
+            leader_id: "player-1",
+            formed_tick: 140,
+            members: [
+              { player_id: "player-1", joined_tick: 140 },
+              { player_id: "player-2", joined_tick: 144 }
+            ]
+          }
+        },
+        202
+      )
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -1587,20 +1656,18 @@ describe("HumanMatchLivePage", () => {
   });
 
   it("preserves alliance draft state and surfaces structured alliance errors", async () => {
-    const fetchSpy = vi
-      .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
-      .mockResolvedValueOnce(
-        makeJsonResponse(
-          {
-            error: {
-              code: "alliance_membership_conflict",
-              message: "Player-2 is already a member of alliance-red."
-            }
-          },
-          409
-        )
-      );
+    const fetchSpy = makeFetchSpyWithGuidedSession(
+      makeJsonResponse(makePublicMatchDetailResponse()),
+      makeJsonResponse(
+        {
+          error: {
+            code: "alliance_membership_conflict",
+            message: "Player-2 is already a member of alliance-red."
+          }
+        },
+        409
+      )
+    );
 
     vi.stubGlobal("fetch", fetchSpy);
     window.localStorage.setItem(
@@ -2103,6 +2170,10 @@ describe("HumanMatchLivePage", () => {
         };
       }
 
+      if (url === "https://hydrated.example/api/v1/matches/match-alpha/agents/agent-player-2/guided-session") {
+        return makeJsonResponse(makeGuidedSessionResponse());
+      }
+
       throw new Error(`Unexpected fetch call: ${url} ${init?.method ?? "GET"}`);
     });
 
@@ -2137,30 +2208,28 @@ describe("HumanMatchLivePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit drafted orders" }));
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
-    });
-
-    expect(fetchSpy).toHaveBeenNthCalledWith(2, "https://hydrated.example/api/v1/matches/match-alpha/commands", {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        accept: "application/json",
-        authorization: "Bearer human-jwt",
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        match_id: "match-alpha",
-        tick: 144,
-        orders: {
-          movements: [{ army_id: "army-1", destination: "leeds" }],
-          recruitment: [],
-          upgrades: [],
-          transfers: []
+      expectFetchCall(fetchSpy, "https://hydrated.example/api/v1/matches/match-alpha/commands", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          accept: "application/json",
+          authorization: "Bearer human-jwt",
+          "content-type": "application/json"
         },
-        messages: [],
-        treaties: [],
-        alliance: null
-      })
+        body: JSON.stringify({
+          match_id: "match-alpha",
+          tick: 144,
+          orders: {
+            movements: [{ army_id: "army-1", destination: "leeds" }],
+            recruitment: [],
+            upgrades: [],
+            transfers: []
+          },
+          messages: [],
+          treaties: [],
+          alliance: null
+        })
+      });
     });
     expect(screen.getByText("Orders accepted for tick 144 from player-2.")).toBeVisible();
     expect(screen.queryByLabelText("Movement army ID 1")).not.toBeInTheDocument();
@@ -2214,7 +2283,7 @@ describe("HumanMatchLivePage", () => {
 
     expect(screen.getByText("Error code: invalid_order_draft")).toBeVisible();
     expect(screen.getByText("HTTP status: 400")).toBeVisible();
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expectNoFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/commands");
     expect(screen.getByLabelText("Recruitment city 1")).toHaveValue("manchester");
     expect(screen.getByLabelText("Recruitment troops 1")).toHaveValue(null);
   });
@@ -2249,6 +2318,10 @@ describe("HumanMatchLivePage", () => {
             }
           })
         };
+      }
+
+      if (url === "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guided-session") {
+        return makeJsonResponse(makeGuidedSessionResponse());
       }
 
       throw new Error(`Unexpected fetch call: ${url} ${init?.method ?? "GET"}`);
@@ -2291,7 +2364,7 @@ describe("HumanMatchLivePage", () => {
       expect(screen.getByText("Orders already closed for tick 143.")).toBeVisible();
     });
 
-    expect(fetchSpy).toHaveBeenNthCalledWith(2, "http://127.0.0.1:8000/api/v1/matches/match-alpha/commands", {
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/commands", {
       method: "POST",
       cache: "no-store",
       headers: {
@@ -2459,4 +2532,363 @@ describe("HumanMatchLivePage", () => {
       "Selection helper could not update transfer destination 1: visible city selections cannot fill transfer destinations."
     );
   });
+
+  it("refreshes guided-session after guided writes and keeps websocket state authoritative", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "http://127.0.0.1:8000",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
+      .mockResolvedValueOnce(makeJsonResponse(makeGuidedSessionResponse()))
+      .mockResolvedValueOnce(
+        makeJsonResponse(
+          {
+            status: "accepted",
+            guidance_id: "guidance-8",
+            match_id: "match-alpha",
+            agent_id: "agent-player-2",
+            player_id: "player-2",
+            tick: 144,
+            content: "Commit the drafted move."
+          },
+          202
+        )
+      )
+      .mockResolvedValueOnce(
+        makeJsonResponse(
+          makeGuidedSessionResponse({
+            guidanceContent: "Commit the drafted move.",
+            queuedDestination: "york"
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        makeJsonResponse(
+          {
+            status: "accepted",
+            override_id: "override-3",
+            match_id: "match-alpha",
+            agent_id: "agent-player-2",
+            player_id: "player-2",
+            tick: 144,
+            submission_index: 1,
+            superseded_submission_count: 0,
+            orders: {
+              movements: [{ army_id: "army-1", destination: "leeds" }],
+              recruitment: [],
+              upgrades: [],
+              transfers: []
+            }
+          },
+          202
+        )
+      )
+      .mockResolvedValueOnce(
+        makeJsonResponse(
+          makeGuidedSessionResponse({
+            guidanceContent: "Commit the drafted move.",
+            queuedDestination: "leeds"
+          })
+        )
+      );
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    MockWebSocket.instances[0]?.emitOpen();
+    MockWebSocket.instances[0]?.emitMessage(makeEnvelope(144));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Guided agent controls" })).toBeVisible();
+    });
+
+    expect(screen.getByText("Queued orders")).toBeVisible();
+    expect(screen.getByText("army-1 -> york")).toBeVisible();
+    expect(screen.getByText("Hold the north.")).toBeVisible();
+    expect(screen.getByText("player-2 at leeds with 5 troops (full)")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Guidance message"), {
+      target: { value: "Commit the drafted move." }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send guidance" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Guidance accepted for tick 144.")).toBeVisible();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add movement order" }));
+    fireEvent.change(screen.getByLabelText("Movement army ID 1"), {
+      target: { value: "army-1" }
+    });
+    fireEvent.change(screen.getByLabelText("Movement destination 1"), {
+      target: { value: "leeds" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit guided override" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Guided override accepted for tick 144.")).toBeVisible();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("army-1 -> leeds")).toBeVisible();
+    });
+    expect(screen.getByText("Commit the drafted move.")).toBeVisible();
+    expect(screen.getByText("player-2 at leeds with 5 troops (full)")).toBeVisible();
+
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guided-session", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt"
+      }
+    }, 1);
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guidance", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        tick: 144,
+        content: "Commit the drafted move."
+      })
+    });
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/override", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        tick: 144,
+        orders: {
+          movements: [{ army_id: "army-1", destination: "leeds" }],
+          recruitment: [],
+          upgrades: [],
+          transfers: []
+        }
+      })
+    });
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guided-session", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt"
+      }
+    }, 2);
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guided-session", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt"
+      }
+    }, 3);
+  });
+
+  it("refreshes guided-session when the websocket tick advances", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "http://127.0.0.1:8000",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
+      .mockResolvedValueOnce(makeJsonResponse(makeGuidedSessionResponse()))
+      .mockResolvedValueOnce(
+        makeJsonResponse(
+          makeGuidedSessionResponse({
+            guidanceContent: "Advance on the western road.",
+            queuedDestination: "leeds"
+          })
+        )
+      );
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    MockWebSocket.instances[0]?.emitOpen();
+    MockWebSocket.instances[0]?.emitMessage(makeEnvelope(144));
+
+    await waitFor(() => {
+      expect(screen.getByText("army-1 -> york")).toBeVisible();
+    });
+    expect(screen.getByText("Hold the north.")).toBeVisible();
+
+    MockWebSocket.instances[0]?.emitMessage(makeEnvelope(145));
+
+    await waitFor(() => {
+      expect(screen.getByText("army-1 -> leeds")).toBeVisible();
+    });
+    expect(screen.getByText("Advance on the western road.")).toBeVisible();
+    expect(screen.getByText("player-2 at manchester with 5 troops (full)")).toBeVisible();
+
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guided-session", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt"
+      }
+    }, 1);
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guided-session", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt"
+      }
+    }, 2);
+  });
+
+  it("preserves guided drafts and shows structured browser-boundary guided errors", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "http://127.0.0.1:8000",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
+      .mockResolvedValueOnce(makeJsonResponse(makeGuidedSessionResponse()))
+      .mockResolvedValueOnce(
+        makeJsonResponse(
+          {
+            error: {
+              code: "tick_mismatch",
+              message: "Guidance payload tick '143' does not match current match tick '144'."
+            }
+          },
+          409
+        )
+      )
+      .mockResolvedValueOnce(
+        makeJsonResponse(
+          {
+            error: {
+              code: "tick_mismatch",
+              message: "Override payload tick '143' does not match current match tick '144'."
+            }
+          },
+          409
+        )
+      );
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    MockWebSocket.instances[0]?.emitOpen();
+    MockWebSocket.instances[0]?.emitMessage(makeEnvelope(144));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Guided agent controls" })).toBeVisible();
+    });
+
+    fireEvent.change(screen.getByLabelText("Guidance message"), {
+      target: { value: "Keep pressure on York." }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send guidance" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Guidance payload tick '143' does not match current match tick '144'.")).toBeVisible();
+    });
+    expect(screen.getByText("Error code: tick_mismatch")).toBeVisible();
+    expect(screen.getAllByText("HTTP status: 409").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Guidance message")).toHaveValue("Keep pressure on York.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add movement order" }));
+    fireEvent.change(screen.getByLabelText("Movement army ID 1"), {
+      target: { value: "army-1" }
+    });
+    fireEvent.change(screen.getByLabelText("Movement destination 1"), {
+      target: { value: "leeds" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit guided override" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Override payload tick '143' does not match current match tick '144'.")).toBeVisible();
+    });
+    expect(screen.getAllByText("Error code: tick_mismatch").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("HTTP status: 409").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByLabelText("Movement army ID 1")).toHaveValue("army-1");
+    expect(screen.getByLabelText("Movement destination 1")).toHaveValue("leeds");
+
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guidance", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        tick: 144,
+        content: "Keep pressure on York."
+      })
+    });
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/override", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        match_id: "match-alpha",
+        tick: 144,
+        orders: {
+          movements: [{ army_id: "army-1", destination: "leeds" }],
+          recruitment: [],
+          upgrades: [],
+          transfers: []
+        }
+      })
+    });
+  });
+
 });

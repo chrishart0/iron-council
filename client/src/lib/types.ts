@@ -19,6 +19,8 @@ export type PublicMatchRosterRow = {
   player_id: string;
   display_name: string;
   competitor_kind: CompetitorKind;
+  agent_id?: string | null;
+  human_id?: string | null;
 };
 
 export type PublicMatchDetailResponse = MatchSummary & {
@@ -481,6 +483,15 @@ export type GroupChatRecord = {
   created_tick: number;
 };
 
+export type GuidedSessionGuidanceRecord = {
+  guidance_id: string;
+  match_id: string;
+  player_id: string;
+  tick: number;
+  content: string;
+  created_at: string;
+};
+
 export type GroupMessageRecord = {
   message_id: number;
   group_chat_id: string;
@@ -513,6 +524,61 @@ export type AllianceRecord = {
   leader_id: string;
   formed_tick: number;
   members: AllianceMemberRecord[];
+};
+
+export type GuidedSessionRecentActivity = {
+  alliances: AllianceRecord[];
+  treaties: TreatyRecord[];
+};
+
+export type OwnedAgentGuidedSessionResponse = {
+  match_id: string;
+  agent_id: string;
+  player_id: string;
+  state: PlayerMatchState;
+  queued_orders: OrderBatch;
+  guidance: GuidedSessionGuidanceRecord[];
+  group_chats: GroupChatRecord[];
+  messages: {
+    world: WorldMessageRecord[];
+    direct: DirectMessageRecord[];
+    group: GroupMessageRecord[];
+  };
+  recent_activity: GuidedSessionRecentActivity;
+};
+
+export type OwnedAgentGuidanceCreateRequest = {
+  match_id: string;
+  tick: number;
+  content: string;
+};
+
+export type OwnedAgentGuidanceAcceptanceResponse = {
+  status: "accepted";
+  guidance_id: string;
+  match_id: string;
+  agent_id: string;
+  player_id: string;
+  tick: number;
+  content: string;
+};
+
+export type OwnedAgentOverrideCreateRequest = {
+  match_id: string;
+  tick: number;
+  orders: OrderBatch;
+};
+
+export type OwnedAgentOverrideAcceptanceResponse = {
+  status: "accepted";
+  override_id: string;
+  match_id: string;
+  agent_id: string;
+  player_id: string;
+  tick: number;
+  submission_index: number;
+  superseded_submission_count: number;
+  orders: OrderBatch;
 };
 
 export type SpectatorMatchEnvelope = {

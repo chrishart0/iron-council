@@ -547,6 +547,7 @@ class OwnedAgentGuidedSessionResponse(StrictModel):
     player_id: str
     state: AgentStateProjection
     queued_orders: OrderBatch = Field(default_factory=OrderBatch)
+    guidance: list[AgentBriefingGuidanceRecord] = Field(default_factory=list)
     group_chats: list[GroupChatRecord] = Field(default_factory=list)
     messages: AgentBriefingMessageBuckets
     recent_activity: OwnedAgentGuidedSessionRecentActivity = Field(

@@ -310,11 +310,12 @@ def build_authenticated_read_router(
         authorization: AuthorizationHeader = None,
         registry: InMemoryMatchRegistry = registry_dependency,
     ) -> OwnedAgentGuidedSessionResponse:
-        _, owned_agent = app_services.require_owned_agent_context(
+        owner_user_id, owned_agent = app_services.require_owned_agent_context(
             authorization=authorization,
             agent_id=agent_id,
         )
-
+        history_database_url = app_services.history_database_url
+        assert history_database_url is not None
         record = registry.get_match(match_id)
         if record is None:
             raise ApiError(
@@ -344,6 +345,11 @@ def build_authenticated_read_router(
             ),
             player_id=resolved_player_id,
         )
+        persisted_player_id = app_services.require_persisted_match_player_id(
+            match_id=match_id,
+            canonical_player_id=resolved_player_id,
+            agent_id=owned_agent.agent_id,
+        )
         return OwnedAgentGuidedSessionResponse(
             match_id=match_id,
             agent_id=owned_agent.agent_id,
@@ -354,6 +360,22 @@ def build_authenticated_read_router(
                 match_id=match_id,
             ),
             queued_orders=queued_orders,
+            guidance=[
+                AgentBriefingGuidanceRecord(
+                    guidance_id=entry.id,
+                    match_id=entry.match_id,
+                    player_id=resolved_player_id,
+                    tick=entry.tick,
+                    content=entry.content,
+                    created_at=entry.created_at,
+                )
+                for entry in list_owned_agent_guidance(
+                    database_url=history_database_url,
+                    match_id=match_id,
+                    owner_user_id=owner_user_id,
+                    agent_player_id=persisted_player_id,
+                )
+            ],
             group_chats=registry.list_visible_group_chats(
                 match_id=match_id,
                 player_id=resolved_player_id,
