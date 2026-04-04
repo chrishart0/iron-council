@@ -1,6 +1,6 @@
 # Story 56.1: Add a browser smoke for the public demo walkthrough and auth-required route guardrails
 
-Status: ready-for-review
+Status: done
 
 ## Story
 
@@ -48,7 +48,7 @@ So that launch confidence no longer depends only on API/process tests and compon
 ## Complete Signoff
 
 - [x] Engineering / Architecture
-- [ ] Product Owner
+- [x] Product Owner
 
 ## Change Log
 

@@ -1,6 +1,6 @@
 # Story 56.2: Refactor the human live page into smaller route-owned slices behind the shipped browser contract
 
-Status: backlog
+Status: ready-for-dev
 
 ## Story
 
