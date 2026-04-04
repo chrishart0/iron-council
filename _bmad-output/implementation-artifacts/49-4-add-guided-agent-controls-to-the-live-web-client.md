@@ -55,11 +55,15 @@ So that guided mode is usable from the shipped web client rather than only via r
 
 - 2026-04-04: Drafted Story 49.4 as the browser follow-on to the guided-session read model, private guidance delivery, and guided override server contracts.
 - 2026-04-04: Implemented guided live client controls, including additive guided-session guidance history exposure, browser-boundary error coverage, and websocket-tick guided-session refresh.
+- 2026-04-04: Review follow-up kept the guided live owned-agent resolution fix intact, stopped the in-memory public roster fallback from reclassifying declared humans as agents when `joined_humans` metadata is absent, and restored additive/backward-compatible client parsing for legacy public match-detail roster rows.
 
 ## Debug Log References
 
 - `uv run pytest --no-cov tests/api/test_agent_api.py -q`
 - `cd client && npm test -- --run src/lib/api.test.ts src/components/matches/human-match-live-page.test.tsx`
+- `uv run pytest tests/api/test_agent_api.py --override-ini addopts='-q --strict-config --strict-markers' -k 'public_match_detail or owned_api_key or guided'`
+- `uv run pytest tests/e2e/test_api_smoke.py --override-ini addopts='-q --strict-config --strict-markers' -k 'public_match_detail or api_key'`
+- `cd client && npm test -- --run src/lib/api.test.ts src/components/matches/human-match-live-page.test.tsx src/components/public/match-history-page.test.tsx src/components/matches/public-match-live-page.test.tsx src/components/session/session-config-panel.test.tsx`
 - `make quality`
 
 ## Completion Notes
@@ -67,21 +71,32 @@ So that guided mode is usable from the shipped web client rather than only via r
 - Added typed guided-session / guidance / override client helpers and a narrow guided live panel on the authenticated human live page.
 - Exposed persisted private guidance history on the existing owned guided-session read model without adding a new route family.
 - Added browser-boundary coverage for guided success, guided failure, and websocket-tick guided-session refresh so the panel stays authoritative with the live snapshot.
+- Review follow-up kept legacy public match-detail parsing backward compatible by accepting roster rows that omit the additive `agent_id` / `human_id` fields while still rejecting contradictory identity combinations when those fields are present.
+- Review follow-up also made the in-memory public match-detail fallback preserve declared human competitor kind without inventing a human identity or silently reclassifying that row as an agent when `joined_humans` metadata is unavailable.
 - Verified controller-side focused API/client checks plus the full repo `make quality` gate successfully passed after merge.
 
 ## File List
 
 - `_bmad-output/implementation-artifacts/49-4-add-guided-agent-controls-to-the-live-web-client.md`
 - `docs/plans/2026-04-04-story-49-4-guided-agent-live-client-controls.md`
+- `docs/plans/2026-04-04-guided-live-owned-agent-resolution-fix.md`
 - `client/src/components/matches/human-live/human-live-guided-panel.tsx`
 - `client/src/components/matches/human-live/human-match-live-shell.tsx`
 - `client/src/components/matches/human-live/human-match-live-snapshot.tsx`
 - `client/src/components/matches/human-live/human-match-live-types.ts`
 - `client/src/components/matches/human-match-live-page.tsx`
 - `client/src/components/matches/human-match-live-page.test.tsx`
+- `client/src/components/matches/public-match-live-page.test.tsx`
+- `client/src/components/session/session-config-panel.test.tsx`
 - `client/src/lib/api.ts`
 - `client/src/lib/api.test.ts`
 - `client/src/lib/types.ts`
 - `server/api/authenticated_read_routes.py`
+- `server/db/api_key_lifecycle.py`
+- `server/db/public_read_assembly.py`
+- `server/db/public_reads.py`
+- `server/main.py`
 - `server/models/api.py`
 - `tests/api/test_agent_api.py`
+- `tests/e2e/test_api_smoke.py`
+- `tests/test_db_registry.py`

@@ -59,6 +59,7 @@ def build_public_match_detail(
     *,
     match: Match,
     players: Sequence[Player],
+    api_key_rows: Sequence[ApiKey],
     persisted_player_mapping: dict[str, str],
 ) -> PublicMatchDetailResponse:
     summary = build_public_match_summary(match=match, current_player_count=len(players))
@@ -73,6 +74,7 @@ def build_public_match_detail(
         open_slot_count=summary.open_slot_count,
         roster=build_public_match_roster_rows(
             players=players,
+            api_key_rows=api_key_rows,
             persisted_player_mapping=persisted_player_mapping,
         ),
     )
@@ -112,13 +114,22 @@ def build_match_replay_tick_response(
 def build_public_match_roster_rows(
     *,
     players: Sequence[Player],
+    api_key_rows: Sequence[ApiKey],
     persisted_player_mapping: dict[str, str],
 ) -> list[PublicMatchRosterRow]:
+    api_keys_by_id = {str(api_key.id): api_key for api_key in api_key_rows}
+    seeded_profiles_by_key_hash = build_seeded_profiles_by_key_hash()
     return [
         PublicMatchRosterRow(
             player_id=canonical_player_id,
             display_name=player.display_name,
             competitor_kind="agent" if player.is_agent else "human",
+            agent_id=public_competitor_agent_id(
+                player=player,
+                api_keys_by_id=api_keys_by_id,
+                seeded_profiles_by_key_hash=seeded_profiles_by_key_hash,
+            ),
+            human_id=public_competitor_human_id(player=player),
         )
         for player in sorted(players, key=public_match_roster_sort_key)
         if (canonical_player_id := persisted_player_mapping.get(str(player.id))) is not None

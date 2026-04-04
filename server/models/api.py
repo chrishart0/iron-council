@@ -78,6 +78,23 @@ class PublicMatchRosterRow(StrictModel):
     player_id: str
     display_name: str
     competitor_kind: CompetitorKind
+    agent_id: str | None = None
+    human_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_identity_fields(self) -> PublicMatchRosterRow:
+        if self.agent_id is None and self.human_id is None:
+            return self
+        if self.competitor_kind == "human":
+            if self.agent_id is not None or self.human_id is None:
+                raise ValueError(
+                    "Human roster rows must expose only human_id when identity is present."
+                )
+        elif self.human_id is not None or self.agent_id is None:
+            raise ValueError(
+                "Agent roster rows must expose only agent_id when identity is present."
+            )
+        return self
 
 
 class PublicMatchDetailResponse(MatchSummary):
@@ -245,6 +262,7 @@ class HumanProfileResponse(StrictModel):
 
 class OwnedApiKeySummary(StrictModel):
     key_id: str
+    agent_id: str
     elo_rating: int = Field(ge=0)
     is_active: bool
     created_at: datetime

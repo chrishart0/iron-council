@@ -278,7 +278,57 @@ function makePublicMatchDetailResponse() {
         player_id: "player-2",
         display_name: "Agent Two",
         competitor_kind: "agent",
-        agent_id: "agent-player-2"
+        agent_id: "agent-player-2",
+        human_id: null
+      }
+    ]
+  };
+}
+
+function makeHumanOwnedAgentMatchDetailResponse() {
+  return {
+    match_id: "match-alpha",
+    status: "active",
+    map: "britain",
+    tick: 142,
+    tick_interval_seconds: 30,
+    current_player_count: 3,
+    max_player_count: 5,
+    open_slot_count: 2,
+    roster: [
+      {
+        player_id: "player-1",
+        display_name: "Arthur",
+        competitor_kind: "human",
+        agent_id: null,
+        human_id: "human:00000000-0000-0000-0000-000000000301"
+      },
+      {
+        player_id: "player-2",
+        display_name: "Agent Two",
+        competitor_kind: "agent",
+        agent_id: "agent-player-2",
+        human_id: null
+      }
+    ]
+  };
+}
+
+function makeOwnedApiKeysResponse() {
+  return {
+    items: [
+      {
+        key_id: "key-alpha",
+        agent_id: "agent-player-2",
+        elo_rating: 1210,
+        is_active: true,
+        created_at: "2026-04-03T09:00:00Z",
+        entitlement: {
+          is_entitled: true,
+          grant_source: "manual",
+          concurrent_match_allowance: 1,
+          granted_at: "2026-04-03T09:00:00Z"
+        }
       }
     ]
   };
@@ -337,6 +387,43 @@ function makeGuidedSessionResponse(options?: {
     recent_activity: {
       alliances: [],
       treaties: []
+    }
+  };
+}
+
+function makeHumanEnvelope(tick: number) {
+  const envelope = makeEnvelope(tick);
+  return {
+    ...envelope,
+    data: {
+      ...envelope.data,
+      player_id: "player-1",
+      state: {
+        ...envelope.data.state,
+        player_id: "player-1"
+      },
+      direct_messages: [
+        {
+          message_id: tick + 100,
+          channel: "direct" as const,
+          sender_id: "player-2",
+          recipient_id: "player-1",
+          tick,
+          content: tick === 144 ? "Press north." : "Hold the line."
+        }
+      ],
+      alliances: [
+        {
+          alliance_id: "alliance-red",
+          name: "alliance-red",
+          leader_id: "player-1",
+          formed_tick: 140,
+          members: [
+            { player_id: "player-1", joined_tick: 140 },
+            { player_id: "player-2", joined_tick: 140 }
+          ]
+        }
+      ]
     }
   };
 }
@@ -2544,7 +2631,8 @@ describe("HumanMatchLivePage", () => {
 
     const fetchSpy = vi
       .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
+      .mockResolvedValueOnce(makeJsonResponse(makeHumanOwnedAgentMatchDetailResponse()))
+      .mockResolvedValueOnce(makeJsonResponse(makeOwnedApiKeysResponse()))
       .mockResolvedValueOnce(makeJsonResponse(makeGuidedSessionResponse()))
       .mockResolvedValueOnce(
         makeJsonResponse(
@@ -2611,7 +2699,7 @@ describe("HumanMatchLivePage", () => {
     });
 
     MockWebSocket.instances[0]?.emitOpen();
-    MockWebSocket.instances[0]?.emitMessage(makeEnvelope(144));
+    MockWebSocket.instances[0]?.emitMessage(makeHumanEnvelope(144));
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Guided agent controls" })).toBeVisible();
@@ -2650,6 +2738,13 @@ describe("HumanMatchLivePage", () => {
     expect(screen.getByText("Commit the drafted move.")).toBeVisible();
     expect(screen.getByText("player-2 at leeds with 5 troops (full)")).toBeVisible();
 
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/account/api-keys", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt"
+      }
+    });
     expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guided-session", {
       cache: "no-store",
       headers: {
@@ -2717,7 +2812,8 @@ describe("HumanMatchLivePage", () => {
 
     const fetchSpy = vi
       .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
+      .mockResolvedValueOnce(makeJsonResponse(makeHumanOwnedAgentMatchDetailResponse()))
+      .mockResolvedValueOnce(makeJsonResponse(makeOwnedApiKeysResponse()))
       .mockResolvedValueOnce(makeJsonResponse(makeGuidedSessionResponse()))
       .mockResolvedValueOnce(
         makeJsonResponse(
@@ -2741,14 +2837,14 @@ describe("HumanMatchLivePage", () => {
     });
 
     MockWebSocket.instances[0]?.emitOpen();
-    MockWebSocket.instances[0]?.emitMessage(makeEnvelope(144));
+    MockWebSocket.instances[0]?.emitMessage(makeHumanEnvelope(144));
 
     await waitFor(() => {
       expect(screen.getByText("army-1 -> york")).toBeVisible();
     });
     expect(screen.getByText("Hold the north.")).toBeVisible();
 
-    MockWebSocket.instances[0]?.emitMessage(makeEnvelope(145));
+    MockWebSocket.instances[0]?.emitMessage(makeHumanEnvelope(145));
 
     await waitFor(() => {
       expect(screen.getByText("army-1 -> leeds")).toBeVisible();
@@ -2756,6 +2852,13 @@ describe("HumanMatchLivePage", () => {
     expect(screen.getByText("Advance on the western road.")).toBeVisible();
     expect(screen.getByText("player-2 at manchester with 5 troops (full)")).toBeVisible();
 
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/account/api-keys", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt"
+      }
+    });
     expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guided-session", {
       cache: "no-store",
       headers: {
@@ -2783,7 +2886,8 @@ describe("HumanMatchLivePage", () => {
 
     const fetchSpy = vi
       .fn()
-      .mockResolvedValueOnce(makeJsonResponse(makePublicMatchDetailResponse()))
+      .mockResolvedValueOnce(makeJsonResponse(makeHumanOwnedAgentMatchDetailResponse()))
+      .mockResolvedValueOnce(makeJsonResponse(makeOwnedApiKeysResponse()))
       .mockResolvedValueOnce(makeJsonResponse(makeGuidedSessionResponse()))
       .mockResolvedValueOnce(
         makeJsonResponse(
@@ -2821,7 +2925,7 @@ describe("HumanMatchLivePage", () => {
     });
 
     MockWebSocket.instances[0]?.emitOpen();
-    MockWebSocket.instances[0]?.emitMessage(makeEnvelope(144));
+    MockWebSocket.instances[0]?.emitMessage(makeHumanEnvelope(144));
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Guided agent controls" })).toBeVisible();
@@ -2856,6 +2960,13 @@ describe("HumanMatchLivePage", () => {
     expect(screen.getByLabelText("Movement army ID 1")).toHaveValue("army-1");
     expect(screen.getByLabelText("Movement destination 1")).toHaveValue("leeds");
 
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/account/api-keys", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt"
+      }
+    });
     expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guidance", {
       method: "POST",
       cache: "no-store",
@@ -2888,6 +2999,57 @@ describe("HumanMatchLivePage", () => {
           transfers: []
         }
       })
+    });
+  });
+
+  it("resolves guided controls from owned agent ids instead of the websocket player slot", async () => {
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        apiBaseUrl: "http://127.0.0.1:8000",
+        bearerToken: "human-jwt"
+      })
+    );
+
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(makeJsonResponse(makeHumanOwnedAgentMatchDetailResponse()))
+      .mockResolvedValueOnce(makeJsonResponse(makeOwnedApiKeysResponse()))
+      .mockResolvedValueOnce(makeJsonResponse(makeGuidedSessionResponse()));
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(
+      <SessionProvider>
+        <HumanMatchLivePage matchId="match-alpha" mapLayout={loadBritainMapLayout()} />
+      </SessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    MockWebSocket.instances[0]?.emitOpen();
+    MockWebSocket.instances[0]?.emitMessage(makeHumanEnvelope(144));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Guided agent controls" })).toBeVisible();
+    });
+
+    expect(screen.getByText("Hold the north.")).toBeVisible();
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/account/api-keys", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt"
+      }
+    });
+    expectFetchCall(fetchSpy, "http://127.0.0.1:8000/api/v1/matches/match-alpha/agents/agent-player-2/guided-session", {
+      cache: "no-store",
+      headers: {
+        accept: "application/json",
+        authorization: "Bearer human-jwt"
+      }
     });
   });
 

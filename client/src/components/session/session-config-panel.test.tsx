@@ -36,6 +36,27 @@ function createDeferredFetchResponse() {
   };
 }
 
+function makeOwnedApiKeySummary(options: {
+  keyId: string;
+  eloRating: number;
+  isActive: boolean;
+  createdAt: string;
+}) {
+  return {
+    key_id: options.keyId,
+    agent_id: `agent-api-key-${options.keyId}`,
+    elo_rating: options.eloRating,
+    is_active: options.isActive,
+    created_at: options.createdAt,
+    entitlement: {
+      is_entitled: true,
+      grant_source: "manual" as const,
+      concurrent_match_allowance: 1,
+      granted_at: options.createdAt
+    }
+  };
+}
+
 describe("SessionConfigPanel", () => {
   it("updates the persisted session values when the form is submitted", async () => {
     render(
@@ -85,18 +106,18 @@ describe("SessionConfigPanel", () => {
       status: 200,
       json: async () => ({
         items: [
-          {
-            key_id: "key-alpha",
-            elo_rating: 1210,
-            is_active: true,
-            created_at: "2026-04-03T09:00:00Z"
-          },
-          {
-            key_id: "key-bravo",
-            elo_rating: 1190,
-            is_active: false,
-            created_at: "2026-04-03T09:10:00Z"
-          }
+          makeOwnedApiKeySummary({
+            keyId: "key-alpha",
+            eloRating: 1210,
+            isActive: true,
+            createdAt: "2026-04-03T09:00:00Z"
+          }),
+          makeOwnedApiKeySummary({
+            keyId: "key-bravo",
+            eloRating: 1190,
+            isActive: false,
+            createdAt: "2026-04-03T09:10:00Z"
+          })
         ]
       })
     });
@@ -136,12 +157,12 @@ describe("SessionConfigPanel", () => {
         status: 201,
         json: async () => ({
           api_key: "iron_secret_once",
-          summary: {
-            key_id: "key-charlie",
-            elo_rating: 1222,
-            is_active: true,
-            created_at: "2026-04-03T09:20:00Z"
-          }
+          summary: makeOwnedApiKeySummary({
+            keyId: "key-charlie",
+            eloRating: 1222,
+            isActive: true,
+            createdAt: "2026-04-03T09:20:00Z"
+          })
         })
       })
       .mockResolvedValueOnce({
@@ -149,12 +170,12 @@ describe("SessionConfigPanel", () => {
         status: 200,
         json: async () => ({
           items: [
-            {
-              key_id: "key-charlie",
-              elo_rating: 1222,
-              is_active: true,
-              created_at: "2026-04-03T09:20:00Z"
-            }
+            makeOwnedApiKeySummary({
+              keyId: "key-charlie",
+              eloRating: 1222,
+              isActive: true,
+              createdAt: "2026-04-03T09:20:00Z"
+            })
           ]
         })
       });
@@ -211,30 +232,31 @@ describe("SessionConfigPanel", () => {
         status: 200,
         json: async () => ({
           items: [
-            {
-              key_id: "key-alpha",
-              elo_rating: 1210,
-              is_active: true,
-              created_at: "2026-04-03T09:00:00Z"
-            },
-            {
-              key_id: "key-bravo",
-              elo_rating: 1190,
-              is_active: true,
-              created_at: "2026-04-03T09:10:00Z"
-            }
+            makeOwnedApiKeySummary({
+              keyId: "key-alpha",
+              eloRating: 1210,
+              isActive: true,
+              createdAt: "2026-04-03T09:00:00Z"
+            }),
+            makeOwnedApiKeySummary({
+              keyId: "key-bravo",
+              eloRating: 1190,
+              isActive: true,
+              createdAt: "2026-04-03T09:10:00Z"
+            })
           ]
         })
       })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({
-          key_id: "key-alpha",
-          elo_rating: 1210,
-          is_active: false,
-          created_at: "2026-04-03T09:00:00Z"
-        })
+        json: async () =>
+          makeOwnedApiKeySummary({
+            keyId: "key-alpha",
+            eloRating: 1210,
+            isActive: false,
+            createdAt: "2026-04-03T09:00:00Z"
+          })
       });
     vi.stubGlobal("fetch", fetchSpy);
 
@@ -304,12 +326,12 @@ describe("SessionConfigPanel", () => {
         status: 200,
         json: async () => ({
           items: [
-            {
-              key_id: "key-alpha",
-              elo_rating: 1210,
-              is_active: true,
-              created_at: "2026-04-03T09:00:00Z"
-            }
+            makeOwnedApiKeySummary({
+              keyId: "key-alpha",
+              eloRating: 1210,
+              isActive: true,
+              createdAt: "2026-04-03T09:00:00Z"
+            })
           ]
         })
       })
@@ -366,12 +388,12 @@ describe("SessionConfigPanel", () => {
         status: 200,
         json: async () => ({
           items: [
-            {
-              key_id: "key-alpha",
-              elo_rating: 1210,
-              is_active: true,
-              created_at: "2026-04-03T09:00:00Z"
-            }
+            makeOwnedApiKeySummary({
+              keyId: "key-alpha",
+              eloRating: 1210,
+              isActive: true,
+              createdAt: "2026-04-03T09:00:00Z"
+            })
           ]
         })
       })
@@ -411,18 +433,18 @@ describe("SessionConfigPanel", () => {
     expect(screen.queryByText("iron_secret_once")).not.toBeInTheDocument();
 
     createResponse.resolve({
-      ok: true,
-      status: 201,
-      json: async () => ({
-        api_key: "iron_secret_once",
-        summary: {
-          key_id: "key-charlie",
-          elo_rating: 1222,
-          is_active: true,
-          created_at: "2026-04-03T09:20:00Z"
-        }
-      })
-    });
+        ok: true,
+        status: 201,
+        json: async () => ({
+          api_key: "iron_secret_once",
+          summary: makeOwnedApiKeySummary({
+            keyId: "key-charlie",
+            eloRating: 1222,
+            isActive: true,
+            createdAt: "2026-04-03T09:20:00Z"
+          })
+        })
+      });
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledTimes(3);
@@ -468,12 +490,12 @@ describe("SessionConfigPanel", () => {
       status: 200,
       json: async () => ({
         items: [
-          {
-            key_id: "key-alpha",
-            elo_rating: 1210,
-            is_active: true,
-            created_at: "2026-04-03T09:00:00Z"
-          }
+          makeOwnedApiKeySummary({
+            keyId: "key-alpha",
+            eloRating: 1210,
+            isActive: true,
+            createdAt: "2026-04-03T09:00:00Z"
+          })
         ]
       })
     });

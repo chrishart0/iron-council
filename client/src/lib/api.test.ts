@@ -154,9 +154,16 @@ describe("owned api key lifecycle helpers", () => {
         items: [
           {
             key_id: "key-alpha",
+            agent_id: "agent-api-key-key-alpha",
             elo_rating: 1210,
             is_active: true,
-            created_at: "2026-04-03T09:00:00Z"
+            created_at: "2026-04-03T09:00:00Z",
+            entitlement: {
+              is_entitled: true,
+              grant_source: "manual",
+              concurrent_match_allowance: 1,
+              granted_at: "2026-04-03T09:00:00Z"
+            }
           }
         ]
       })
@@ -170,9 +177,16 @@ describe("owned api key lifecycle helpers", () => {
       items: [
         {
           key_id: "key-alpha",
+          agent_id: "agent-api-key-key-alpha",
           elo_rating: 1210,
           is_active: true,
-          created_at: "2026-04-03T09:00:00Z"
+          created_at: "2026-04-03T09:00:00Z",
+          entitlement: {
+            is_entitled: true,
+            grant_source: "manual",
+            concurrent_match_allowance: 1,
+            granted_at: "2026-04-03T09:00:00Z"
+          }
         }
       ]
     });
@@ -194,9 +208,16 @@ describe("owned api key lifecycle helpers", () => {
         api_key: "iron_secret_once",
         summary: {
           key_id: "key-bravo",
+          agent_id: "agent-api-key-key-bravo",
           elo_rating: 1190,
           is_active: true,
-          created_at: "2026-04-03T09:05:00Z"
+          created_at: "2026-04-03T09:05:00Z",
+          entitlement: {
+            is_entitled: true,
+            grant_source: "manual",
+            concurrent_match_allowance: 1,
+            granted_at: "2026-04-03T09:00:00Z"
+          }
         }
       })
     });
@@ -207,9 +228,16 @@ describe("owned api key lifecycle helpers", () => {
       api_key: "iron_secret_once",
       summary: {
         key_id: "key-bravo",
+        agent_id: "agent-api-key-key-bravo",
         elo_rating: 1190,
         is_active: true,
-        created_at: "2026-04-03T09:05:00Z"
+        created_at: "2026-04-03T09:05:00Z",
+        entitlement: {
+          is_entitled: true,
+          grant_source: "manual",
+          concurrent_match_allowance: 1,
+          granted_at: "2026-04-03T09:00:00Z"
+        }
       }
     });
 
@@ -229,9 +257,16 @@ describe("owned api key lifecycle helpers", () => {
       status: 200,
       json: async () => ({
         key_id: "key-charlie",
+        agent_id: "agent-api-key-key-charlie",
         elo_rating: 1175,
         is_active: false,
-        created_at: "2026-04-03T09:07:00Z"
+        created_at: "2026-04-03T09:07:00Z",
+        entitlement: {
+          is_entitled: true,
+          grant_source: "manual",
+          concurrent_match_allowance: 1,
+          granted_at: "2026-04-03T09:00:00Z"
+        }
       })
     });
 
@@ -241,9 +276,16 @@ describe("owned api key lifecycle helpers", () => {
       })
     ).resolves.toEqual({
       key_id: "key-charlie",
+      agent_id: "agent-api-key-key-charlie",
       elo_rating: 1175,
       is_active: false,
-      created_at: "2026-04-03T09:07:00Z"
+      created_at: "2026-04-03T09:07:00Z",
+      entitlement: {
+        is_entitled: true,
+        grant_source: "manual",
+        concurrent_match_allowance: 1,
+        granted_at: "2026-04-03T09:00:00Z"
+      }
     });
 
     expect(fetchImpl).toHaveBeenCalledWith(
@@ -587,8 +629,20 @@ describe("fetchPublicMatchDetail", () => {
         max_player_count: 6,
         open_slot_count: 3,
         roster: [
-          { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
-          { player_id: "player-2", display_name: "Morgana", competitor_kind: "agent" }
+          {
+            player_id: "player-1",
+            display_name: "Arthur",
+            competitor_kind: "human",
+            agent_id: null,
+            human_id: "human:arthur"
+          },
+          {
+            player_id: "player-2",
+            display_name: "Morgana",
+            competitor_kind: "agent",
+            agent_id: "agent-player-2",
+            human_id: null
+          }
         ]
       })
     });
@@ -605,8 +659,20 @@ describe("fetchPublicMatchDetail", () => {
       max_player_count: 6,
       open_slot_count: 3,
       roster: [
-        { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
-        { player_id: "player-2", display_name: "Morgana", competitor_kind: "agent" }
+        {
+          player_id: "player-1",
+          display_name: "Arthur",
+          competitor_kind: "human",
+          agent_id: null,
+          human_id: "human:arthur"
+        },
+        {
+          player_id: "player-2",
+          display_name: "Morgana",
+          competitor_kind: "agent",
+          agent_id: "agent-player-2",
+          human_id: null
+        }
       ]
     });
 
@@ -675,6 +741,97 @@ describe("fetchPublicMatchDetail", () => {
         match_id: "broken",
         status: "active",
         roster: [{ display_name: "Arthur" }]
+      })
+    });
+
+    await expect(
+      fetchPublicMatchDetail("broken", fetchImpl as unknown as typeof fetch)
+    ).rejects.toEqual(
+      new PublicMatchDetailError("Unable to load this public match right now.", "unavailable")
+    );
+  });
+
+  it("accepts legacy public match-detail roster rows that omit additive identity fields", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        match_id: "legacy-contract",
+        status: "active",
+        map: "britain",
+        tick: 18,
+        tick_interval_seconds: 45,
+        current_player_count: 2,
+        max_player_count: 6,
+        open_slot_count: 4,
+        roster: [
+          {
+            player_id: "player-1",
+            display_name: "Arthur",
+            competitor_kind: "human"
+          },
+          {
+            player_id: "player-2",
+            display_name: "Morgana",
+            competitor_kind: "agent"
+          }
+        ]
+      })
+    });
+
+    await expect(
+      fetchPublicMatchDetail("legacy-contract", fetchImpl as unknown as typeof fetch)
+    ).resolves.toEqual({
+      match_id: "legacy-contract",
+      status: "active",
+      map: "britain",
+      tick: 18,
+      tick_interval_seconds: 45,
+      current_player_count: 2,
+      max_player_count: 6,
+      open_slot_count: 4,
+      roster: [
+        {
+          player_id: "player-1",
+          display_name: "Arthur",
+          competitor_kind: "human"
+        },
+        {
+          player_id: "player-2",
+          display_name: "Morgana",
+          competitor_kind: "agent"
+        }
+      ]
+    });
+  });
+
+  it("rejects contradictory roster identity combinations when additive fields are present", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        match_id: "broken",
+        status: "active",
+        map: "britain",
+        tick: 18,
+        tick_interval_seconds: 45,
+        current_player_count: 2,
+        max_player_count: 6,
+        open_slot_count: 4,
+        roster: [
+          {
+            player_id: "player-1",
+            display_name: "Arthur",
+            competitor_kind: "human",
+            agent_id: "invented-human-agent",
+            human_id: null
+          },
+          {
+            player_id: "player-2",
+            display_name: "Morgana",
+            competitor_kind: "agent",
+            agent_id: "agent-player-2",
+            human_id: "human:should-not-be-here"
+          }
+        ]
       })
     });
 

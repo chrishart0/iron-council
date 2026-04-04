@@ -13,7 +13,7 @@ from server.db.agent_entitlements import (
     require_agent_entitlement,
     resolve_effective_agent_entitlement,
 )
-from server.db.identity import resolve_human_elo_rating
+from server.db.identity import build_non_seeded_agent_id, resolve_human_elo_rating
 from server.db.models import ApiKey
 from server.models.api import ApiKeyEntitlementSummary, OwnedApiKeySummary
 
@@ -92,6 +92,7 @@ def _build_summary(
 ) -> OwnedApiKeySummary:
     return OwnedApiKeySummary(
         key_id=str(api_key.id),
+        agent_id=build_non_seeded_agent_id(str(api_key.id)),
         elo_rating=int(api_key.elo_rating),
         is_active=bool(api_key.is_active),
         created_at=api_key.created_at,

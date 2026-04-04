@@ -565,16 +565,22 @@ async def test_public_match_detail_route_returns_compact_db_backed_metadata_and_
                 "player_id": "player-1",
                 "display_name": "Arthur",
                 "competitor_kind": "human",
+                "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
             },
             {
                 "player_id": "player-3",
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+                "human_id": None,
             },
             {
                 "player_id": "player-2",
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+                "human_id": None,
             },
         ],
     }
@@ -648,16 +654,22 @@ async def test_public_match_detail_route_preserves_seeded_memory_fallback_contra
                 "player_id": "player-1",
                 "display_name": "Arthur",
                 "competitor_kind": "human",
+                "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
             },
             {
                 "player_id": "player-3",
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+                "human_id": None,
             },
             {
                 "player_id": "player-2",
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+                "human_id": None,
             },
         ],
     }
@@ -689,6 +701,8 @@ async def test_public_match_detail_route_uses_visible_players_when_memory_join_m
             "player_id": "player-1",
             "display_name": "Arthur",
             "competitor_kind": "human",
+            "agent_id": None,
+            "human_id": None,
         }
     ]
 
@@ -1406,6 +1420,7 @@ async def test_authenticated_human_api_key_lifecycle_can_list_owned_keys_without
         "items": [
             {
                 "key_id": "00000000-0000-0000-0000-000000000202",
+                "agent_id": "agent-api-key-00000000-0000-0000-0000-000000000202",
                 "elo_rating": 1211,
                 "is_active": True,
                 "created_at": "2026-03-29T00:00:00Z",
@@ -1458,6 +1473,9 @@ async def test_authenticated_human_api_key_lifecycle_can_create_and_revoke_owned
 
     assert create_response.status_code == HTTPStatus.CREATED
     assert created_payload["api_key"].startswith("iron_")
+    assert created_payload["summary"]["agent_id"] == (
+        f"agent-api-key-{created_payload['summary']['key_id']}"
+    )
     assert created_payload["summary"]["elo_rating"] == 1210
     assert created_payload["summary"]["is_active"] is True
     assert created_payload["summary"]["entitlement"] == {
@@ -1472,6 +1490,7 @@ async def test_authenticated_human_api_key_lifecycle_can_create_and_revoke_owned
     list_payload = list_response.json()
     assert {
         "key_id": created_payload["summary"]["key_id"],
+        "agent_id": created_payload["summary"]["agent_id"],
         "elo_rating": 1210,
         "is_active": True,
         "created_at": created_payload["summary"]["created_at"],
@@ -1487,6 +1506,7 @@ async def test_authenticated_human_api_key_lifecycle_can_create_and_revoke_owned
     assert revoke_response.status_code == HTTPStatus.OK
     assert revoke_response.json() == {
         "key_id": created_payload["summary"]["key_id"],
+        "agent_id": created_payload["summary"]["agent_id"],
         "elo_rating": 1210,
         "is_active": False,
         "created_at": created_payload["summary"]["created_at"],
@@ -4961,7 +4981,13 @@ async def test_create_match_lobby_route_creates_browseable_lobby_and_creator_mem
         "max_player_count": 4,
         "open_slot_count": 3,
         "roster": [
-            {"player_id": "player-1", "display_name": "Agent 11111111", "competitor_kind": "agent"}
+            {
+                "player_id": "player-1",
+                "display_name": "Agent 11111111",
+                "competitor_kind": "agent",
+                "agent_id": expected_agent_id,
+                "human_id": None,
+            }
         ],
     }
     assert "api_key" not in detail_response.text.lower()
@@ -5436,8 +5462,16 @@ async def test_start_match_lobby_route_transitions_ready_creator_lobby_to_active
                 "player_id": "player-1",
                 "display_name": build_non_seeded_display_name(creator_api_key_id),
                 "competitor_kind": "agent",
+                "agent_id": f"agent-api-key-{creator_api_key_id}",
+                "human_id": None,
             },
-            {"player_id": "player-2", "display_name": "Gawain", "competitor_kind": "agent"},
+            {
+                "player_id": "player-2",
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+                "human_id": None,
+            },
         ],
     }
     assert state_response.status_code == HTTPStatus.OK

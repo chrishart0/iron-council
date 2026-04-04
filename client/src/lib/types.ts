@@ -196,9 +196,18 @@ export type ApiErrorEnvelope = {
 
 export type OwnedApiKeySummary = {
   key_id: string;
+  agent_id: string;
   elo_rating: number;
   is_active: boolean;
   created_at: string;
+  entitlement: ApiKeyEntitlementSummary;
+};
+
+export type ApiKeyEntitlementSummary = {
+  is_entitled: boolean;
+  grant_source: "manual" | "dev" | null;
+  concurrent_match_allowance: number;
+  granted_at: string | null;
 };
 
 export type OwnedApiKeyListResponse = {

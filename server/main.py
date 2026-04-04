@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from typing import Final, cast
+from typing import Final, Literal, cast
 
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +24,7 @@ from server.api import (
     register_realtime_routes,
 )
 from server.api.errors import ApiError
+from server.db.player_ids import build_human_actor_id
 from server.db.registry import load_match_registry_from_database, persist_advanced_match_tick
 from server.models.api import ApiErrorDetail, ApiErrorResponse, PublicMatchRosterRow
 from server.models.domain import MatchStatus
@@ -251,14 +252,27 @@ def _build_in_memory_public_match_roster(
         roster_player_ids = visible_player_ids
 
     human_player_ids = set(joined_human_player_ids)
+    human_actor_ids_by_player_id = {
+        player_id: build_human_actor_id(user_id)
+        for user_id, player_id in record.joined_humans.items()
+    }
+
+    def resolved_competitor_kind(player_id: str) -> Literal["human", "agent"]:
+        declared_kind = record.public_competitor_kinds.get(
+            player_id,
+            "human" if player_id in human_player_ids else "agent",
+        )
+        return declared_kind
+
     roster = [
         PublicMatchRosterRow(
             player_id=player_id,
             display_name=profile.display_name,
-            competitor_kind=record.public_competitor_kinds.get(
-                player_id,
-                "human" if player_id in human_player_ids else "agent",
-            ),
+            competitor_kind=(competitor_kind := resolved_competitor_kind(player_id)),
+            agent_id=profile.agent_id if competitor_kind == "agent" else None,
+            human_id=human_actor_ids_by_player_id.get(player_id)
+            if competitor_kind == "human"
+            else None,
         )
         for player_id in roster_player_ids
         if (profile := registry.get_agent_profile(f"agent-{player_id}")) is not None

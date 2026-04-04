@@ -1302,9 +1302,24 @@ function isOwnedApiKeySummary(payload: unknown): payload is OwnedApiKeySummary {
   return (
     isRecord(payload) &&
     typeof payload.key_id === "string" &&
+    typeof payload.agent_id === "string" &&
     typeof payload.elo_rating === "number" &&
     typeof payload.is_active === "boolean" &&
-    typeof payload.created_at === "string"
+    typeof payload.created_at === "string" &&
+    isApiKeyEntitlementSummary(payload.entitlement)
+  );
+}
+
+function isApiKeyEntitlementSummary(payload: unknown): boolean {
+  return (
+    isRecord(payload) &&
+    typeof payload.is_entitled === "boolean" &&
+    (payload.grant_source === "manual" ||
+      payload.grant_source === "dev" ||
+      payload.grant_source === null ||
+      payload.grant_source === undefined) &&
+    typeof payload.concurrent_match_allowance === "number" &&
+    (typeof payload.granted_at === "string" || payload.granted_at === null || payload.granted_at === undefined)
   );
 }
 
@@ -1702,13 +1717,27 @@ function isRosterRow(payload: unknown): payload is PublicMatchRosterRow {
     return false;
   }
 
-  return (
+  const hasValidSharedFields =
     typeof payload.player_id === "string" &&
     typeof payload.display_name === "string" &&
-    (payload.competitor_kind === "human" || payload.competitor_kind === "agent") &&
-    (payload.agent_id === undefined || payload.agent_id === null || typeof payload.agent_id === "string") &&
-    (payload.human_id === undefined || payload.human_id === null || typeof payload.human_id === "string")
-  );
+    (payload.competitor_kind === "human" || payload.competitor_kind === "agent");
+
+  if (!hasValidSharedFields) {
+    return false;
+  }
+
+  const hasAgentIdentityField = Object.hasOwn(payload, "agent_id");
+  const hasHumanIdentityField = Object.hasOwn(payload, "human_id");
+
+  if (!hasAgentIdentityField && !hasHumanIdentityField) {
+    return true;
+  }
+
+  if (payload.competitor_kind === "human") {
+    return payload.agent_id === null && typeof payload.human_id === "string";
+  }
+
+  return typeof payload.agent_id === "string" && payload.human_id === null;
 }
 
 function isApiNotFoundError(payload: unknown): boolean {

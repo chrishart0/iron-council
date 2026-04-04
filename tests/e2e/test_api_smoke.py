@@ -551,16 +551,22 @@ def test_public_match_detail_smoke_flow_runs_through_real_process_with_compact_p
                 "player_id": "player-1",
                 "display_name": "Arthur",
                 "competitor_kind": "human",
+                "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
             },
             {
                 "player_id": "player-3",
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+                "human_id": None,
             },
             {
                 "player_id": "player-2",
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+                "human_id": None,
             },
         ],
     }
@@ -744,6 +750,8 @@ def test_create_match_lobby_smoke_flow_runs_through_real_process(
             "player_id": "player-1",
             "display_name": build_non_seeded_display_name(creator_api_key_id),
             "competitor_kind": "agent",
+            "agent_id": f"agent-api-key-{creator_api_key_id}",
+            "human_id": None,
         }
     ]
     assert "api_key" not in detail_response.text.lower()
@@ -830,8 +838,16 @@ def test_start_match_lobby_smoke_flow_runs_through_real_process(
                 "player_id": "player-1",
                 "display_name": build_non_seeded_display_name(creator_api_key_id),
                 "competitor_kind": "agent",
+                "agent_id": f"agent-api-key-{creator_api_key_id}",
+                "human_id": None,
             },
-            {"player_id": "player-2", "display_name": "Gawain", "competitor_kind": "agent"},
+            {
+                "player_id": "player-2",
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+                "human_id": None,
+            },
         ],
     }
     assert latest_state is not None

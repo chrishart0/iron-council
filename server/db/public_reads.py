@@ -187,6 +187,14 @@ def get_public_match_detail(*, database_url: str, match_id: str) -> PublicMatchD
             .where(Player.match_id == match.id)
             .order_by(Player.display_name, Player.is_agent, Player.id)
         ).all()
+        api_key_ids = [player.api_key_id for player in players if player.api_key_id is not None]
+        api_key_rows = (
+            session.scalars(
+                select(ApiKey).where(ApiKey.id.in_(api_key_ids)).order_by(ApiKey.id)
+            ).all()
+            if api_key_ids
+            else []
+        )
         persisted_player_mapping = build_persisted_player_mapping(
             canonical_player_ids=sorted(state.players),
             persisted_players=players,
@@ -195,6 +203,7 @@ def get_public_match_detail(*, database_url: str, match_id: str) -> PublicMatchD
     return build_public_match_detail(
         match=match,
         players=players,
+        api_key_rows=api_key_rows,
         persisted_player_mapping=persisted_player_mapping,
     )
 

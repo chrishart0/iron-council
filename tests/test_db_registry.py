@@ -651,6 +651,8 @@ def test_create_match_lobby_persists_match_and_creator_membership_atomically(
                 "player_id": "player-1",
                 "display_name": creator_display_name,
                 "competitor_kind": "agent",
+                "agent_id": creator_agent_id,
+                "human_id": None,
             }
         ],
     }
@@ -949,8 +951,16 @@ def test_join_match_persists_membership_idempotently_and_remains_publicly_visibl
                 "player_id": "player-1",
                 "display_name": creator_display_name,
                 "competitor_kind": "agent",
+                "agent_id": creator_agent_id,
+                "human_id": None,
             },
-            {"player_id": "player-2", "display_name": "Agent 33333333", "competitor_kind": "agent"},
+            {
+                "player_id": "player-2",
+                "display_name": "Agent 33333333",
+                "competitor_kind": "agent",
+                "agent_id": "agent-api-key-33333333-3333-3333-3333-333333333333",
+                "human_id": None,
+            },
         ],
     }
 
@@ -1068,8 +1078,16 @@ def test_start_match_lobby_persists_active_transition_and_reloadable_runtime_sta
                 "player_id": "player-1",
                 "display_name": creator_display_name,
                 "competitor_kind": "agent",
+                "agent_id": creator_agent_id,
+                "human_id": None,
             },
-            {"player_id": "player-2", "display_name": "Gawain", "competitor_kind": "agent"},
+            {
+                "player_id": "player-2",
+                "display_name": "Gawain",
+                "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+                "human_id": None,
+            },
         ],
     }
 
@@ -3566,16 +3584,22 @@ def test_get_public_match_detail_returns_compact_public_metadata_and_sorted_rost
                 "player_id": "player-1",
                 "display_name": "Arthur",
                 "competitor_kind": "human",
+                "agent_id": None,
+                "human_id": "human:00000000-0000-0000-0000-000000000301",
             },
             {
                 "player_id": "player-3",
                 "display_name": "Gawain",
                 "competitor_kind": "agent",
+                "agent_id": "agent-player-3",
+                "human_id": None,
             },
             {
                 "player_id": "player-2",
                 "display_name": "Morgana",
                 "competitor_kind": "agent",
+                "agent_id": "agent-player-2",
+                "human_id": None,
             },
         ],
     }
@@ -3660,9 +3684,27 @@ def test_get_public_match_detail_stably_orders_visible_roster_rows(
     )
 
     assert [row.model_dump(mode="json") for row in detail.roster] == [
-        {"player_id": "player-2", "display_name": "Alex", "competitor_kind": "human"},
-        {"player_id": "player-3", "display_name": "alex", "competitor_kind": "human"},
-        {"player_id": "player-1", "display_name": "Alex", "competitor_kind": "agent"},
+        {
+            "player_id": "player-2",
+            "display_name": "Alex",
+            "competitor_kind": "human",
+            "agent_id": None,
+            "human_id": "human:00000000-0000-0000-0000-000000000372",
+        },
+        {
+            "player_id": "player-3",
+            "display_name": "alex",
+            "competitor_kind": "human",
+            "agent_id": None,
+            "human_id": "human:00000000-0000-0000-0000-000000000373",
+        },
+        {
+            "player_id": "player-1",
+            "display_name": "Alex",
+            "competitor_kind": "agent",
+            "agent_id": "agent-player-2",
+            "human_id": None,
+        },
     ]
 
 
@@ -3745,9 +3787,27 @@ def test_get_public_match_detail_maps_canonical_player_ids_from_persisted_ids_no
     )
 
     assert [row.model_dump(mode="json") for row in detail.roster] == [
-        {"player_id": "player-1", "display_name": "Arthur", "competitor_kind": "human"},
-        {"player_id": "player-3", "display_name": "Gawain", "competitor_kind": "agent"},
-        {"player_id": "player-2", "display_name": "Morgana", "competitor_kind": "agent"},
+        {
+            "player_id": "player-1",
+            "display_name": "Arthur",
+            "competitor_kind": "human",
+            "agent_id": None,
+            "human_id": "human:00000000-0000-0000-0000-000000000301",
+        },
+        {
+            "player_id": "player-3",
+            "display_name": "Gawain",
+            "competitor_kind": "agent",
+            "agent_id": "agent-player-3",
+            "human_id": None,
+        },
+        {
+            "player_id": "player-2",
+            "display_name": "Morgana",
+            "competitor_kind": "agent",
+            "agent_id": "agent-player-2",
+            "human_id": None,
+        },
     ]
 
 
@@ -3860,8 +3920,20 @@ def test_public_match_browse_and_detail_keep_counts_while_roster_filters_unmappe
     assert detail.current_player_count == 3
     assert detail.open_slot_count == 2
     assert [row.model_dump(mode="json") for row in detail.roster] == [
-        {"player_id": "player-1", "display_name": "Arthur", "competitor_kind": "human"},
-        {"player_id": "player-2", "display_name": "Morgana", "competitor_kind": "agent"},
+        {
+            "player_id": "player-1",
+            "display_name": "Arthur",
+            "competitor_kind": "human",
+            "agent_id": None,
+            "human_id": "human:00000000-0000-0000-0000-000000000301",
+        },
+        {
+            "player_id": "player-2",
+            "display_name": "Morgana",
+            "competitor_kind": "agent",
+            "agent_id": "agent-player-2",
+            "human_id": None,
+        },
     ]
 
 

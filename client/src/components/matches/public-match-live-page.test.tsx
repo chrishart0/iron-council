@@ -41,6 +41,20 @@ class MockWebSocket {
   }
 }
 
+function makeRosterRow(
+  playerId: string,
+  displayName: string,
+  competitorKind: "human" | "agent"
+) {
+  return {
+    player_id: playerId,
+    display_name: displayName,
+    competitor_kind: competitorKind,
+    agent_id: competitorKind === "agent" ? `agent-${playerId}` : null,
+    human_id: competitorKind === "human" ? `human:${playerId}` : null
+  };
+}
+
 function makeEnvelope(tick: number) {
   return {
     type: "tick_update",
@@ -384,8 +398,8 @@ describe("PublicMatchLivePage", () => {
         max_player_count: 5,
         open_slot_count: 2,
         roster: [
-          { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
-          { player_id: "player-2", display_name: "Morgana", competitor_kind: "agent" }
+          makeRosterRow("player-1", "Arthur", "human"),
+          makeRosterRow("player-2", "Morgana", "agent")
         ]
       })
     });
@@ -426,8 +440,8 @@ describe("PublicMatchLivePage", () => {
         max_player_count: 5,
         open_slot_count: 2,
         roster: [
-          { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
-          { player_id: "player-2", display_name: "Morgana", competitor_kind: "agent" }
+          makeRosterRow("player-1", "Arthur", "human"),
+          makeRosterRow("player-2", "Morgana", "agent")
         ]
       })
     });
@@ -488,8 +502,8 @@ describe("PublicMatchLivePage", () => {
         max_player_count: 5,
         open_slot_count: 2,
         roster: [
-          { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
-          { player_id: "player-2", display_name: "Morgana", competitor_kind: "agent" }
+          makeRosterRow("player-1", "Arthur", "human"),
+          makeRosterRow("player-2", "Morgana", "agent")
         ]
       })
     });
@@ -538,7 +552,7 @@ describe("PublicMatchLivePage", () => {
         current_player_count: 3,
         max_player_count: 5,
         open_slot_count: 2,
-        roster: [{ player_id: "player-1", display_name: "Arthur", competitor_kind: "human" }]
+        roster: [makeRosterRow("player-1", "Arthur", "human")]
       })
     });
 
@@ -577,8 +591,8 @@ describe("PublicMatchLivePage", () => {
         max_player_count: 5,
         open_slot_count: 3,
         roster: [
-          { player_id: "player-1", display_name: "Arthur", competitor_kind: "human" },
-          { player_id: "player-2", display_name: "Arthur", competitor_kind: "agent" }
+          makeRosterRow("player-1", "Arthur", "human"),
+          makeRosterRow("player-2", "Arthur", "agent")
         ]
       })
     });
@@ -624,7 +638,7 @@ describe("PublicMatchLivePage", () => {
         current_player_count: 3,
         max_player_count: 5,
         open_slot_count: 2,
-        roster: [{ player_id: "player-1", display_name: "Arthur", competitor_kind: "human" }]
+        roster: [makeRosterRow("player-1", "Arthur", "human")]
       })
     });
 
@@ -659,7 +673,7 @@ describe("PublicMatchLivePage", () => {
         current_player_count: 3,
         max_player_count: 5,
         open_slot_count: 2,
-        roster: [{ player_id: "player-1", display_name: "Arthur", competitor_kind: "human" }]
+        roster: [makeRosterRow("player-1", "Arthur", "human")]
       })
     });
 
