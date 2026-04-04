@@ -2356,3 +2356,39 @@ So that guided mode is usable from the shipped web client rather than only via r
 **And Given** a guidance or override action succeeds or fails
 **When** the browser updates
 **Then** the result is rendered clearly with deterministic success/error states and no pretend optimistic state that outruns the authoritative server contract.
+
+## Epic 50: V1 Contract Hardening and Simplification Sweep
+
+Use the first post-V1 iteration to harden the highest-risk behavioral seams that still sit near the coverage floor after the guided-agent milestone. Keep the work small, behavior-first, and review-heavy: add public-boundary regressions for diplomacy/messaging and DB-backed rating settlement, then simplify only where those regressions expose unnecessary complexity or contract ambiguity.
+
+### Story 50.1: Harden in-memory diplomacy and messaging contract edges
+
+As a maintainer,
+I want focused behavior-first regressions around the in-memory diplomacy and messaging seams,
+So that treaty/alliance transitions and chat visibility rules stay deterministic while the registry remains a simple compatibility surface.
+
+**Acceptance Criteria:**
+
+**Given** alliance creation, join, leave, and treaty transitions already power the authenticated API and smoke fixtures
+**When** focused regressions exercise edge transitions such as missing inputs, leader handoff, unsupported treaty accept/withdraw flows, and `since_tick` visibility filters
+**Then** the tests pin the current public behavior without reaching into implementation details or relying on internal ordering not exposed by the registry contract.
+
+**And Given** world/direct/group messaging all feed briefings and live views
+**When** focused regressions cover recipient validation, membership enforcement, and visible message grouping
+**Then** the implementation keeps the same deterministic browser/agent-facing behavior and any necessary production changes remain small and convention-aligned.
+
+### Story 50.2: Harden DB-backed rating settlement identity and tenure edges
+
+As a maintainer,
+I want deterministic DB-backed regressions for rating settlement edge cases,
+So that completed-match ELO updates remain honest across solo winners, alliance winners, draws, and identity aggregation reads.
+
+**Acceptance Criteria:**
+
+**Given** completed matches can settle human and agent ratings from persisted player rows and canonical match state
+**When** focused regressions exercise winner resolution, tenure weighting, zero-territory fallback, and latest-human-ELO lookup edge cases
+**Then** settlement stays deterministic, additive, and safe without depending on row-order accidents or hidden defaults.
+
+**And Given** V1 is already feature-complete
+**When** this hardening story lands
+**Then** the code and tests stay boring: prefer narrow DB/behavior tests and only the smallest production refactor needed to keep the implementation aligned with repo conventions and `make quality`.

@@ -1,0 +1,64 @@
+# Story 50.1: Harden in-memory diplomacy and messaging contract edges
+
+Status: drafted
+
+## Story
+
+As a maintainer,
+I want focused behavior-first regressions around the in-memory diplomacy and messaging seams,
+So that treaty/alliance transitions and chat visibility rules stay deterministic while the registry remains a simple compatibility surface.
+
+## Acceptance Criteria
+
+1. Given alliance creation, join, leave, and treaty transitions already power the authenticated API and smoke fixtures, when focused regressions exercise edge transitions such as missing inputs, leader handoff, unsupported treaty accept/withdraw flows, and `since_tick` visibility filters, then the tests pin the current public behavior without reaching into implementation details or relying on internal ordering not exposed by the registry contract.
+2. Given world/direct/group messaging all feed briefings and live views, when focused regressions cover recipient validation, membership enforcement, and visible message grouping, then the implementation keeps the same deterministic browser/agent-facing behavior and any necessary production changes remain small and convention-aligned.
+3. Given the story ships, when the focused test slice and the repo quality gate run, then the new regressions pass and the BMAD artifact records the real verification commands and outcomes.
+
+## Ready Signoff
+
+- [x] Engineering / Architecture
+- [x] Product Owner
+
+## Tasks / Subtasks
+
+- [ ] Add focused regressions for alliance/treaty transition edge cases and `since_tick` filtering at the `AgentRegistry` boundary. (AC: 1)
+- [ ] Add focused regressions for messaging recipient validation, group membership enforcement, and briefing visibility/grouping behavior. (AC: 2)
+- [ ] Make the smallest implementation cleanup needed for any exposed drift, keeping the registry surface boring and convention-aligned. (AC: 1, 2)
+- [ ] Re-run the focused test slice plus `make quality`, then close out this BMAD artifact with real outcomes. (AC: 3)
+
+## Dev Notes
+
+- Keep the scope narrow to `server/agent_registry_diplomacy.py`, `server/agent_registry_messaging.py`, and their existing `AgentRegistry` behavior surfaces.
+- Prefer tests at the `tests/test_agent_registry.py` boundary over direct helper internals unless a tiny direct helper test is the only honest way to pin a public compatibility seam.
+- If a production change is required, favor the smallest fix over new abstractions.
+- Do not broaden into DB-backed diplomacy/message flows; this story is only about the in-memory compatibility path.
+
+### References
+
+- `_bmad-output/planning-artifacts/epics.md#Story 50.1: Harden in-memory diplomacy and messaging contract edges`
+- `server/agent_registry.py`
+- `server/agent_registry_diplomacy.py`
+- `server/agent_registry_messaging.py`
+- `tests/test_agent_registry.py`
+- `tests/api/test_agent_api.py`
+
+## Complete Signoff
+
+- [ ] Engineering / Architecture
+- [ ] Product Owner
+
+## Change Log
+
+- 2026-04-04: Drafted Story 50.1 to harden high-risk in-memory diplomacy and messaging behaviors after the guided-agent milestone.
+
+## Debug Log References
+
+- Pending implementation.
+
+## Completion Notes
+
+- Pending implementation.
+
+## File List
+
+- `_bmad-output/implementation-artifacts/50-1-harden-in-memory-diplomacy-and-messaging-contract-edges.md`

@@ -1,9 +1,9 @@
-generated: 2026-04-03 09:39 UTC
+generated: 2026-04-04 04:46 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: null
+next_story: 50-1-harden-in-memory-diplomacy-and-messaging-contract-edges
 
 development_status:
   public-readiness-epic: done
@@ -243,3 +243,8 @@ development_status:
   49-3-add-pre-tick-human-override-semantics-for-guided-agents: done
   49-4-add-guided-agent-controls-to-the-live-web-client: done
   epic-49-retrospective: optional
+
+  epic-50: in_progress
+  50-1-harden-in-memory-diplomacy-and-messaging-contract-edges: ready_for_dev
+  50-2-harden-db-backed-rating-settlement-identity-and-tenure-edges: ready_for_dev
+  epic-50-retrospective: optional
