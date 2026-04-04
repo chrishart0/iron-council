@@ -1,9 +1,9 @@
-generated: 2026-04-04 06:55 UTC
+generated: 2026-04-04 13:20 UTC
 project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 52-1-add-authenticated-write-abuse-guardrails
+next_story: 53-1-add-a-public-demo-walkthrough-and-entrypoint-docs-cleanup
 
 development_status:
   public-readiness-epic: done
@@ -259,3 +259,7 @@ development_status:
   52-2-extend-abuse-guardrails-to-websocket-and-public-entrypoint-hotspots: done
   52-3-document-and-validate-the-launch-abuse-control-contract: done
   epic-52-retrospective: optional
+
+  epic-53: in_progress
+  53-1-add-a-public-demo-walkthrough-and-entrypoint-docs-cleanup: approved
+  53-2-polish-the-client-home-and-session-bootstrap-for-first-time-visitors: approved

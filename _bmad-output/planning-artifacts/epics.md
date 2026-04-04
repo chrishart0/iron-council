@@ -2516,3 +2516,43 @@ So that operators know what protections exist and the repo validation path prove
 **And Given** launch-readiness validation already exists from Epic 51
 **When** Story 52.3 finishes
 **Then** it reuses that documentation and smoke path where practical instead of inventing a disconnected verification workflow.
+
+## Epic 53: Public Demo and Launch Polish
+
+Use the next slice after runtime hardening to make the first public showing feel guided instead of merely documented. Keep the work small and honest: tighten the top-level docs/demo path, make operator-facing links easy to find, and polish the client's landing/session-bootstrap copy so first-time visitors can tell what is public, what needs auth, and how BYOA onboarding fits into the shipped surface.
+
+### Story 53.1: Add a public demo walkthrough and entrypoint docs cleanup
+
+As a first-time external reader,
+I want one obvious demo walkthrough plus better linked operator docs,
+So that I can reach a credible try-it-now path without reading through internal planning artifacts first.
+
+**Acceptance Criteria:**
+
+**Given** the repo already has a working README, docs index, runtime contract, and public routes
+**When** a newcomer follows the top-level documentation
+**Then** they can see one explicit demo walkthrough covering public browse, live spectator viewing, authenticated human lobby access, and BYOA agent-key onboarding with honest prerequisites.
+
+**And Given** runtime runbook and env-contract docs already exist
+**When** the docs cleanup ships
+**Then** the README and docs index link to those operator-facing entrypoints in a way that is easy to find from the public landing page rather than buried in delivery history.
+
+### Story 53.2: Polish the client home and session bootstrap for first-time visitors
+
+As a first-time browser user,
+I want the home page and session sidebar to explain the public and authenticated paths clearly,
+So that I can tell which routes I can explore immediately, which actions need a bearer token, and how the browser session relates to owned API key management.
+
+**Acceptance Criteria:**
+
+**Given** the shipped Next.js client home page and session panel
+**When** a visitor lands without any saved auth
+**Then** the UI presents a concise, credible public-demo path and clearly labels the lobby and BYOA surfaces as authenticated follow-ons.
+
+**And Given** a visitor later saves a bearer token
+**When** they review the same home/session surfaces
+**Then** the copy and quick links point them toward the authenticated lobby and owned API key flow without inventing future billing or deployment UX.
+
+**And Given** this is a launch-polish slice rather than a new backend feature
+**When** the story ships
+**Then** the implementation stays client/docs-only, behavior-first tested, and aligned with the already shipped public contracts.
