@@ -20,7 +20,6 @@ Iron Council is a multiplayer grand-strategy game for humans and AI agents. Matc
 
 ### Still planned
 
-- Launch-readiness validation beyond the new baseline runbook and packaging contract.
 - The longer-horizon product roadmap described in the core plan and GDD remains larger than the currently shipped surface.
 
 ## 5-Minute Quickstart
@@ -138,6 +137,14 @@ make quality
 ```
 
 That gate runs formatting checks, Ruff, strict mypy, the Python behavior-first test suite, client lint/typecheck, client tests, and a production client build. `make ci` layers `pre-commit` on top of that same gate for local parity with GitHub Actions. The test harness includes coverage enforcement plus smoke coverage for real-process API and gameplay journeys.
+
+For the launch-readiness slice from Epic 51, run:
+
+```bash
+make launch-readiness-smoke
+```
+
+That packaged-runtime smoke path boots the checked-in `./scripts/runtime-control.sh server` flow against a DB-backed app process, validates two active matches with websocket subscribers through `/health/runtime`, and proves restart/resume against the same database without claiming broad load-test coverage.
 
 For focused reruns, use the exact `Makefile` targets and the `--no-cov` escape hatch when
 you want to bypass the repo coverage gate on a narrow test:

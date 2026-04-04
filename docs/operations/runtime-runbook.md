@@ -8,7 +8,15 @@ This runbook documents the first boring operator path for Iron Council. It is in
 - local/demo support services come from `compose.support-services.yaml`
 - `./scripts/runtime-control.sh` is the checked-in operator entrypoint
 
-Story 51.2 adds the explicit operator signals exposed at `/health/runtime`, and Story 51.3 will add the broader launch-readiness smoke path that reuses them. This runbook defines the startup order and recovery baseline those checks should follow.
+Story 51.2 adds the explicit operator signals exposed at `/health/runtime`, and Story 51.3 adds the broader launch-readiness smoke path that reuses them. This runbook defines the startup order and recovery baseline those checks follow.
+
+The narrow repo-managed validation entrypoint for that Story 51.3 slice is:
+
+```bash
+make launch-readiness-smoke
+```
+
+It exercises the checked-in `./scripts/runtime-control.sh server` path against a DB-backed runtime, two active matches, websocket subscribers, and a restart against the same database while reusing `/health/runtime` as the only operator-facing status surface.
 
 ## 1. Bootstrap the workspace
 

@@ -6,7 +6,7 @@ DOCKER_COMPOSE ?= docker compose -f $(SUPPORT_SERVICES_COMPOSE_FILE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install install-dev hooks format format-check lint test smoke-test regression-test test-real-api test-smoke pre-commit quality ci client-install client-lint client-typecheck client-test client-build support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
+.PHONY: help setup install install-dev hooks format format-check lint test smoke-test regression-test test-real-api test-smoke launch-readiness-smoke pre-commit quality ci client-install client-lint client-typecheck client-test client-build support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
 
 help: ## Show the available developer workflow commands.
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-14s %s\n", $$1, $$2}'
@@ -45,6 +45,9 @@ test-real-api: ## Run the real-process, real-DB API integration checks.
 
 test-smoke: ## Run the small real-process API smoke flow suite.
 	$(UV) run pytest --no-cov tests/e2e/test_api_smoke.py
+
+launch-readiness-smoke: ## Run the packaged-runtime launch-readiness smoke slice.
+	$(UV) run pytest --no-cov tests/e2e/test_launch_readiness_smoke.py
 
 pre-commit: ## Run the repository hooks across all files.
 	$(UV) run pre-commit run --all-files --show-diff-on-failure

@@ -1,6 +1,6 @@
 # Story 51.3: Add multi-match/load validation and launch-readiness smoke path
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -21,10 +21,10 @@ So that the packaged runtime is proven against realistic concurrent-match and re
 
 ## Tasks / Subtasks
 
-- [ ] Define one small launch-readiness smoke path against the packaged runtime from Story 51.1. (AC: 1)
-- [ ] Add focused validation for a few concurrent active matches and websocket subscribers without drifting into large-scale performance benchmarking. (AC: 1)
-- [ ] Reuse Story 51.2 runtime signals when validating restart or websocket behavior, if those signals already exist. (AC: 2)
-- [ ] Run the launch-readiness slice plus `make quality`, then update this artifact with the real outcomes. (AC: 3)
+- [x] Define one small launch-readiness smoke path against the packaged runtime from Story 51.1. (AC: 1)
+- [x] Add focused validation for a few concurrent active matches and websocket subscribers without drifting into large-scale performance benchmarking. (AC: 1)
+- [x] Reuse Story 51.2 runtime signals when validating restart or websocket behavior, if those signals already exist. (AC: 2)
+- [x] Run the launch-readiness slice plus `make quality`, then update this artifact with the real outcomes. (AC: 3)
 
 ## Dev Notes
 
@@ -49,15 +49,27 @@ So that the packaged runtime is proven against realistic concurrent-match and re
 ## Change Log
 
 - 2026-04-04: Drafted Story 51.3 as the launch-readiness validation slice that can run after Story 51.1 and alongside Story 51.2.
+- 2026-04-04: Added a packaged-runtime launch-readiness smoke path, a narrow `make launch-readiness-smoke` entrypoint, and runbook/README references that reuse `/health/runtime` instead of adding a second status contract.
 
 ## Debug Log References
 
-- None yet. Story not started.
+- `uv run pytest --no-cov tests/e2e/test_launch_readiness_smoke.py tests/test_runtime_contract_docs.py -q` failed before test execution because the repo `pytest` addopts still expected the dev coverage extras in the fresh `uv run` environment.
+- `uv run --extra dev pytest --override-ini "addopts= -q --strict-config --strict-markers" tests/e2e/test_launch_readiness_smoke.py tests/test_runtime_contract_docs.py` first failed with a bad patch artifact (`tests/test_runtime_contract_docs.py` had an accidental `++ /tmp/...` first line), then failed as intended on the missing `make launch-readiness-smoke` README/runbook wiring, and then passed (`3 passed`) after the target/docs landed.
+- `make launch-readiness-smoke` passed (`1 passed`).
+- `make quality` first failed on `ruff format --check` for `tests/e2e/test_launch_readiness_smoke.py`, then failed on one Ruff `E501` line-length error, then failed on mypy websocket/JSON typing in the new smoke test, and finally passed after those fixes (`480 passed, 1 skipped`, coverage `95.32%`, client lint/test/build green).
 
 ## Completion Notes
 
-- Pending implementation.
+- Added one deterministic real-process smoke path at `tests/e2e/test_launch_readiness_smoke.py` that boots the checked-in `./scripts/runtime-control.sh server` entrypoint against a DB-backed runtime, promotes two seeded matches to active 1-second ticks, attaches websocket spectators to both, verifies `/health/runtime` startup recovery and fanout signals, and proves restart/resume against the same database.
+- Added the narrow developer command `make launch-readiness-smoke` instead of expanding the quality workflow with a separate benchmark harness.
+- Updated the README and runtime runbook so the operator/developer path for this story points at the packaged runtime entrypoint plus the shared `/health/runtime` contract from Story 51.2.
 
 ## File List
 
 - `_bmad-output/implementation-artifacts/51-3-add-multi-match-load-validation-and-launch-readiness-smoke-path.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `Makefile`
+- `README.md`
+- `docs/operations/runtime-runbook.md`
+- `tests/e2e/test_launch_readiness_smoke.py`
+- `tests/test_runtime_contract_docs.py`

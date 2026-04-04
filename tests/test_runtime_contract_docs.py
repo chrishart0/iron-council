@@ -57,12 +57,14 @@ def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_a
     env_contract = (REPO_ROOT / "docs" / "operations" / "runtime-env-contract.md").read_text()
     runbook = (REPO_ROOT / "docs" / "operations" / "runtime-runbook.md").read_text()
     runtime_env = (REPO_ROOT / "env.runtime.example").read_text()
+    makefile = (REPO_ROOT / "Makefile").read_text()
 
     assert "./scripts/runtime-control.sh doctor" in readme
     assert "./scripts/runtime-control.sh server" in readme
     assert "./scripts/runtime-control.sh client-start" in readme
     assert "Runtime environment contract" in readme
     assert "Runtime runbook" in readme
+    assert "make launch-readiness-smoke" in readme
 
     assert "Runtime environment contract" in docs_index
     assert "Runtime runbook" in docs_index
@@ -90,3 +92,5 @@ def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_a
     assert "curl http://127.0.0.1:8000/health" in runbook
     assert "curl http://127.0.0.1:8000/health/runtime" in runbook
     assert "/health/runtime" in runbook
+    assert "make launch-readiness-smoke" in runbook
+    assert "launch-readiness-smoke" in makefile
