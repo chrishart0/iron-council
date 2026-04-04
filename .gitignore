@@ -26,3 +26,6 @@ venv/
 dist/
 build/
 *.egg-info/
+.playwright-tmp/
+client/playwright-report/
+client/test-results/

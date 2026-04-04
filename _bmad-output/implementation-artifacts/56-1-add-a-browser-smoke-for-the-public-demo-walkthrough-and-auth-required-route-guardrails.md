@@ -1,6 +1,6 @@
 # Story 56.1: Add a browser smoke for the public demo walkthrough and auth-required route guardrails
 
-Status: ready-for-dev
+Status: ready-for-review
 
 ## Story
 
@@ -23,11 +23,11 @@ So that launch confidence no longer depends only on API/process tests and compon
 
 ## Tasks / Subtasks
 
-- [ ] Add one focused browser smoke harness over the packaged local runtime and seeded demo data. (AC: 1, 4)
-- [ ] Cover public browse, match detail/history/live navigation, and the auth-required guardrail routes in the same high-value smoke. (AC: 1, 2)
-- [ ] Persist the API base URL through the browser session panel and prove the saved value is reused. (AC: 3)
-- [ ] Wire the smoke into a simple repo command path and document any required browser/test bootstrap honestly. (AC: 4)
-- [ ] Run focused verification plus the full repo quality gate, then record the real outcomes here. (AC: 5)
+- [x] Add one focused browser smoke harness over the packaged local runtime and seeded demo data. (AC: 1, 4)
+- [x] Cover public browse, match detail/history/live navigation, and the auth-required guardrail routes in the same high-value smoke. (AC: 1, 2)
+- [x] Persist the API base URL through the browser session panel and prove the saved value is reused. (AC: 3)
+- [x] Wire the smoke into a simple repo command path and document any required browser/test bootstrap honestly. (AC: 4)
+- [x] Run focused verification plus the full repo quality gate, then record the real outcomes here. (AC: 5)
 
 ## Dev Notes
 
@@ -47,21 +47,37 @@ So that launch confidence no longer depends only on API/process tests and compon
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
+- [x] Engineering / Architecture
 - [ ] Product Owner
 
 ## Change Log
 
 - 2026-04-04: Drafted Story 56.1 as the next post-Epic-55 launch-confidence slice.
+- 2026-04-04: Added a Playwright browser smoke over the packaged runtime plus repo command wiring for the public demo walkthrough and auth guardrails.
 
 ## Debug Log References
 
-- Pending implementation.
+- 2026-04-04: `make browser-smoke` red run failed because the temporary smoke runtime env only allowed the default browser origin (`http://127.0.0.1:3000`), so the browser client at `http://127.0.0.1:3100` could not load `/api/v1/matches`.
+- 2026-04-04: Updated the generated smoke env in `client/playwright.config.ts` to set `IRON_COUNCIL_BROWSER_ORIGINS=http://127.0.0.1:3100`, then reran `make browser-smoke` successfully.
+- 2026-04-04: `make launch-readiness-smoke` initially failed because the worktree `.venv` was missing `pytest-cov`; ran `uv sync --extra dev --frozen`, reran the smoke, and it passed.
+- 2026-04-04: `make quality` initially failed because Vitest was collecting the new Playwright spec and package-provided tests from `node_modules`; constrained `client/vitest.config.ts` to the client `src/**` test set and excluded `tests/e2e/**`, then reran `make quality` successfully.
+- 2026-04-04: Review follow-up found the first Playwright `webServer` bootstrap command only appeared to apply `set -euo pipefail`; switched it to `bash -euo pipefail -c` over one chained bootstrap command so `db-reset` and server startup failures stay controller-visible, then reran `make browser-smoke` and `source .venv/bin/activate && make quality` successfully.
 
 ## Completion Notes
 
-- Pending implementation.
+- Added `client/tests/e2e/public-demo-smoke.spec.ts` as one coarse Playwright smoke that saves the browser session API base URL, walks `/matches` -> detail -> history -> live, verifies `/lobby` protected-route copy, and verifies the existing no-token guard on `/matches/<match_id>/play`.
+- Added `client/playwright.config.ts` to start the checked-in packaged runtime through `scripts/runtime-control.sh`, reseed a deterministic SQLite database with `db-reset`, and run the production-style client with `client-start`.
+- Added `make browser-smoke`, `make client-browser-install`, and the `client` `test:e2e` script so the browser smoke has one small repo-managed command path.
+- Tightened the smoke follow-up by asserting the session summary through the labeled `API` row instead of the first `.session-summary dd`, and made the browser smoke bootstrap command honestly strict.
+- Verified with `make browser-smoke`, `source .venv/bin/activate && make launch-readiness-smoke`, and `source .venv/bin/activate && make quality`.
 
 ## File List
 
 - `_bmad-output/implementation-artifacts/56-1-add-a-browser-smoke-for-the-public-demo-walkthrough-and-auth-required-route-guardrails.md`
+- `.gitignore`
+- `Makefile`
+- `client/package.json`
+- `client/package-lock.json`
+- `client/playwright.config.ts`
+- `client/tests/e2e/public-demo-smoke.spec.ts`
+- `client/vitest.config.ts`

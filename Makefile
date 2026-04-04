@@ -6,7 +6,7 @@ DOCKER_COMPOSE ?= docker compose -f $(SUPPORT_SERVICES_COMPOSE_FILE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install install-dev hooks format format-check lint test smoke-test regression-test test-real-api test-smoke launch-readiness-smoke pre-commit quality ci client-install client-lint client-typecheck client-test client-build support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
+.PHONY: help setup install install-dev hooks format format-check lint test smoke-test regression-test test-real-api test-smoke launch-readiness-smoke browser-smoke pre-commit quality ci client-install client-browser-install client-lint client-typecheck client-test client-build support-services-up support-services-down support-services-logs support-services-ps db-setup db-upgrade db-reset
 
 help: ## Show the available developer workflow commands.
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "%-14s %s\n", $$1, $$2}'
@@ -55,6 +55,9 @@ pre-commit: ## Run the repository hooks across all files.
 client-install: ## Install locked client dependencies.
 	cd client && npm ci
 
+client-browser-install: client-install ## Install the Playwright browser runtime used by the browser smoke.
+	cd client && npx playwright install chromium
+
 client-lint: client-install ## Run the client lint/typecheck verification.
 	cd client && npm run lint
 
@@ -65,6 +68,9 @@ client-test: client-install ## Run the client behavior checks.
 
 client-build: client-install ## Build the client production bundle.
 	cd client && npm run build
+
+browser-smoke: client-browser-install client-build ## Run the packaged-runtime browser smoke over the public demo path.
+	cd client && npm run test:e2e -- tests/e2e/public-demo-smoke.spec.ts
 
 quality: format-check lint test client-typecheck client-test client-build ## Run the local quality gate, including the client checks.
 
