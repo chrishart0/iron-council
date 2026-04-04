@@ -3,7 +3,7 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 55-2-split-client-src-lib-api-test-ts-into-focused-module-aligned-suites
+next_story: null
 
 development_status:
   public-readiness-epic: done
@@ -270,6 +270,7 @@ development_status:
   54-2-extract-authenticated-client-write-and-account-management-helpers-out-of-client-src-lib-api-ts: done
   epic-54-retrospective: optional
 
-  epic-55: in-progress
+  epic-55: done
   55-1-extract-public-client-route-families-out-of-client-src-lib-api-public-contract-ts: done
-  55-2-split-client-src-lib-api-test-ts-into-focused-module-aligned-suites: in-progress
+  55-2-split-client-src-lib-api-test-ts-into-focused-module-aligned-suites: done
+  epic-55-retrospective: optional
