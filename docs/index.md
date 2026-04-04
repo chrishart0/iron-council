@@ -13,6 +13,7 @@ then dip into BMAD artifacts only if you want implementation history or planning
 - [Agent SDK quickstart](../agent-sdk/README.md): reference Python SDK and example-agent workflow.
 - [Runtime environment contract](operations/runtime-env-contract.md): required and optional env vars plus the boring packaged runtime shape.
 - [Runtime runbook](operations/runtime-runbook.md): startup order, health verification, websocket expectations, and restart basics.
+- The launch abuse-control posture for the shipped runtime also lives in those runtime docs: local in-process request-size and burst-rate controls reused for authenticated writes plus selected public/websocket hotspots, not CDN/WAF or distributed defenses.
 - [Core plan](../core-plan.md): canonical product vision and long-range design intent.
 - [Public repo assessment](consulting/public-repo-assessment-2026-04-01.md): concise consultant pass on public readiness, risks, and next cleanup actions.
 

@@ -254,7 +254,8 @@ development_status:
   51-2-add-runtime-observability-for-tick-drift-websocket-fanout-and-restart-recovery: done
   51-3-add-multi-match-load-validation-and-launch-readiness-smoke-path: done
   epic-51-retrospective: optional
-  epic-52: ready
-  52-1-add-authenticated-write-abuse-guardrails: ready
-  52-2-extend-abuse-guardrails-to-websocket-and-public-entrypoint-hotspots: backlog
-  52-3-document-and-validate-the-launch-abuse-control-contract: backlog
+  epic-52: done
+  52-1-add-authenticated-write-abuse-guardrails: done
+  52-2-extend-abuse-guardrails-to-websocket-and-public-entrypoint-hotspots: done
+  52-3-document-and-validate-the-launch-abuse-control-contract: done
+  epic-52-retrospective: optional

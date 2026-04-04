@@ -130,6 +130,42 @@ def test_packaged_runtime_launch_readiness_smoke_covers_multi_match_websockets_a
         assert match["websocket"]["last_fanout"]["dropped_connections"] == 0
 
 
+def test_packaged_runtime_launch_readiness_smoke_exposes_server_local_runtime_burst_limit(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'launch-readiness-abuse.db'}"
+    provision_seeded_database(database_url=database_url, reset=True)
+
+    env_file = tmp_path / "runtime.env"
+    env_file.write_text(
+        "\n".join(
+            (
+                f"DATABASE_URL={database_url}",
+                "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT=1",
+                "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS=60",
+            )
+        )
+        + "\n"
+    )
+
+    with _run_packaged_runtime(env_file=env_file, host="127.0.0.1") as base_url:
+        with httpx.Client(base_url=base_url, timeout=5) as client:
+            first_response = client.get("/health/runtime")
+            second_response = client.get("/health/runtime")
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 429
+    assert second_response.json() == {
+        "error": {
+            "code": "rate_limit_exceeded",
+            "message": (
+                "Public entrypoint burst limit exceeded for this caller on this route. "
+                "Retry after the current 60-second window."
+            ),
+        }
+    }
+
+
 def _prepare_two_active_matches(database_url: str) -> None:
     engine = create_engine(database_url)
     with engine.begin() as connection:

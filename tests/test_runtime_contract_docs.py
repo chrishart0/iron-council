@@ -52,11 +52,15 @@ def test_runtime_control_script_is_checked_in_executable_and_reports_doctor_summ
 
 
 def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_artifacts() -> None:
-    readme = (REPO_ROOT / "README.md").read_text()
-    docs_index = (REPO_ROOT / "docs" / "index.md").read_text()
-    env_contract = (REPO_ROOT / "docs" / "operations" / "runtime-env-contract.md").read_text()
-    runbook = (REPO_ROOT / "docs" / "operations" / "runtime-runbook.md").read_text()
-    runtime_env = (REPO_ROOT / "env.runtime.example").read_text()
+    readme = " ".join((REPO_ROOT / "README.md").read_text().split())
+    docs_index = " ".join((REPO_ROOT / "docs" / "index.md").read_text().split())
+    env_contract = " ".join(
+        (REPO_ROOT / "docs" / "operations" / "runtime-env-contract.md").read_text().split()
+    )
+    runbook = " ".join(
+        (REPO_ROOT / "docs" / "operations" / "runtime-runbook.md").read_text().split()
+    )
+    runtime_env = " ".join((REPO_ROOT / "env.runtime.example").read_text().split())
     makefile = (REPO_ROOT / "Makefile").read_text()
 
     assert "./scripts/runtime-control.sh doctor" in readme
@@ -65,9 +69,15 @@ def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_a
     assert "Runtime environment contract" in readme
     assert "Runtime runbook" in readme
     assert "make launch-readiness-smoke" in readme
+    assert "local in-process request-size and burst-rate controls" in readme
+    assert "not distributed, CDN, or WAF defenses" in readme
+    assert "/api/v1/matches" in readme
+    assert "/health/runtime" in readme
+    assert "/ws/match/{match_id}" in readme
 
     assert "Runtime environment contract" in docs_index
     assert "Runtime runbook" in docs_index
+    assert "launch abuse-control posture" in docs_index
 
     assert "DATABASE_URL" in runtime_env
     assert "IRON_COUNCIL_MATCH_REGISTRY_BACKEND=db" in runtime_env
@@ -81,6 +91,8 @@ def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_a
     assert "IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS" in runtime_env
     assert "IRON_COUNCIL_SERVER_PORT" in runtime_env
     assert "IRON_COUNCIL_CLIENT_PORT" in runtime_env
+    assert "selected public HTTP entrypoints and match websocket handshakes" in runtime_env
+    assert "not a distributed or CDN/WAF control plane" in runtime_env
 
     assert "./scripts/runtime-control.sh" in env_contract
     assert "compose.support-services.yaml" in env_contract
@@ -93,6 +105,13 @@ def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_a
     assert "429 rate_limit_exceeded" in env_contract
     assert "client-build" in env_contract
     assert "client-start" in env_contract
+    assert "/api/v1/matches" in env_contract
+    assert "/health/runtime" in env_contract
+    assert "/ws/match/{match_id}" in env_contract
+    assert "local in-process only" in env_contract
+    assert (
+        "does not claim distributed coordination, CDN filtering, or WAF protection" in env_contract
+    )
 
     assert "./scripts/runtime-control.sh doctor" in runbook
     assert "./scripts/runtime-control.sh support-up" in runbook
@@ -101,4 +120,6 @@ def test_runtime_env_contract_and_runbook_stay_in_sync_with_checked_in_runtime_a
     assert "curl http://127.0.0.1:8000/health/runtime" in runbook
     assert "/health/runtime" in runbook
     assert "make launch-readiness-smoke" in runbook
+    assert "local in-process abuse controls" in runbook
+    assert "not a CDN, WAF, or distributed rate-limit layer" in runbook
     assert "launch-readiness-smoke" in makefile

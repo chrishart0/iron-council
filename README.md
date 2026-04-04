@@ -100,12 +100,14 @@ comma-separated list such as
 This only adjusts the API's local browser allowlist; the server still runs directly on
 the host against the support-services stack. For a production-style client process, run
 `./scripts/runtime-control.sh client-build` once and then `./scripts/runtime-control.sh client-start`.
-The shipped runtime env contract also includes server-local abuse guard knobs for authenticated
-write routes: `IRON_COUNCIL_AUTHENTICATED_WRITE_MAX_BODY_BYTES`,
+The shipped runtime env contract also includes local in-process request-size and burst-rate controls:
+`IRON_COUNCIL_AUTHENTICATED_WRITE_MAX_BODY_BYTES`,
 `IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_LIMIT`, and
-`IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS`. Those controls intentionally cover only
-authenticated HTTP write routes for now and surface structured `413` / `429` API errors when the
-configured limits trip.
+`IRON_COUNCIL_AUTHENTICATED_WRITE_RATE_WINDOW_SECONDS`. Despite the legacy variable names from
+Story 52.1, the shipped server reuses the same local limiter for authenticated HTTP write routes,
+selected public HTTP hotspots such as `/api/v1/matches` and `/health/runtime`, and
+`/ws/match/{match_id}` websocket handshake bursts. This is an honest launch hardening slice, not distributed, CDN, or WAF defenses, and the configured limits surface structured `413` / `429` API
+errors or websocket close reasons when they trip.
 
 ### 5. Run the example agent / SDK flow
 

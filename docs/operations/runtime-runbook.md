@@ -10,6 +10,10 @@ This runbook documents the first boring operator path for Iron Council. It is in
 
 Story 51.2 adds the explicit operator signals exposed at `/health/runtime`, and Story 51.3 adds the broader launch-readiness smoke path that reuses them. This runbook defines the startup order and recovery baseline those checks follow.
 
+The same runtime docs now also carry the shipped abuse-control posture for launch: local in-process abuse controls only. The server enforces request-size and burst-rate limits with one shared
+settings-backed seam reused for authenticated writes plus selected public and websocket hotspots.
+That is deliberate launch hardening, not a CDN, WAF, or distributed rate-limit layer.
+
 The narrow repo-managed validation entrypoint for that Story 51.3 slice is:
 
 ```bash
@@ -17,6 +21,8 @@ make launch-readiness-smoke
 ```
 
 It exercises the checked-in `./scripts/runtime-control.sh server` path against a DB-backed runtime, two active matches, websocket subscribers, and a restart against the same database while reusing `/health/runtime` as the only operator-facing status surface.
+It also remains the relevant smoke path for proving the shipped server-local runtime abuse controls
+stay wired on the packaged runtime surface instead of drifting into a separate validation workflow.
 
 ## 1. Bootstrap the workspace
 
