@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
+import * as accountSession from "./api/account-session";
+import * as guidedAgents from "./api/guided-agents";
+import * as lobbyLifecycle from "./api/lobby-lifecycle";
+import * as matchWrites from "./api/match-writes";
 import * as publicContract from "./api/public-contract";
 import {
+  ApiKeyLifecycleError,
+  buildAuthenticatedHeaders,
+  buildAuthenticatedJsonHeaders,
   buildPlayerMatchWebSocketUrl,
   buildSpectatorMatchWebSocketUrl,
-  ApiKeyLifecycleError,
   CompletedMatchesError,
   CommandSubmissionError,
   createOwnedApiKey,
@@ -21,6 +27,9 @@ import {
   fetchPublicMatches,
   GroupChatCreateError,
   getPlayerWebSocketCloseMessage,
+  GuidedAgentControlsError,
+  isApiErrorEnvelope,
+  isRecord,
   joinMatchLobby,
   LobbyActionError,
   MessageSubmissionError,
@@ -34,6 +43,7 @@ import {
   PublicMatchDetailError,
   PublicMatchesError,
   MatchReplayTickError,
+  resolveApiBaseUrl,
   revokeOwnedApiKey,
   submitOwnedAgentGuidance,
   submitOwnedAgentOverride,
@@ -67,6 +77,50 @@ describe("public api extraction seam", () => {
     expect(publicContract.CompletedMatchesError).toBe(CompletedMatchesError);
     expect(publicContract.PublicMatchHistoryError).toBe(PublicMatchHistoryError);
     expect(publicContract.MatchReplayTickError).toBe(MatchReplayTickError);
+  });
+});
+
+describe("authenticated api extraction seam", () => {
+  it("keeps the extracted account session helpers available through both modules", () => {
+    expect(accountSession.fetchOwnedApiKeys).toBe(fetchOwnedApiKeys);
+    expect(accountSession.createOwnedApiKey).toBe(createOwnedApiKey);
+    expect(accountSession.revokeOwnedApiKey).toBe(revokeOwnedApiKey);
+    expect(accountSession.buildAuthenticatedHeaders).toBe(buildAuthenticatedHeaders);
+    expect(accountSession.buildAuthenticatedJsonHeaders).toBe(buildAuthenticatedJsonHeaders);
+    expect(accountSession.buildPlayerMatchWebSocketUrl).toBe(buildPlayerMatchWebSocketUrl);
+    expect(accountSession.buildSpectatorMatchWebSocketUrl).toBe(buildSpectatorMatchWebSocketUrl);
+    expect(accountSession.getPlayerWebSocketCloseMessage).toBe(getPlayerWebSocketCloseMessage);
+    expect(accountSession.isApiErrorEnvelope).toBe(isApiErrorEnvelope);
+    expect(accountSession.isRecord).toBe(isRecord);
+    expect(accountSession.resolveApiBaseUrl).toBe(resolveApiBaseUrl);
+    expect(accountSession.ApiKeyLifecycleError).toBe(ApiKeyLifecycleError);
+  });
+
+  it("keeps the extracted lobby lifecycle helpers available through both modules", () => {
+    expect(lobbyLifecycle.createMatchLobby).toBe(createMatchLobby);
+    expect(lobbyLifecycle.joinMatchLobby).toBe(joinMatchLobby);
+    expect(lobbyLifecycle.startMatchLobby).toBe(startMatchLobby);
+    expect(lobbyLifecycle.LobbyActionError).toBe(LobbyActionError);
+  });
+
+  it("keeps the extracted match write helpers available through both modules", () => {
+    expect(matchWrites.submitMatchOrders).toBe(submitMatchOrders);
+    expect(matchWrites.submitMatchMessage).toBe(submitMatchMessage);
+    expect(matchWrites.submitGroupChatMessage).toBe(submitGroupChatMessage);
+    expect(matchWrites.submitGroupChatCreate).toBe(submitGroupChatCreate);
+    expect(matchWrites.submitTreatyAction).toBe(submitTreatyAction);
+    expect(matchWrites.submitAllianceAction).toBe(submitAllianceAction);
+    expect(matchWrites.CommandSubmissionError).toBe(CommandSubmissionError);
+    expect(matchWrites.MessageSubmissionError).toBe(MessageSubmissionError);
+    expect(matchWrites.GroupChatCreateError).toBe(GroupChatCreateError);
+    expect(matchWrites.DiplomacySubmissionError).toBe(DiplomacySubmissionError);
+  });
+
+  it("keeps the extracted guided agent helpers available through both modules", () => {
+    expect(guidedAgents.fetchOwnedAgentGuidedSession).toBe(fetchOwnedAgentGuidedSession);
+    expect(guidedAgents.submitOwnedAgentGuidance).toBe(submitOwnedAgentGuidance);
+    expect(guidedAgents.submitOwnedAgentOverride).toBe(submitOwnedAgentOverride);
+    expect(guidedAgents.GuidedAgentControlsError).toBe(GuidedAgentControlsError);
   });
 });
 

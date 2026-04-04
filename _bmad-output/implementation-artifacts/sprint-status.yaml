@@ -265,6 +265,7 @@ development_status:
   53-2-polish-the-client-home-and-session-bootstrap-for-first-time-visitors: done
   epic-53-retrospective: optional
 
-  epic-54: in_progress
+  epic-54: done
   54-1-extract-client-public-read-and-live-parse-helpers-out-of-client-src-lib-api-ts: done
-  54-2-extract-authenticated-client-write-and-account-management-helpers-out-of-client-src-lib-api-ts: backlog
+  54-2-extract-authenticated-client-write-and-account-management-helpers-out-of-client-src-lib-api-ts: done
+  epic-54-retrospective: optional
