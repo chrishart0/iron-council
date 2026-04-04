@@ -16,8 +16,8 @@ So that the packaged runtime is proven against realistic concurrent-match and re
 
 ## Ready Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Tasks / Subtasks
 
@@ -43,8 +43,8 @@ So that the packaged runtime is proven against realistic concurrent-match and re
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Change Log
 

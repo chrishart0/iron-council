@@ -16,8 +16,8 @@ So that the first public launch can detect the most meaningful runtime-failure s
 
 ## Ready Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Tasks / Subtasks
 
@@ -42,8 +42,8 @@ So that the first public launch can detect the most meaningful runtime-failure s
 
 ## Complete Signoff
 
-- [ ] Engineering / Architecture
-- [ ] Product Owner
+- [x] Engineering / Architecture
+- [x] Product Owner
 
 ## Change Log
 

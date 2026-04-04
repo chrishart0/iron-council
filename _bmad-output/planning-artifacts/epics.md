@@ -2460,3 +2460,59 @@ So that the packaged runtime is proven against realistic concurrent-match and re
 **And Given** Story 51.2 may already expose runtime signals
 **When** Story 51.3 asserts websocket or restart behavior
 **Then** it consumes those same signals where available instead of inventing a separate observability surface.
+
+## Epic 52: Runtime Abuse Guardrails
+
+Use the next post-launch slice to add the smallest honest abuse controls the architecture already calls out as a launch risk. Keep the work narrow, settings-backed, and behavior-first: start with authenticated write payload-size and burst-rate guardrails, then extend the same seam to websocket/public entrypoints and the runtime contract docs.
+
+### Story 52.1: Add authenticated write abuse guardrails
+
+As a maintainer preparing for public launch,
+I want authenticated write routes to enforce boring payload-size and burst-rate guardrails,
+So that the shipped server resists obvious abuse on orders, messaging, guidance, overrides, and key-management surfaces without inventing a larger platform security system.
+
+**Acceptance Criteria:**
+
+**Given** the launch-ready FastAPI runtime from Epic 51
+**When** an authenticated write request exceeds the configured maximum body size
+**Then** the server rejects it with a structured `413` API error rather than attempting to process the oversized payload.
+
+**And Given** authenticated write routes already resolve caller identity by API key or human bearer token
+**When** a caller exceeds the configured burst allowance on a guarded write route
+**Then** the server returns a structured `429` API error keyed to the same identity boundary without changing the route's underlying auth semantics.
+
+**And Given** this story starts the abuse-hardening slice
+**When** it ships
+**Then** it adds one reusable settings-backed guardrail seam plus focused public-boundary tests and docs updates instead of scattering magic limits across route handlers.
+
+### Story 52.2: Extend abuse guardrails to websocket and public-entrypoint hotspots
+
+As an operator of the public runtime,
+I want the same abuse-control seam to cover websocket and public-entrypoint hotspots,
+So that launch protection is not limited to authenticated writes while still staying small and local to the shipped server.
+
+**Acceptance Criteria:**
+
+**Given** Story 52.1 has already defined the settings-backed abuse-control seam
+**When** repeated websocket handshake or selected public-entrypoint requests exceed the configured burst policy
+**Then** the server responds with the same structured throttling semantics or close behavior instead of inventing a second limiter implementation.
+
+**And Given** this is still a launch-scope hardening slice
+**When** the change ships
+**Then** it keeps the implementation boring, repo-convention aligned, and verified through focused boundary tests rather than infra-scale load tooling.
+
+### Story 52.3: Document and validate the launch abuse-control contract
+
+As an operator and maintainer,
+I want the runtime docs and launch smoke path to describe the shipped abuse-control knobs honestly,
+So that operators know what protections exist and the repo validation path proves those settings remain wired after future changes.
+
+**Acceptance Criteria:**
+
+**Given** Stories 52.1 and 52.2 have introduced concrete abuse-control knobs and behaviors
+**When** the runtime env contract, runbook, and launch validation are updated
+**Then** the docs explain the shipped protections honestly without implying CDN/WAF/distributed controls the repo does not provide.
+
+**And Given** launch-readiness validation already exists from Epic 51
+**When** Story 52.3 finishes
+**Then** it reuses that documentation and smoke path where practical instead of inventing a disconnected verification workflow.
