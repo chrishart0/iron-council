@@ -225,4 +225,4 @@ development_status:
   56-2-refactor-the-human-live-page-into-smaller-route-owned-slices-behind-the-shipped-browser-contract: done
   epic-57: in-progress
   57-1-split-the-authenticated-human-live-messaging-and-diplomacy-regression-hotspot-into-route-owned-suites: done
-  57-2-split-the-spectator-live-page-regression-hotspot-into-focused-suites-and-helper-modules: in-progress
+  57-2-split-the-spectator-live-page-regression-hotspot-into-focused-suites-and-helper-modules: drafted
