@@ -2692,3 +2692,47 @@ So that future gameplay/UI changes can land with lower regression risk and simpl
 **And Given** this is maintainability work rather than a new feature lane
 **When** the story ships
 **Then** it avoids generic framework abstractions, keeps behavior-first tests at the browser/API boundary where feasible, and leaves the client in a simpler coherent state than the pre-story baseline.
+
+## Epic 57: Live Regression Surface Sharding
+
+Now that the human live page production modules are decomposed, the remaining maintenance pain sits in a few giant browser-facing regression files and bulky live-page harness helpers. Use the next slice to shrink those test hotspots without changing product scope: first shard the authenticated human live messaging/diplomacy regression surface into route-owned suites, then apply the same discipline to the spectator live page so future live-client changes have smaller review and failure boundaries.
+
+### Story 57.1: Split the authenticated human live messaging and diplomacy regression hotspot into route-owned suites
+
+As a client maintainer,
+I want the oversized authenticated human live messaging/diplomacy regression file and helper bulk split into smaller route-owned suites,
+So that future messaging, treaty, alliance, and group-chat changes can land with lower regression risk and clearer ownership.
+
+**Acceptance Criteria:**
+
+**Given** `client/src/components/matches/human-match-live-page.messaging-diplomacy.test.tsx` and `client/src/components/matches/human-match-live-page-test-helpers.tsx` currently concentrate multiple authenticated live interaction seams
+**When** Story 57.1 ships
+**Then** those seams are represented by smaller focused suites and only the minimum shared harness/support code needed to keep them readable, while preserving the shipped rendered behavior and fetch/websocket contract.
+
+**And Given** Story 56.1 already provides a real-browser runtime smoke and Story 56.2 already decomposed the production human live modules
+**When** the authenticated regression sharding lands
+**Then** the browser smoke, focused authenticated live suites, `make client-test`, and `make quality` all stay green.
+
+**And Given** this is maintainability work rather than a new feature lane
+**When** the story ships
+**Then** it avoids new generic test frameworks, keeps assertions behavior-first at the rendered/browser boundary, and leaves the authenticated live test surface simpler than the pre-story baseline.
+
+### Story 57.2: Split the spectator live page regression hotspot into focused suites and helper modules
+
+As a client maintainer,
+I want the oversized spectator live regression file split into smaller focused suites,
+So that public live-page changes can be reviewed and debugged without wading through one giant mixed-responsibility spec.
+
+**Acceptance Criteria:**
+
+**Given** `client/src/components/matches/public-match-live-page.test.tsx` currently mixes connection, summary, pressure/victory, and map-facing spectator behavior in one large file
+**When** Story 57.2 ships
+**Then** that behavior is covered by smaller focused suites with only the narrow helper extraction needed to support them, while preserving the shipped public live-page browser contract.
+
+**And Given** Story 57.1 has already established the epic's suite-sharding pattern on the authenticated side
+**When** the spectator refactor lands
+**Then** the browser smoke, focused spectator suites, `make client-test`, and `make quality` all stay green.
+
+**And Given** this follow-on exists to reduce blast radius rather than widen scope
+**When** the story ships
+**Then** it stays client-only, avoids snapshot-heavy or generic abstractions, and leaves the spectator live regression surface in the simplest coherent state possible.
