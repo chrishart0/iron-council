@@ -3,252 +3,201 @@ project: Iron Council
 project_key: IRON
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
-next_story: 57-1-split-the-authenticated-human-live-messaging-and-diplomacy-regression-hotspot-into-route-owned-suites
-
+next_story: 57-2-split-the-spectator-live-page-regression-hotspot-into-focused-suites-and-helper-modules
 development_status:
   public-readiness-epic: done
   public-readiness-story-1-readme-and-docs-entrypoint: done
   public-readiness-story-2-add-oss-governance-files: done
   public-readiness-story-3-public-docs-curation-and-naming-cleanup: done
   public-readiness-story-4-clean-code-consultant-pass: done
-
   epic-1: done
   1-1-scaffold-fastapi-server-and-core-domain-contracts: done
   1-2-add-shared-domain-enums-and-validation-primitives: done
   epic-1-retrospective: optional
-
   epic-2: done
   2-1-encode-the-uk-1900-map-definition-in-shared-data: done
   2-2-add-validation-tests-for-graph-integrity-and-special-crossings: done
   epic-2-retrospective: optional
-
   epic-3: done
   3-1-build-deterministic-match-initialization-from-map-and-roster-inputs: done
   3-2-validate-queued-orders-against-ownership-resources-and-adjacency: done
   epic-3-retrospective: optional
-
   epic-4: done
   4-1-add-a-pure-function-tick-resolver-skeleton-with-phase-ordering: done
   4-2-provide-a-headless-simulation-harness-for-smoke-testing-ticks: done
   epic-4-retrospective: optional
-
   epic-5: done
   5-1-apply-deterministic-resource-accounting-during-the-resolver-resource-phase: done
   5-2-advance-army-transit-and-accepted-movement-orders-during-the-movement-phase: done
   epic-5-retrospective: optional
-
   epic-6: done
   6-1-apply-starvation-attrition-and-elimination-checks-during-the-attrition-phase: done
   6-2-track-coalition-city-control-and-victory-countdown-during-the-victory-phase: done
   epic-6-retrospective: optional
-
   epic-7: done
   7-1-resolve-contested-city-combat-with-defender-and-fortification-advantages: done
   7-2-hand-uncontested-city-control-to-occupying-armies-after-combat-resolution: done
   epic-7-retrospective: optional
-
   epic-8: done
   8-1-advance-build-queues-and-complete-deterministic-city-upgrades-during-the-build-phase: done
   8-2-process-accepted-recruitment-orders-during-the-build-phase: done
   epic-8-retrospective: optional
-
   epic-9: done
   9-1-deduct-fortification-upkeep-and-degrade-unpaid-defenses-deterministically: done
   9-2-degrade-besieged-fortifications-when-hostile-control-seals-every-adjacent-route: done
   epic-9-retrospective: optional
-
   epic-10: done
   10-1-project-fog-filtered-agent-state-from-canonical-match-data: done
   10-2-expose-in-memory-agent-match-listing-state-polling-and-order-submission-endpoints: done
   epic-10-retrospective: optional
-
   epic-12: done
   12-1-add-a-local-support-services-stack-for-database-backed-development-and-validation: done
   12-2-introduce-a-proper-database-migration-service-and-migration-driven-schema-lifecycle: done
   12-3-add-deterministic-seed-reset-tooling-and-per-worktree-isolated-test-databases: done
   12-4-wire-real-api-integration-tests-and-small-end-to-end-smoke-flows-into-the-quality-workflow: done
-
   epic-14: done
   14-1-add-x-api-key-authentication-and-an-authenticated-current-agent-profile-endpoint: done
   14-2-bind-match-joins-and-match-scoped-reads-writes-to-the-authenticated-agent-identity: done
-
   epic-15: done
   15-1-add-a-reference-python-sdk-for-authenticated-agent-workflows: done
   15-2-add-a-minimal-example-agent-and-sdk-quickstart-guide: done
-
   epic-16: done
   16-1-add-authenticated-group-chat-creation-membership-and-message-workflows: done
   16-2-extend-the-python-sdk-and-example-docs-for-group-chat-workflows: done
-
   epic-11: done
   11-1-run-a-multi-agent-quality-review-and-simplification-sweep-across-the-game-server: done
   11-2-add-realistic-scenario-based-smoke-tests-for-deterministic-gameplay-flows: done
   11-3-add-a-large-batch-simulation-regression-harness-with-invariant-checks: done
   11-4-add-critical-api-end-to-end-tests-for-agent-gameplay-journeys: done
-
   epic-13: done
   13-1-add-agent-facing-match-message-inbox-and-send-endpoints: done
   13-2-add-public-treaty-status-and-lifecycle-endpoints: done
   13-3-add-alliance-create-join-leave-endpoints-with-deterministic-status-views: done
   13-4-add-match-join-and-lightweight-agent-profile-scaffolding: done
-
   epic-17: done
   17-1-add-an-authenticated-bundled-agent-briefing-endpoint: done
   17-2-add-a-consolidated-authenticated-agent-command-endpoint: done
-
   epic-18: done
   18-1-launch-an-in-process-async-tick-loop-for-active-matches: done
   18-2-persist-live-tick-advancement-and-write-tick-log-history: done
   18-3-broadcast-live-match-updates-over-websockets-for-human-clients-and-spectators: done
-
   epic-19: done
   19-1-expose-persisted-tick-history-and-replay-snapshots: done
   19-2-add-public-leaderboard-and-completed-match-summary-reads: done
-
   epic-20: done
   20-1-add-db-backed-public-match-browse-summaries: done
   20-2-add-a-public-match-lobby-detail-read: done
-
   epic-21: done
   21-1-add-an-authenticated-match-lobby-creation-endpoint: done
-
   epic-22: done
   22-1-add-an-authenticated-lobby-start-endpoint: done
   epic-23: done
   23-1-extend-the-python-sdk-and-example-quickstart-for-authenticated-lobby-lifecycle-flows: done
-
   epic-24: done
   24-1-scaffold-a-next-js-client-and-public-match-browser: done
   24-2-add-real-human-jwt-authentication-for-http-and-websocket-paths: done
   24-3-add-client-side-auth-session-bootstrap-for-future-human-flows: done
-
   epic-25: done
   25-1-add-a-public-match-detail-page-in-the-web-client: done
   25-2-add-a-read-only-spectator-live-match-page-over-websockets: done
   25-3-add-authenticated-human-lobby-create-join-start-flows-in-the-web-client: done
-
   epic-26: done
   26-1-add-an-authenticated-human-live-match-page-over-the-player-websocket: done
   26-2-add-authenticated-human-order-submission-controls-in-the-live-web-client: done
-
-
   epic-27: done
   27-1-add-authenticated-human-live-messaging-controls-in-the-web-client: done
   27-2-add-authenticated-human-treaty-and-alliance-controls-in-the-live-web-client: done
   epic-27-retrospective: optional
-
   epic-28: done
   28-1-add-authenticated-human-live-group-chat-creation-controls-in-the-web-client: done
-
   epic-29: done
   29-1-add-public-leaderboard-and-completed-match-browse-pages-in-the-web-client: done
   29-2-add-public-completed-match-history-and-replay-inspection-pages-in-the-web-client: done
   epic-29-retrospective: optional
-
   epic-30: done
   30-1-add-a-spectator-situation-room-to-the-live-web-client: done
   30-2-add-territory-pressure-and-victory-context-to-the-spectator-live-page: done
   epic-30-retrospective: optional
-
   epic-31: done
   31-1-add-a-shared-read-only-strategic-svg-map-to-the-live-web-client: done
   31-2-add-click-assisted-city-inspection-and-order-draft-helpers-on-the-human-live-map: done
   31-3-add-visibility-safe-live-map-transit-overlays: done
   epic-31-retrospective: optional
-
   epic-32: done
   32-1-extract-public-and-realtime-route-registration-from-server-main: done
   32-2-extract-authenticated-match-command-messaging-and-diplomacy-routes-from-server-main: done
   32-3-extract-authenticated-lobby-and-player-access-helpers-behind-stable-app-services: done
-
   epic-33: done
   33-1-refactor-human-live-page-into-smaller-ui-and-state-slices: done
   epic-33-retrospective: optional
-
   epic-34: done
   34-1-extract-seeded-registry-fixture-builders-into-a-dedicated-module: done
   34-2-split-in-memory-messaging-and-diplomacy-workflows-out-of-server-agent_registry-py: done
   34-3-split-db-backed-public-reads-and-identity-loading-helpers-out-of-server-db-registry-py: done
   34-4-split-in-memory-access-and-command-workflows-out-of-server-agent_registry-py: done
-
   epic-35: done
   35-1-extract-authenticated-lobby-lifecycle-routes-out-of-server-api-authenticated_access_routes-py: done
   35-2-extract-authenticated-profile-state-and-briefing-reads-out-of-server-api-authenticated_access_routes-py: done
   35-3-extract-authenticated-join-and-order-submission-routes-out-of-server-api-authenticated_access_routes-py: done
   35-4-extract-authenticated-command-and-messaging-routes-out-of-server-api-authenticated_match_routes-py: done
-  35-5-extract-authenticated-treaty-and-alliance-routes-plus-shared-match-route-helpers-out-of-server-api-authenticated_match_routes-py: done
+  ? 35-5-extract-authenticated-treaty-and-alliance-routes-plus-shared-match-route-helpers-out-of-server-api-authenticated_match_routes-py
+  : done
   epic-35-retrospective: optional
-
   epic-36: done
   36-1-extract-db-backed-lobby-lifecycle-and-tick-persistence-out-of-server-db-registry-py: done
   36-2-extract-db-backed-identity-and-player-lookup-compatibility-helpers-out-of-server-db-registry-py: done
   36-3-trim-server-db-registry-py-to-a-thin-compatibility-facade-over-hydration-read-identity-and-write-modules: done
   epic-36-retrospective: optional
-
   epic-37: done
   37-1-extract-match-record-assembly-helpers-out-of-server-db-hydration-py: done
   37-2-extract-agent-and-identity-hydration-loaders-out-of-server-db-hydration-py: done
-
   epic-38: done
   38-1-extract-public-browse-and-roster-assembly-helpers-out-of-server-db-public_reads-py: done
   38-2-extract-public-leaderboard-and-completed-match-aggregation-helpers-out-of-server-db-public_reads-py: done
   38-3-extract-public-history-and-replay-assembly-helpers-out-of-server-db-public_reads-py: done
-
   epic-39: done
   39-1-extract-public-browse-and-detail-route-handlers-out-of-server-api-public_routes-py: done
   39-2-extract-public-aggregate-summary-routes-out-of-server-api-public_routes-py: done
   39-3-extract-public-history-and-replay-routes-out-of-server-api-public_routes-py: done
-
   epic-40: done
   40-1-detect-and-persist-completed-matches-from-victory-state: done
   40-2-add-deterministic-post-match-rating-settlement-and-profile-history-updates: done
   40-3-consume-finalized-ratings-and-non-provisional-outcomes-in-leaderboard-profile-reads: done
   40-4-add-completion-to-leaderboard-end-to-end-regression-coverage: done
-
   epic-41: done
   41-1-add-public-agent-profile-page-in-the-web-client: done
   41-2-link-completed-match-and-replay-browse-surfaces-to-durable-public-competitor-identities: done
   41-3-add-read-only-public-player-human-profile-scaffolding-once-a-stable-public-identity-contract-exists: done
   epic-41-retrospective: optional
-
   epic-42: done
   42-1-break-active-treaties-on-hostile-attacks-and-announce-them: done
-
   epic-43: done
   43-1-add-public-treaty-reputation-to-competitor-profiles: done
-
   epic-44: done
   44-1-add-local-browser-to-api-cors-support: done
-
   epic-45: done
   45-1-stabilize-nextjs-client-dev-root-and-generated-types: done
-
   epic-46: done
   46-1-eliminate-python-3-12-sqlite-datetime-adapter-warnings: done
-
   epic-47: done
   47-1-sync-canonical-architecture-and-public-entrypoint-docs: done
   47-2-harden-db-backed-public-read-edge-contracts: done
-
   epic-48: done
   48-1-add-authenticated-api-key-lifecycle-endpoints-for-owned-agent-identities: done
   48-2-add-a-browser-agent-key-management-surface-for-byoa-onboarding: done
   48-3-enforce-per-api-key-concurrent-match-occupancy-with-honest-join-errors: done
   48-4-add-a-billing-ready-agent-entitlement-seam-with-manual-dev-grants: done
   epic-48-retrospective: optional
-
   epic-49: done
   49-1-add-an-owned-agent-guided-session-read-model: done
   49-2-deliver-private-human-to-agent-guidance-through-the-briefing-path: done
   49-3-add-pre-tick-human-override-semantics-for-guided-agents: done
   49-4-add-guided-agent-controls-to-the-live-web-client: done
   epic-49-retrospective: optional
-
   epic-50: done
   50-1-harden-in-memory-diplomacy-and-messaging-contract-edges: done
   50-2-harden-db-backed-rating-settlement-identity-and-tenure-edges: done
   epic-50-retrospective: optional
-
   epic-51: done
   51-1-add-deployable-runtime-packaging-env-contract-and-operator-runbook: done
   51-2-add-runtime-observability-for-tick-drift-websocket-fanout-and-restart-recovery: done
@@ -259,26 +208,21 @@ development_status:
   52-2-extend-abuse-guardrails-to-websocket-and-public-entrypoint-hotspots: done
   52-3-document-and-validate-the-launch-abuse-control-contract: done
   epic-52-retrospective: optional
-
   epic-53: done
   53-1-add-a-public-demo-walkthrough-and-entrypoint-docs-cleanup: done
   53-2-polish-the-client-home-and-session-bootstrap-for-first-time-visitors: done
   epic-53-retrospective: optional
-
   epic-54: done
   54-1-extract-client-public-read-and-live-parse-helpers-out-of-client-src-lib-api-ts: done
   54-2-extract-authenticated-client-write-and-account-management-helpers-out-of-client-src-lib-api-ts: done
   epic-54-retrospective: optional
-
   epic-55: done
   55-1-extract-public-client-route-families-out-of-client-src-lib-api-public-contract-ts: done
   55-2-split-client-src-lib-api-test-ts-into-focused-module-aligned-suites: done
   epic-55-retrospective: optional
-
   epic-56: done
   56-1-add-a-browser-smoke-for-the-public-demo-walkthrough-and-auth-required-route-guardrails: done
   56-2-refactor-the-human-live-page-into-smaller-route-owned-slices-behind-the-shipped-browser-contract: done
-
   epic-57: in-progress
-  57-1-split-the-authenticated-human-live-messaging-and-diplomacy-regression-hotspot-into-route-owned-suites: in-progress
-  57-2-split-the-spectator-live-page-regression-hotspot-into-focused-suites-and-helper-modules: drafted
+  57-1-split-the-authenticated-human-live-messaging-and-diplomacy-regression-hotspot-into-route-owned-suites: done
+  57-2-split-the-spectator-live-page-regression-hotspot-into-focused-suites-and-helper-modules: in-progress

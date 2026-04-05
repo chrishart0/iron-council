@@ -1,16 +1,18 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
-  expectFetchCall,
   makeEnvelope,
   makeGuidedSessionResponse,
   makeHumanEnvelope,
   makeHumanOwnedAgentMatchDetailResponse,
-  makeJsonResponse,
   makeOwnedApiKeysResponse,
+} from "./human-match-live-page-fixtures";
+import {
+  expectFetchCall,
+  makeJsonResponse,
   MockWebSocket,
   renderHumanMatchLivePage,
-  setStoredSession
+  setStoredSession,
 } from "./human-match-live-page-test-helpers";
 
 describe("HumanMatchLivePage guided controls", () => {

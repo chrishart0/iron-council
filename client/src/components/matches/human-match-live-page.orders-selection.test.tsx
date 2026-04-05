@@ -1,15 +1,17 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
-  expectFetchCall,
-  expectNoFetchCall,
   makeEnvelope,
   makeGuidedSessionResponse,
-  makeJsonResponse,
   makePublicMatchDetailResponse,
+} from "./human-match-live-page-fixtures";
+import {
+  expectFetchCall,
+  expectNoFetchCall,
+  makeJsonResponse,
   MockWebSocket,
   renderHumanMatchLivePage,
-  setStoredSession
+  setStoredSession,
 } from "./human-match-live-page-test-helpers";
 
 describe("HumanMatchLivePage orders and map selection", () => {

@@ -4,9 +4,11 @@ import {
   makeEnvelope,
   makeHiddenTransitEnvelope,
   makePublicMatchDetailResponse,
+} from "./human-match-live-page-fixtures";
+import {
   MockWebSocket,
   renderHumanMatchLivePage,
-  setStoredSession
+  setStoredSession,
 } from "./human-match-live-page-test-helpers";
 
 describe("HumanMatchLivePage connection and shell", () => {
